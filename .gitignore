@@ -1,0 +1,22 @@
+# Rojo ビルド成果物（ソースは src/ が正）
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+!assets/**/*.rbxm
+!assets/**/*.rbxmx
+*.rbxl.lock
+*.rbxlx.lock
+
+# 生成物・キャッシュ
+sourcemap.json
+roblox.yml
+Packages/
+ServerPackages/
+DevPackages/
+
+# OS / エディタ
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json

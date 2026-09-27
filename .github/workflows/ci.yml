@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: CompeyDev/setup-rokit@v0.2.1
+      - name: StyLua
+        run: stylua --check src
+      - name: selene
+        run: selene src
+      - name: Rojo build
+        run: rojo build default.project.json -o musou.rbxl
