@@ -223,6 +223,7 @@ M1 に入れる画面。
 - ドメイン用語の識別子はローマ字（[ADR 0005](adr/0005-romaji-identifiers-for-domain-terms.md)）
 - 交戦の計算、兵站線のつながり判定、秘計のルールなど、Roblox に依存しない計算は `src/shared` に置き、Lune で単体テストする。CI にも加える
 - 画面や操作の確認は、Studio MCP でのテストプレイ手順を issue に書いて行う
+- キャラクターや部隊を出現させる処理は、固定の高さを使わず `src/shared/Ground.luau` の地面の高さの関数で高さを決める
 - マップを触る issue はプレースを直接書き換えるので、並行させず1件ずつ進める
 - 目印の置き場所・名前・タグ・Attribute は [ADR 0006](adr/0006-positions-as-markers-composition-in-code.md) に従う
 - 進行の保存には DataStore を使う
