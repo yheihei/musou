@@ -1,5 +1,5 @@
 --!strict
--- KO 数と無双ゲージの表示。値は Player の Attribute から読む。
+-- 撃破数と奥義ゲージの表示。値は Player の Attribute から読む。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -23,8 +23,8 @@ local function create<T>(className: string, props: { [string]: any }, children: 
 end
 
 local function buildGui()
-	local koLabel = create("TextLabel", {
-		Name = "KOs",
+	local gekihasuLabel = create("TextLabel", {
+		Name = "Gekihasu",
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -24, 0, 24),
 		Size = UDim2.fromOffset(260, 64),
@@ -34,7 +34,7 @@ local function buildGui()
 		TextXAlignment = Enum.TextXAlignment.Right,
 		TextColor3 = Color3.new(1, 1, 1),
 		TextStrokeTransparency = 0.3,
-		Text = "0 KO",
+		Text = "撃破数 0",
 	})
 
 	local gaugeFill = create("Frame", {
@@ -45,7 +45,7 @@ local function buildGui()
 	}, { create("UICorner", { CornerRadius = UDim.new(0, 6) }) })
 
 	local gauge = create("Frame", {
-		Name = "MusouGauge",
+		Name = "OugiGauge",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -32),
 		Size = UDim2.fromOffset(420, 18),
@@ -68,40 +68,40 @@ local function buildGui()
 		TextSize = 14,
 		TextColor3 = Color3.new(1, 1, 1),
 		TextStrokeTransparency = 0.5,
-		Text = "左クリック: 攻撃   E: チャージ   Q: 無双乱舞",
+		Text = "左クリック: 攻撃   E: チャージ攻撃   Q: 奥義",
 	})
 
 	create("ScreenGui", {
-		Name = "MusouHUD",
+		Name = "HUD",
 		ResetOnSpawn = false,
 		IgnoreGuiInset = false,
 		Parent = player:WaitForChild("PlayerGui"),
-	}, { koLabel, gauge, hint })
+	}, { gekihasuLabel, gauge, hint })
 
-	return koLabel :: TextLabel, gaugeFill :: Frame, hint :: TextLabel
+	return gekihasuLabel :: TextLabel, gaugeFill :: Frame, hint :: TextLabel
 end
 
 function HUDController.start()
-	local koLabel, gaugeFill, hint = buildGui()
+	local gekihasuLabel, gaugeFill, hint = buildGui()
 
-	local function refreshKOs()
-		koLabel.Text = `{player:GetAttribute("KOs") or 0} KO`
+	local function refreshGekihasu()
+		gekihasuLabel.Text = `撃破数 {player:GetAttribute("Gekihasu") or 0}`
 	end
 
-	local function refreshMusou()
-		local ratio = (player:GetAttribute("Musou") :: number? or 0) / Config.Musou.MaxGauge
+	local function refreshOugiGauge()
+		local ratio = (player:GetAttribute("OugiGauge") :: number? or 0) / Config.Ougi.MaxGauge
 		TweenService:Create(gaugeFill, TweenInfo.new(0.15), { Size = UDim2.fromScale(ratio, 1) }):Play()
 		local full = ratio >= 1
 		gaugeFill.BackgroundColor3 = if full then Color3.fromRGB(255, 60, 30) else Color3.fromRGB(255, 140, 40)
 		hint.Text = if full
-			then "無双ゲージ MAX！ Q で無双乱舞"
-			else "左クリック: 攻撃   E: チャージ   Q: 無双乱舞"
+			then "奥義ゲージ MAX！ Q で奥義"
+			else "左クリック: 攻撃   E: チャージ攻撃   Q: 奥義"
 	end
 
-	player:GetAttributeChangedSignal("KOs"):Connect(refreshKOs)
-	player:GetAttributeChangedSignal("Musou"):Connect(refreshMusou)
-	refreshKOs()
-	refreshMusou()
+	player:GetAttributeChangedSignal("Gekihasu"):Connect(refreshGekihasu)
+	player:GetAttributeChangedSignal("OugiGauge"):Connect(refreshOugiGauge)
+	refreshGekihasu()
+	refreshOugiGauge()
 end
 
 return HUDController

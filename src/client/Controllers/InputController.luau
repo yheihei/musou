@@ -42,30 +42,24 @@ function InputController.start()
 	remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Action") :: RemoteEvent
 
 	ContextActionService:BindAction(
-		"MusouAttack",
+		Actions.Attack,
 		onAttack,
 		true,
 		Enum.UserInputType.MouseButton1,
 		Enum.KeyCode.ButtonR2
 	)
 	ContextActionService:BindAction(
-		"MusouCharge",
-		fireOnBegin(Actions.Charge),
+		Actions.ChargeKogeki,
+		fireOnBegin(Actions.ChargeKogeki),
 		true,
 		Enum.KeyCode.E,
 		Enum.KeyCode.ButtonX
 	)
-	ContextActionService:BindAction(
-		"MusouUltimate",
-		fireOnBegin(Actions.Musou),
-		true,
-		Enum.KeyCode.Q,
-		Enum.KeyCode.ButtonY
-	)
+	ContextActionService:BindAction(Actions.Ougi, fireOnBegin(Actions.Ougi), true, Enum.KeyCode.Q, Enum.KeyCode.ButtonY)
 
-	ContextActionService:SetTitle("MusouAttack", "攻撃")
-	ContextActionService:SetTitle("MusouCharge", "チャージ")
-	ContextActionService:SetTitle("MusouUltimate", "無双")
+	ContextActionService:SetTitle(Actions.Attack, "攻撃")
+	ContextActionService:SetTitle(Actions.ChargeKogeki, "チャージ")
+	ContextActionService:SetTitle(Actions.Ougi, "奥義")
 end
 
 return InputController

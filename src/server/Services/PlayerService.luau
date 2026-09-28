@@ -1,5 +1,5 @@
 --!strict
--- プレイヤーのステータス管理。KO 数と無双ゲージは Player の Attribute に持たせて
+-- プレイヤーのステータス管理。撃破数と奥義ゲージは Player の Attribute に持たせて
 -- クライアントへ自動で複製させる。
 
 local Players = game:GetService("Players")
@@ -9,21 +9,21 @@ local Config = require(ReplicatedStorage.Shared.Config)
 
 local PlayerService = {}
 
-function PlayerService.addKO(player: Player)
-	player:SetAttribute("KOs", (player:GetAttribute("KOs") :: number? or 0) + 1)
+function PlayerService.addGekihasu(player: Player)
+	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + 1)
 end
 
-function PlayerService.getMusou(player: Player): number
-	return player:GetAttribute("Musou") :: number? or 0
+function PlayerService.getOugiGauge(player: Player): number
+	return player:GetAttribute("OugiGauge") :: number? or 0
 end
 
-function PlayerService.addMusou(player: Player, amount: number)
-	local value = math.clamp(PlayerService.getMusou(player) + amount, 0, Config.Musou.MaxGauge)
-	player:SetAttribute("Musou", value)
+function PlayerService.addOugiGauge(player: Player, amount: number)
+	local value = math.clamp(PlayerService.getOugiGauge(player) + amount, 0, Config.Ougi.MaxGauge)
+	player:SetAttribute("OugiGauge", value)
 end
 
-function PlayerService.resetMusou(player: Player)
-	player:SetAttribute("Musou", 0)
+function PlayerService.resetOugiGauge(player: Player)
+	player:SetAttribute("OugiGauge", 0)
 end
 
 local function onCharacterAdded(player: Player, character: Model)
@@ -35,15 +35,15 @@ local function onCharacterAdded(player: Player, character: Model)
 	local lastHealth = humanoid.Health
 	humanoid.HealthChanged:Connect(function(health)
 		if health < lastHealth then
-			PlayerService.addMusou(player, (lastHealth - health) * Config.Musou.GainPerDamageTaken)
+			PlayerService.addOugiGauge(player, (lastHealth - health) * Config.Ougi.GainPerDamageTaken)
 		end
 		lastHealth = health
 	end)
 end
 
 local function onPlayerAdded(player: Player)
-	player:SetAttribute("KOs", 0)
-	player:SetAttribute("Musou", 0)
+	player:SetAttribute("Gekihasu", 0)
+	player:SetAttribute("OugiGauge", 0)
 
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
