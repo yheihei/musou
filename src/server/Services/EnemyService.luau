@@ -1,6 +1,6 @@
 --!strict
 -- 敵兵の生成・AI・被ダメージ処理。
--- 雑兵を部隊単位で湧かせ続け、一定部隊ごとに武将を混ぜる。
+-- 下忍を部隊単位で湧かせ続け、一定部隊ごとに上忍を混ぜる。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,7 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local PlayerService = require(script.Parent.PlayerService)
 
-type EnemyDef = typeof(Config.Enemies.Soldier)
+type EnemyDef = typeof(Config.Enemies.Genin)
 
 type Enemy = {
 	model: Model,
@@ -48,8 +48,8 @@ local function buildTemplate(kind: string, def: EnemyDef): Model
 	humanoid.Health = def.MaxHealth
 	humanoid.WalkSpeed = def.WalkSpeed
 	humanoid.BreakJointsOnDeath = false
-	-- 雑兵は頭上表示を出さず、武将だけ名前と体力バーを出す
-	humanoid.DisplayDistanceType = if kind == "Officer"
+	-- 下忍は頭上表示を出さず、上忍だけ名前と体力バーを出す
+	humanoid.DisplayDistanceType = if kind == "Jonin"
 		then Enum.HumanoidDisplayDistanceType.Viewer
 		else Enum.HumanoidDisplayDistanceType.None
 
@@ -103,7 +103,7 @@ local function onEnemyDied(enemy: Enemy)
 	aliveCount -= 1
 
 	if enemy.lastHitBy and enemy.lastHitBy.Parent then
-		PlayerService.addKO(enemy.lastHitBy)
+		PlayerService.addGekihasu(enemy.lastHitBy)
 	end
 
 	task.delay(Config.Spawner.CorpseLifetime, function()
@@ -138,7 +138,7 @@ local function spawnEnemy(kind: string, position: Vector3)
 	end)
 end
 
-local function pickSquadCenter(): Vector3?
+local function pickButaiCenter(): Vector3?
 	local players = Players:GetPlayers()
 	local candidates = {}
 	for _, player in players do
@@ -158,21 +158,21 @@ local function pickSquadCenter(): Vector3?
 	return Vector3.new(base.X + math.cos(angle) * distance, 0, base.Z + math.sin(angle) * distance)
 end
 
-local function spawnSquad(withOfficer: boolean)
-	local center = pickSquadCenter()
+local function spawnButai(withJonin: boolean)
+	local center = pickButaiCenter()
 	if not center then
 		return
 	end
 
-	local count = math.min(Config.Spawner.SquadSize, Config.Spawner.MaxAlive - aliveCount)
+	local count = math.min(Config.Spawner.ButaiSize, Config.Spawner.MaxAlive - aliveCount)
 	for i = 1, count do
 		local offset = Vector3.new(math.random(-8, 8), 0, math.random(-8, 8))
-		local kind = if withOfficer and i == 1 then "Officer" else "Soldier"
+		local kind = if withJonin and i == 1 then "Jonin" else "Genin"
 		spawnEnemy(kind, center + offset)
 	end
 end
 
--- 攻撃側から呼ばれる被ダメージ処理。KO はとどめを刺したプレイヤーに付く
+-- 攻撃側から呼ばれる被ダメージ処理。撃破数はとどめを刺したプレイヤーに付く
 function EnemyService.damage(model: Model, amount: number, attacker: Player, knockback: Vector3?)
 	local enemy = enemies[model]
 	if not enemy or enemy.humanoid.Health <= 0 then
@@ -201,12 +201,12 @@ function EnemyService.start()
 	end
 
 	task.spawn(function()
-		local squadCount = 0
+		local butaiCount = 0
 		while true do
-			task.wait(Config.Spawner.SquadInterval)
+			task.wait(Config.Spawner.ButaiInterval)
 			if aliveCount < Config.Spawner.MaxAlive then
-				squadCount += 1
-				spawnSquad(squadCount % Config.Spawner.OfficerEvery == 0)
+				butaiCount += 1
+				spawnButai(butaiCount % Config.Spawner.JoninEvery == 0)
 			end
 		end
 	end)

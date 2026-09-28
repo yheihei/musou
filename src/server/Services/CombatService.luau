@@ -16,7 +16,7 @@ type CombatState = {
 	comboIndex: number,
 	lastAttack: number,
 	busyUntil: number,
-	musouActive: boolean,
+	ougiActive: boolean,
 }
 
 local CombatService = {}
@@ -24,8 +24,8 @@ local CombatService = {}
 local states: { [Player]: CombatState } = {}
 
 local SLASH_COLOR = Color3.fromRGB(255, 230, 150)
-local CHARGE_COLOR = Color3.fromRGB(120, 200, 255)
-local MUSOU_COLOR = Color3.fromRGB(255, 90, 40)
+local CHARGE_KOGEKI_COLOR = Color3.fromRGB(120, 200, 255)
+local OUGI_COLOR = Color3.fromRGB(255, 90, 40)
 
 local function getRoot(player: Player): BasePart?
 	local character = player.Character
@@ -49,7 +49,7 @@ local function hitAll(player: Player, origin: Vector3, targets: { Model }, damag
 	for _, model in targets do
 		if EnemyService.damage(model, damage, player, knockbackFrom(origin, model, knockback)) then
 			Vfx.hit(model)
-			PlayerService.addMusou(player, Config.Musou.GainPerHit)
+			PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
 		end
 	end
 end
@@ -70,26 +70,26 @@ local function doAttack(player: Player, state: CombatState, root: BasePart, now:
 	hitAll(player, root.Position, targets, step.Damage, step.Knockback)
 end
 
-local function doCharge(player: Player, state: CombatState, root: BasePart, now: number)
-	local charge = Config.Charge
+local function doChargeKogeki(player: Player, state: CombatState, root: BasePart, now: number)
+	local chargeKogeki = Config.ChargeKogeki
 	state.comboIndex = 0
-	state.busyUntil = now + charge.Cooldown
+	state.busyUntil = now + chargeKogeki.Cooldown
 
-	Vfx.ring(root.Position, charge.Radius, CHARGE_COLOR)
-	local targets = Hitbox.sphere(root.Position, charge.Radius, EnemyService.getFolder())
-	hitAll(player, root.Position, targets, charge.Damage, charge.Knockback)
+	Vfx.ring(root.Position, chargeKogeki.Radius, CHARGE_KOGEKI_COLOR)
+	local targets = Hitbox.sphere(root.Position, chargeKogeki.Radius, EnemyService.getFolder())
+	hitAll(player, root.Position, targets, chargeKogeki.Damage, chargeKogeki.Knockback)
 end
 
-local function doMusou(player: Player, state: CombatState, now: number)
-	local musou = Config.Musou
-	if PlayerService.getMusou(player) < musou.MaxGauge then
+local function doOugi(player: Player, state: CombatState, now: number)
+	local ougi = Config.Ougi
+	if PlayerService.getOugiGauge(player) < ougi.MaxGauge then
 		return
 	end
 
-	PlayerService.resetMusou(player)
-	state.musouActive = true
+	PlayerService.resetOugiGauge(player)
+	state.ougiActive = true
 	state.comboIndex = 0
-	state.busyUntil = now + musou.Pulses * musou.PulseInterval
+	state.busyUntil = now + ougi.Pulses * ougi.PulseInterval
 
 	local character = player.Character
 	if character then
@@ -97,29 +97,29 @@ local function doMusou(player: Player, state: CombatState, now: number)
 	end
 
 	task.spawn(function()
-		for _ = 1, musou.Pulses do
+		for _ = 1, ougi.Pulses do
 			local root = getRoot(player)
 			if not root then
 				break
 			end
-			Vfx.ring(root.Position, musou.Radius, MUSOU_COLOR)
-			local targets = Hitbox.sphere(root.Position, musou.Radius, EnemyService.getFolder())
+			Vfx.ring(root.Position, ougi.Radius, OUGI_COLOR)
+			local targets = Hitbox.sphere(root.Position, ougi.Radius, EnemyService.getFolder())
 			for _, model in targets do
 				if
 					EnemyService.damage(
 						model,
-						musou.DamagePerPulse,
+						ougi.DamagePerPulse,
 						player,
-						knockbackFrom(root.Position, model, musou.Knockback)
+						knockbackFrom(root.Position, model, ougi.Knockback)
 					)
 				then
 					Vfx.hit(model)
 				end
 			end
-			task.wait(musou.PulseInterval)
+			task.wait(ougi.PulseInterval)
 		end
 
-		state.musouActive = false
+		state.ougiActive = false
 		if character then
 			character:SetAttribute("Invulnerable", nil)
 		end
@@ -132,14 +132,14 @@ local function onAction(player: Player, action: unknown)
 	end
 	local state = states[player]
 	local root = getRoot(player)
-	if not state or not root or state.musouActive then
+	if not state or not root or state.ougiActive then
 		return
 	end
 
 	local now = os.clock()
-	-- 無双乱舞は攻撃の硬直中でも割り込める
-	if action == Actions.Musou then
-		doMusou(player, state, now)
+	-- 奥義は攻撃の硬直中でも割り込める
+	if action == Actions.Ougi then
+		doOugi(player, state, now)
 		return
 	end
 	if now < state.busyUntil then
@@ -148,8 +148,8 @@ local function onAction(player: Player, action: unknown)
 
 	if action == Actions.Attack then
 		doAttack(player, state, root, now)
-	elseif action == Actions.Charge then
-		doCharge(player, state, root, now)
+	elseif action == Actions.ChargeKogeki then
+		doChargeKogeki(player, state, root, now)
 	end
 end
 
@@ -158,7 +158,7 @@ function CombatService.start()
 	remote.OnServerEvent:Connect(onAction)
 
 	local function track(player: Player)
-		states[player] = { comboIndex = 0, lastAttack = 0, busyUntil = 0, musouActive = false }
+		states[player] = { comboIndex = 0, lastAttack = 0, busyUntil = 0, ougiActive = false }
 	end
 	Players.PlayerAdded:Connect(track)
 	for _, player in Players:GetPlayers() do
