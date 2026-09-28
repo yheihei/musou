@@ -1,5 +1,6 @@
 {
   "name": "musou",
+  "globIgnorePaths": ["**/*.spec.luau"],
   "tree": {
     "$className": "DataModel",
     "ReplicatedStorage": {
