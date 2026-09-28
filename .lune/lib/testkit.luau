@@ -53,24 +53,37 @@ local function format(value: any, depth: number?): string
 	return "{ " .. table.concat(parts, ", ") .. " }"
 end
 
-local function deepEqual(a: any, b: any): boolean
-	if a == b then
-		return true
+-- 最初に食い違った場所のパスを返す。一致したら nil
+local function firstDifference(actual: any, expected: any, path: string): string?
+	if actual == expected then
+		return nil
 	end
-	if type(a) ~= "table" or type(b) ~= "table" then
-		return false
+	if type(actual) ~= "table" or type(expected) ~= "table" then
+		return path
 	end
-	for key, value in a do
-		if not deepEqual(value, b[key]) then
-			return false
+	for key, value in expected do
+		local found = firstDifference(actual[key], value, `{path}.{tostring(key)}`)
+		if found then
+			return found
 		end
 	end
-	for key in b do
-		if a[key] == nil then
-			return false
+	for key in actual do
+		if expected[key] == nil then
+			return `{path}.{tostring(key)}`
 		end
 	end
-	return true
+	return nil
+end
+
+local function valueAt(root: any, path: string): any
+	local value = root
+	for key in string.gmatch(path, "%.([^%.]+)") do
+		if type(value) ~= "table" then
+			return nil
+		end
+		value = if value[key] ~= nil then value[key] else value[tonumber(key)]
+	end
+	return value
 end
 
 function testkit.expect(actual: any): Expectation
@@ -81,8 +94,15 @@ function testkit.expect(actual: any): Expectation
 			end
 		end,
 		toEqual = function(expected: any)
-			if not deepEqual(actual, expected) then
+			local path = firstDifference(actual, expected, "")
+			if path == "" then
 				error(`expected {format(expected)}, got {format(actual)}`, 2)
+			elseif path then
+				local where = string.sub(path, 2)
+				error(
+					`differs at {where}: expected {format(valueAt(expected, path))}, got {format(valueAt(actual, path))}`,
+					2
+				)
 			end
 		end,
 		toBeNear = function(expected: number, tolerance: number?)
