@@ -3,7 +3,7 @@
 --
 -- 節の足し方
 -- 1. 機能ごとに節を1つ足す。節名は CONTEXT.md の語の識別子（ADR 0005）にし、
---    CONTEXT.md に無い機能は英語にする（Player、Combo など）
+--    CONTEXT.md に無い機能は英語にする（Stats、Combo など）
 -- 2. 節の型を `export type <節名>Section` で公開し、`Config` 型に同じ名前で足す
 -- 3. 節の前に見出しのコメントを置き、何に使う値かを書く
 -- 4. 値は数値・文字列・真偽値と、それらの表だけにする
@@ -11,9 +11,19 @@
 -- 5. Config.spec.luau は、節の整理で値が変わっていないことを確かめるスナップショットを持つ
 --    値を調整したときは、同じ変更でスナップショットも直す
 
-export type PlayerSection = {
-	WalkSpeed: number,
+-- キャラクター1人の能力値
+export type StatValues = {
 	MaxHealth: number,
+	Attack: number,
+	Defense: number,
+	WalkSpeed: number,
+	AttackSpeed: number,
+}
+
+export type StatsSection = {
+	Characters: { [string]: StatValues },
+	DefenseHalf: number,
+	MinDamage: number,
 }
 
 export type ComboStep = {
@@ -89,7 +99,7 @@ export type HikeiSection = {
 }
 
 export type Config = {
-	Player: PlayerSection,
+	Stats: StatsSection,
 	Combo: ComboSection,
 	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
@@ -101,10 +111,19 @@ export type Config = {
 }
 
 local Config: Config = {
-	-- プレイヤーのキャラクター。移動速度と体力
-	Player = {
-		WalkSpeed = 24,
-		MaxHealth = 300,
+	-- 能力値と与ダメージの計算。能力値の補正は Stats.luau が足す
+	Stats = {
+		-- 操作キャラクターの基本の能力値。キャラクター ID ごとに置く
+		-- AttackSpeed は攻撃の速さの倍率で、1 が標準、小さいほど遅い
+		Characters = {
+			Jin = { MaxHealth = 300, Attack = 12, Defense = 10, WalkSpeed = 24, AttackSpeed = 1 },
+			Torika = { MaxHealth = 270, Attack = 11, Defense = 8, WalkSpeed = 26, AttackSpeed = 1.1 },
+			Sekishusai = { MaxHealth = 320, Attack = 13, Defense = 12, WalkSpeed = 23, AttackSpeed = 1 },
+			-- 金鬼は重く遅い。攻撃の速さを落とし、威力を上げる
+			KanaOni = { MaxHealth = 360, Attack = 16, Defense = 14, WalkSpeed = 22, AttackSpeed = 0.8 },
+		},
+		DefenseHalf = 100, -- 防御がこの値のとき、受けるダメージが半分になる
+		MinDamage = 1, -- 与ダメージの下限
 	},
 
 	-- 通常攻撃のコンボ。1段ずつ順に出て、ComboResetTime 秒以内に次を押すと繋がる

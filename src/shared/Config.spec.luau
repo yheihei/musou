@@ -7,9 +7,15 @@ local test, expect = testkit.test, testkit.expect
 -- 節を整理する前の Config.luau の値を書き写したもの。
 -- 下忍と上忍の色（Color3）は EnemyService へ移したので含めない。
 local SNAPSHOT = {
-	Player = {
-		WalkSpeed = 24,
-		MaxHealth = 300,
+	Stats = {
+		Characters = {
+			Jin = { MaxHealth = 300, Attack = 12, Defense = 10, WalkSpeed = 24, AttackSpeed = 1 },
+			Torika = { MaxHealth = 270, Attack = 11, Defense = 8, WalkSpeed = 26, AttackSpeed = 1.1 },
+			Sekishusai = { MaxHealth = 320, Attack = 13, Defense = 12, WalkSpeed = 23, AttackSpeed = 1 },
+			KanaOni = { MaxHealth = 360, Attack = 16, Defense = 14, WalkSpeed = 22, AttackSpeed = 0.8 },
+		},
+		DefenseHalf = 100,
+		MinDamage = 1,
 	},
 	Combo = {
 		ComboResetTime = 0.8,

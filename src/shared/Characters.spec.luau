@@ -35,6 +35,12 @@ test("M1 の操作キャラクター4人は伊賀に属する", function()
 	end
 end)
 
+test("選ぶ前のプレイヤーが使うキャラクターは操作キャラクター", function()
+	local character = Characters.get(Characters.DEFAULT_ID)
+	expect(character ~= nil).toBe(true)
+	expect((character :: Characters.Character).playable).toBe(true)
+end)
+
 test("クランの操作キャラクターを ID の順に引ける", function()
 	local ids = {}
 	for _, character in Characters.playableOf("Iga") do

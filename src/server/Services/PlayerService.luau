@@ -1,14 +1,31 @@
 --!strict
--- プレイヤーのステータス管理。撃破数と奥義ゲージは Player の Attribute に持たせて
--- クライアントへ自動で複製させる。
+-- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージは Player の Attribute に
+-- 持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値を Humanoid に反映する。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
 local PlayerService = {}
+
+-- 使うキャラクターの ID。Attribute が無いか操作キャラクターでなければ既定のキャラクター
+function PlayerService.getCharacterId(player: Player): string
+	local id = player:GetAttribute("CharacterId")
+	if type(id) == "string" and Stats.baseOf(id) then
+		return id
+	end
+	return Characters.DEFAULT_ID
+end
+
+-- 使うキャラクターの能力値。補正はまだ無い
+function PlayerService.getStats(player: Player): Stats.Values
+	local base = Stats.baseOf(PlayerService.getCharacterId(player)) :: Stats.Values
+	return Stats.compute(base, {})
+end
 
 function PlayerService.addGekihasu(player: Player)
 	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + 1)
@@ -29,9 +46,10 @@ end
 
 local function onCharacterAdded(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
-	humanoid.WalkSpeed = Config.Player.WalkSpeed
-	humanoid.MaxHealth = Config.Player.MaxHealth
-	humanoid.Health = Config.Player.MaxHealth
+	local stats = PlayerService.getStats(player)
+	humanoid.WalkSpeed = stats.WalkSpeed
+	humanoid.MaxHealth = stats.MaxHealth
+	humanoid.Health = stats.MaxHealth
 
 	local lastHealth = humanoid.Health
 	humanoid.HealthChanged:Connect(function(health)
@@ -43,6 +61,9 @@ local function onCharacterAdded(player: Player, character: Model)
 end
 
 local function onPlayerAdded(player: Player)
+	if player:GetAttribute("CharacterId") == nil then
+		player:SetAttribute("CharacterId", Characters.DEFAULT_ID)
+	end
 	player:SetAttribute("Gekihasu", 0)
 	player:SetAttribute("OugiGauge", 0)
 
@@ -55,6 +76,29 @@ local function onPlayerAdded(player: Player)
 end
 
 local function registerDebugCommands()
+	DebugCommand.register(
+		"SetCharacter",
+		"<プレイヤー名> <キャラクター ID>",
+		"使うキャラクターを変えて出現し直す",
+		function(name, characterId)
+			local player = DebugCommand.findPlayer(name)
+			if type(characterId) ~= "string" or not Stats.baseOf(characterId) then
+				local ids = {}
+				for id in Config.Stats.Characters do
+					table.insert(ids, id)
+				end
+				table.sort(ids)
+				error(
+					`キャラクター ID は {table.concat(ids, "、")} のどれか（{tostring(characterId)}）`,
+					0
+				)
+			end
+			player:SetAttribute("CharacterId", characterId)
+			player:LoadCharacter()
+			local stats = PlayerService.getStats(player)
+			return `{player.Name} を {characterId} にした（体力 {stats.MaxHealth}、移動速度 {stats.WalkSpeed}）`
+		end
+	)
 	DebugCommand.register(
 		"SetGekihasu",
 		"<プレイヤー名> <撃破数>",

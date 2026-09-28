@@ -21,6 +21,9 @@ local Characters = {}
 
 Characters.clanIds = { "Iga", "Koga", "Fuma", "Saika" } :: { ClanId }
 
+-- キャラクターを選ぶ前のプレイヤーが使うキャラクター
+Characters.DEFAULT_ID = "Jin"
+
 local definitions: { [string]: Character } = {
 	Jin = {
 		id = "Jin",
