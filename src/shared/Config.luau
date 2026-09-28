@@ -70,6 +70,20 @@ export type SpawnerSection = {
 	CorpseLifetime: number,
 }
 
+export type KosenSection = {
+	Zensenhaba: number,
+	ReserveWeight: number,
+	ShikiEffect: number,
+	ShikiHoseiMin: number,
+	ShikiHoseiMax: number,
+	LossRate: number,
+	MaxStep: number,
+	GunStrength: {
+		Mikatagun: number,
+		Tekigun: number,
+	},
+}
+
 export type Config = {
 	Player: PlayerSection,
 	Combo: ComboSection,
@@ -78,6 +92,7 @@ export type Config = {
 	Genin: EnemySection,
 	Jonin: EnemySection,
 	Spawner: SpawnerSection,
+	Kosen: KosenSection,
 }
 
 local Config: Config = {
@@ -151,6 +166,22 @@ local Config: Config = {
 		AggroRange = 80,
 		AITickInterval = 0.25,
 		CorpseLifetime = 2,
+	},
+
+	-- 交戦。部隊どうしの押し合いの損害を Kosen.luau で計算する
+	Kosen = {
+		Zensenhaba = 10, -- 一度に刃を交えられる兵数の上限
+		ReserveWeight = 0.3, -- 前線の後ろに控える兵1人が押す力に加わる割合
+		ShikiEffect = 0.01, -- 士気の差 1 あたりの押す力の増減の割合
+		ShikiHoseiMin = 0.3, -- 士気の差による押す力の倍率の下限
+		ShikiHoseiMax = 2, -- 士気の差による押す力の倍率の上限
+		LossRate = 0.02, -- 押す力 1 が相手に与える 1 秒あたりの損害（兵数）
+		MaxStep = 0.5, -- 1 回に進める時間の上限（秒）。長い経過時間はこの幅に刻んで計算する
+		-- 軍ごとの強さの倍率。味方軍は敵軍よりやや弱くする
+		GunStrength = {
+			Mikatagun = 0.9,
+			Tekigun = 1,
+		},
 	},
 }
 

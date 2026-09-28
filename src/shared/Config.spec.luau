@@ -65,6 +65,19 @@ local SNAPSHOT = {
 		AITickInterval = 0.25,
 		CorpseLifetime = 2,
 	},
+	Kosen = {
+		Zensenhaba = 10,
+		ReserveWeight = 0.3,
+		ShikiEffect = 0.01,
+		ShikiHoseiMin = 0.3,
+		ShikiHoseiMax = 2,
+		LossRate = 0.02,
+		MaxStep = 0.5,
+		GunStrength = {
+			Mikatagun = 0.9,
+			Tekigun = 1,
+		},
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }
