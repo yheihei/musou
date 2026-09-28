@@ -123,6 +123,12 @@ function testkit.expect(actual: any): Expectation
 	}
 end
 
+-- リポジトリの直下からの相対パスで JSON を読む（default.project.json との突き合わせなどに使う）。
+-- ファイルの読み込みは .lune/test.luau が差し込む
+function testkit.readJson(_path: string): any
+	error("testkit.readJson は lune run test から実行したときだけ使える")
+end
+
 function testkit.test(name: string, fn: () -> ())
 	-- fn は値を返さないので、エラーの値を受け取れるよう any を返す関数として扱う
 	local ok, err = pcall(fn :: () -> any)

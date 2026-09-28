@@ -5,8 +5,13 @@
 
 local fs = require("@lune/fs")
 local process = require("@lune/process")
+local serde = require("@lune/serde")
 
 local testkit = require("./lib/testkit")
+
+testkit.readJson = function(path: string): any
+	return serde.decode("json", fs.readFile(path))
+end
 
 local ROOT = "src/shared"
 
