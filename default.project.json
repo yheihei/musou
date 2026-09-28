@@ -76,7 +76,7 @@
         "$properties": {
           "Anchored": true,
           "Size": [512, 4, 512],
-          "Position": [0, -2, 0],
+          "Position": [0, -1.9, 0],
           "Material": "Grass",
           "Color": [0.42, 0.55, 0.28],
           "TopSurface": "Smooth",
