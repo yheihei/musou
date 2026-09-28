@@ -76,17 +76,41 @@ test("定義にない文字列は拒否する", function()
 end)
 ```
 
+### テスト用のサーバーコマンド
+
+動いているサーバーのサービスを、`ServerStorage.DebugCommand`（BindableFunction）から操作できる。
+Studio MCP の `execute_luau`（Server）、テストプレイ中のコマンドバー、公開サーバーの開発者コンソールのサーバーのコマンドから呼ぶ。
+`ServerStorage` はクライアントへ複製されず、公開サーバーの開発者コンソールでサーバーのコマンドを実行できるのは所有者だけ。
+
+```lua
+local DebugCommand = game:GetService("ServerStorage").DebugCommand
+print(DebugCommand:Invoke("Help")) -- 登録済みのコマンドの一覧
+print(DebugCommand:Invoke("SetOugiGauge", "Player1", 100))
+```
+
+- 未登録の名前を渡すと、登録済みのコマンドの一覧が返る
+- コマンドが失敗したときは、エラーを投げずに失敗の内容を文字列で返す
+- プレイヤーは名前（`Player.Name`）で指定する
+
+コマンドは各サービスが `DebugCommand.register(名前, 引数の説明, 説明, 関数)` で登録する（`src/server/DebugCommand.luau`）。
+
+- 名前は動詞から始める PascalCase にする（`SetOugiGauge`、`DumpParty`）
+- Remote と同じ処理を呼ぶコマンドは、Remote と同じ名前にする（`SelectStage`、`Shutsugeki`）
+- プレイヤーを対象にするコマンドは、1つ目の引数をプレイヤーの名前にする
+- 戻り値は、何をしたかが読める文字列か、`HttpService:JSONEncode` で文字列にできる表にする
+
 ## ディレクトリ構成
 
 ```
 src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
+    DebugCommand  テスト用のサーバーコマンドの窓口
     Services/  PlayerService / EnemyService / CombatService
     Combat/    当たり判定と仮エフェクト
   client/   StarterPlayerScripts.Client 入力と HUD
 .lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
-default.project.json  Rojo のインスタンスツリー定義（Remotes・地形もここ）
+default.project.json  Rojo のインスタンスツリー定義（Remotes・ServerStorage.DebugCommand・地形もここ）
 ```
 
 ## 設計メモ

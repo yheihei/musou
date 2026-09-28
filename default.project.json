@@ -19,6 +19,11 @@
         "$path": "src/server"
       }
     },
+    "ServerStorage": {
+      "DebugCommand": {
+        "$className": "BindableFunction"
+      }
+    },
     "StarterPlayer": {
       "StarterPlayerScripts": {
         "Client": {
