@@ -22,7 +22,7 @@ Studio 上で直接スクリプトを編集しても Git には残らないの�
 rokit install
 ```
 
-Homebrew で入れる場合は `brew install rojo selene stylua`（バージョンは `rokit.toml` に合わせる）。
+Homebrew で入れる場合は `brew install rojo selene stylua lune`（バージョンは `rokit.toml` に合わせる）。
 
 ### Studio と同期する
 
@@ -40,15 +40,41 @@ Homebrew で入れる場合は `brew install rojo selene stylua`（バージョ�
 
 3. Studio でプレースを開き、プラグインタブの Rojo → Connect を押す
 
-### Lint・フォーマット・ビルド
+### Lint・フォーマット・テスト・ビルド
 
 ```bash
 stylua src
 selene src
+lune run test
 rojo build -o musou.rbxl
 ```
 
+`.lune` を触ったときは `stylua .lune` も通す。
 CI（`.github/workflows/ci.yml`）で同じチェックを PR ごとに実行する。
+
+### 単体テスト
+
+Roblox に依存しない計算は `src/shared` に置き、[Lune](https://lune-org.github.io/docs) でテストする。
+
+- テストは対象と同じ場所に `*.spec.luau` で置く（`Actions.luau` なら `Actions.spec.luau`）
+- spec は `default.project.json` の `globIgnorePaths` で同期とビルドから外している
+- `test` と `expect` は `require("@testkit")` で読む（中身は `.lune/lib/testkit.luau`）
+- `expect` で使えるのは `toBe`・`toEqual`・`toBeNear`・`toThrow`
+- `src/shared` の中の `require` は文字列のパス（`require("./Config")`）で書く
+- 文字列のパスは Roblox と Lune のどちらでも同じモジュールを指す
+- `lune run test Actions` のように引数を渡すと、パスにその文字列を含む spec だけを実行する
+
+```lua
+--!strict
+local Actions = require("./Actions")
+local testkit = require("@testkit")
+
+local test, expect = testkit.test, testkit.expect
+
+test("定義にない文字列は拒否する", function()
+	expect(Actions.isValid("Jump")).toBe(false)
+end)
+```
 
 ## ディレクトリ構成
 
@@ -59,6 +85,7 @@ src/
     Services/  PlayerService / EnemyService / CombatService
     Combat/    当たり判定と仮エフェクト
   client/   StarterPlayerScripts.Client 入力と HUD
+.lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
 default.project.json  Rojo のインスタンスツリー定義（Remotes・地形もここ）
 ```
 
