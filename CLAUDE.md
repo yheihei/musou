@@ -4,13 +4,23 @@
 
 ## コマンド
 
-- `rojo serve` Studio と同期（Studio 側で Rojo → Connect）
+- `rojo serve` Studio と同期（反映を頼まれたときだけ。Studio 側で Rojo → Connect）
 - `stylua src` フォーマット（`.lune` を触ったときは `stylua .lune` も）
 - `selene src` Lint
 - `lune run test` 単体テスト（`src/shared` の `*.spec.luau`）
 - `rojo build -o musou.rbxl` ビルド確認
 
 変更後は stylua → selene → lune → rojo build の順に通すこと。CI も同じ内容。
+
+## Studio
+
+- 作業の最初に `rojo serve` を起動しない（起動は `src/` の反映を頼まれたときだけ）
+- 作業の最初に `lsof -nP -iTCP:34872` で ESTABLISHED を確かめる（接続済みなら、保存した時点で Edit に同期される）
+- Connect は人間が Studio で押す（プラグインは自動では接続しない）
+- 確認はテストプレイ中に `execute_luau` で Server と Client のコードを差し替えて行う
+- 編集中のプレース（Edit）にスクリプトを書き込まない（Team Create のため、クラウドに保存される）
+- 差し替えるコードは `rojo sourcemap --include-non-scripts` から生成する
+- `list_roblox_studios` の name が null なら、プレースは開いていない（スタート画面）
 
 ## 規約
 
