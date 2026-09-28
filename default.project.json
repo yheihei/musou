@@ -11,6 +11,45 @@
         "$className": "Folder",
         "Action": {
           "$className": "RemoteEvent"
+        },
+        "SelectStage": {
+          "$className": "RemoteEvent"
+        },
+        "SelectCharacter": {
+          "$className": "RemoteEvent"
+        },
+        "SelectHikei": {
+          "$className": "RemoteEvent"
+        },
+        "Shutsugeki": {
+          "$className": "RemoteEvent"
+        },
+        "Retry": {
+          "$className": "RemoteEvent"
+        },
+        "ReturnToLobby": {
+          "$className": "RemoteEvent"
+        },
+        "SkipEventScene": {
+          "$className": "RemoteEvent"
+        },
+        "PartyState": {
+          "$className": "RemoteEvent"
+        },
+        "SelectionRejected": {
+          "$className": "RemoteEvent"
+        },
+        "PlayEventScene": {
+          "$className": "RemoteEvent"
+        },
+        "SkipCount": {
+          "$className": "RemoteEvent"
+        },
+        "PlaySerifu": {
+          "$className": "RemoteEvent"
+        },
+        "StageResult": {
+          "$className": "RemoteEvent"
         }
       }
     },
