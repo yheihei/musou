@@ -50,7 +50,7 @@ rojo build -o musou.rbxl
 ```
 
 `.lune` を触ったときは `stylua .lune` も通す。
-CI（`.github/workflows/ci.yml`）で同じチェックを PR ごとに実行する。
+CI（`.github/workflows/ci.yml`）で同じチェックを main への push ごとに実行する。
 
 ### 単体テスト
 
