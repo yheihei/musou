@@ -49,6 +49,7 @@ export type RejectReason =
 	| "Shuryo" -- 首領
 	| "CharacterTaken" -- パーティーの他のメンバーが選んでいる
 	| "UnknownHikei" -- 存在しない秘計
+	| "HikeiDuplicate" -- 同じ秘計を2枚持ち込もうとしている
 	| "HikeiTaken" -- パーティーの他のメンバーが選んでいる
 	| "HikeiLimit" -- 持ち込みの上限を超える
 	| "MembersNotReady" -- キャラクターを選んでいないメンバーがいる
@@ -66,6 +67,7 @@ RemoteSchema.rejectReasons = {
 	"Shuryo",
 	"CharacterTaken",
 	"UnknownHikei",
+	"HikeiDuplicate",
 	"HikeiTaken",
 	"HikeiLimit",
 	"MembersNotReady",

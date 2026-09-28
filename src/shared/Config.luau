@@ -84,6 +84,10 @@ export type KosenSection = {
 	},
 }
 
+export type HikeiSection = {
+	Duration: { [string]: number },
+}
+
 export type Config = {
 	Player: PlayerSection,
 	Combo: ComboSection,
@@ -93,6 +97,7 @@ export type Config = {
 	Jonin: EnemySection,
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
+	Hikei: HikeiSection,
 }
 
 local Config: Config = {
@@ -181,6 +186,18 @@ local Config: Config = {
 		GunStrength = {
 			Mikatagun = 0.9,
 			Tekigun = 1,
+		},
+	},
+
+	-- 秘計。持ち込みの上限枚数はボタンの数に合わせた仕様値なので Hikei.luau に置く
+	Hikei = {
+		-- 効果時間（秒）。ここに無い秘計の効果は期限なし（兵糧庫と爆破罠は拠点を失うまで残る）
+		Duration = {
+			Fukuhei = 120, -- 伏兵部隊が潜んでいられる時間
+			Rakuseki = 90, -- 岩が道を塞いでいる時間
+			Chohatsu = 15, -- 相手の上忍を誘い出す時間
+			Kishinka = 60,
+			Daikatsu = 30, -- 動揺させる時間
 		},
 	},
 }

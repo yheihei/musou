@@ -78,6 +78,15 @@ local SNAPSHOT = {
 			Tekigun = 1,
 		},
 	},
+	Hikei = {
+		Duration = {
+			Fukuhei = 120,
+			Rakuseki = 90,
+			Chohatsu = 15,
+			Kishinka = 60,
+			Daikatsu = 30,
+		},
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }
