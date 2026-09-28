@@ -8,7 +8,17 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local PlayerService = require(script.Parent.PlayerService)
 
-type EnemyDef = typeof(Config.Enemies.Genin)
+type EnemyDef = Config.EnemySection
+
+-- 湧かせる敵の種類。能力値は Config.luau、見分けるための色はここに置く
+local ENEMY_DEFS: { [string]: EnemyDef } = {
+	Genin = Config.Genin,
+	Jonin = Config.Jonin,
+}
+local ENEMY_COLORS: { [string]: Color3 } = {
+	Genin = Color3.fromRGB(70, 90, 160),
+	Jonin = Color3.fromRGB(170, 40, 40),
+}
 
 type Enemy = {
 	model: Model,
@@ -27,11 +37,12 @@ local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
+	local color = ENEMY_COLORS[kind]
 	local description = Instance.new("HumanoidDescription")
-	description.HeadColor = def.Color
-	description.TorsoColor = def.Color
-	description.LeftArmColor = def.Color
-	description.RightArmColor = def.Color
+	description.HeadColor = color
+	description.TorsoColor = color
+	description.LeftArmColor = color
+	description.RightArmColor = color
 	description.LeftLegColor = Color3.fromRGB(40, 40, 40)
 	description.RightLegColor = Color3.fromRGB(40, 40, 40)
 	description.HeightScale = def.Scale
@@ -112,7 +123,7 @@ local function onEnemyDied(enemy: Enemy)
 end
 
 local function spawnEnemy(kind: string, position: Vector3)
-	local def = (Config.Enemies :: any)[kind] :: EnemyDef
+	local def = ENEMY_DEFS[kind]
 	local model = templates[kind]:Clone()
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
@@ -196,7 +207,7 @@ function EnemyService.start()
 	enemiesFolder.Name = "Enemies"
 	enemiesFolder.Parent = workspace
 
-	for kind, def in Config.Enemies do
+	for kind, def in ENEMY_DEFS do
 		templates[kind] = buildTemplate(kind, def)
 	end
 
