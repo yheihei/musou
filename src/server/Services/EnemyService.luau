@@ -6,6 +6,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Ground = require(ReplicatedStorage.Shared.Ground)
+local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PlayerService = require(script.Parent.PlayerService)
 
 type EnemyDef = Config.EnemySection
@@ -122,13 +124,17 @@ local function onEnemyDied(enemy: Enemy)
 	end)
 end
 
-local function spawnEnemy(kind: string, position: Vector3)
+-- (x, z) の地面の上に敵を1体出す。地面が無ければ出さずに nil を返す
+local function spawnEnemy(kind: string, x: number, z: number): Model?
 	local def = ENEMY_DEFS[kind]
 	local model = templates[kind]:Clone()
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
 
-	model:PivotTo(CFrame.new(position + Vector3.new(0, 5, 0)))
+	if not Ground.placeCharacter(model, x, z) then
+		model:Destroy()
+		return nil
+	end
 	model.Parent = enemiesFolder
 	-- ノックバックの挙動を安定させるため物理はサーバーが持つ
 	root:SetNetworkOwner(nil)
@@ -147,9 +153,11 @@ local function spawnEnemy(kind: string, position: Vector3)
 	humanoid.Died:Once(function()
 		onEnemyDied(enemy)
 	end)
+	return model
 end
 
-local function pickButaiCenter(): Vector3?
+-- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる
+local function pickButaiCenter(): Vector2?
 	local players = Players:GetPlayers()
 	local candidates = {}
 	for _, player in players do
@@ -166,7 +174,7 @@ local function pickButaiCenter(): Vector3?
 	local angle = math.random() * math.pi * 2
 	local distance = Config.Spawner.MinDistance
 		+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
-	return Vector3.new(base.X + math.cos(angle) * distance, 0, base.Z + math.sin(angle) * distance)
+	return Vector2.new(base.X + math.cos(angle) * distance, base.Z + math.sin(angle) * distance)
 end
 
 local function spawnButai(withJonin: boolean)
@@ -177,9 +185,8 @@ local function spawnButai(withJonin: boolean)
 
 	local count = math.min(Config.Spawner.ButaiSize, Config.Spawner.MaxAlive - aliveCount)
 	for i = 1, count do
-		local offset = Vector3.new(math.random(-8, 8), 0, math.random(-8, 8))
 		local kind = if withJonin and i == 1 then "Jonin" else "Genin"
-		spawnEnemy(kind, center + offset)
+		spawnEnemy(kind, center.X + math.random(-8, 8), center.Y + math.random(-8, 8))
 	end
 end
 
@@ -210,6 +217,23 @@ function EnemyService.start()
 	for kind, def in ENEMY_DEFS do
 		templates[kind] = buildTemplate(kind, def)
 	end
+
+	DebugCommand.register(
+		"SpawnEnemy",
+		"<Genin|Jonin> <x> <z>",
+		"地面の高さに合わせて敵を1体出す",
+		function(kind, x, z)
+			if type(kind) ~= "string" or not ENEMY_DEFS[kind] then
+				error("種類は Genin か Jonin で指定する", 0)
+			end
+			local model = spawnEnemy(kind, DebugCommand.toNumber(x, "x"), DebugCommand.toNumber(z, "z"))
+			if not model then
+				return "地面が見つからず出せなかった"
+			end
+			local position = model:GetPivot().Position
+			return string.format("%s を (%.1f, %.1f, %.1f) に出した", kind, position.X, position.Y, position.Z)
+		end
+	)
 
 	task.spawn(function()
 		local butaiCount = 0
