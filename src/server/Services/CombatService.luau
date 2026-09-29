@@ -2,7 +2,8 @@
 -- プレイヤーの攻撃の中身。通常攻撃・チャージ攻撃・奥義のタイムラインと判定を ActionService に登録する。
 -- 入力の受け取りと行動の状態遷移は ActionService が持ち、コンボの段数と当たり判定はここで決める。
 --
--- - 通常攻撃の段は武器種ごとに Config.luau の Bukishu 節にあり、キャラクターの武器種から引く
+-- - 通常攻撃の段とチャージ攻撃 C1〜C6 は武器種ごとに Config.luau の Bukishu 節にあり、キャラクターの武器種から引く
+-- - Attribute の ActionStep には、通常攻撃は段、チャージ攻撃は C の番号を書く
 -- - 時間はキャラクターの攻撃の速さで伸び縮みさせる（ActionState.scale）
 -- - 判定はタイムラインの Hits の時刻に出し、それまでに行動が変わっていたら出さない
 -- - 前進量は、発生から持続の終わりまでにサーバーの拘束で前へ動かす
@@ -137,27 +138,6 @@ local function perform(player: Player, t: number, timeline: ActionState.Timeline
 	end
 end
 
--- 発生の時刻になったら fn を呼ぶ。それまでに別の行動に変わっていたら呼ばない
-local function atStartup(player: Player, t: number, timeline: ActionState.Timeline, fn: () -> ())
-	if timeline.Startup <= 0 then
-		fn()
-		return
-	end
-	task.delay(timeline.Startup, function()
-		local _, startedAt = ActionService.current(player)
-		if startedAt == t then
-			fn()
-		end
-	end)
-end
-
-local function doChargeKogeki(player: Player, root: BasePart)
-	local chargeKogeki = Config.ChargeKogeki
-	Vfx.ring(root.Position, chargeKogeki.Radius, CHARGE_KOGEKI_COLOR)
-	local shape: HitShape.Shape = { kind = "Sphere", radius = chargeKogeki.Radius }
-	hitAll(player, Hitbox.originOf(root), shape, chargeKogeki.Damage, "Knockback", chargeKogeki.Knockback)
-end
-
 -- 奥義の攻撃を間隔ごとに出す。奥義の最中の無敵は Damage.luau が行動から判定する
 local function doOugi(player: Player)
 	local ougi = Config.Ougi
@@ -198,19 +178,18 @@ local function registerActions()
 		end,
 	})
 
+	-- チャージ攻撃。それまでに出した通常攻撃の段数で C1〜C6 に分かれ、出した後はコンボが途切れる
 	ActionService.register(Actions.ChargeKogeki, {
-		timeline = function()
-			return Config.Action.ChargeKogeki
+		timeline = function(player, t)
+			local set = bukishuOf(player)
+			return scaled(player, set.ChargeKogeki[Combo.chargeIndex(comboOf(player), t, #set.Attack)])
 		end,
 		begin = function(player, t, timeline)
+			local set = bukishuOf(player)
+			local index = Combo.chargeIndex(comboOf(player), t, #set.Attack)
 			combos[player] = Combo.new()
-			atStartup(player, t, timeline, function()
-				local root = getRoot(player)
-				if root then
-					doChargeKogeki(player, root)
-				end
-			end)
-			return nil
+			perform(player, t, timeline, CHARGE_KOGEKI_COLOR)
+			return index
 		end,
 	})
 

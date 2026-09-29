@@ -1,10 +1,10 @@
 --!strict
 -- 通常攻撃のコンボ。ここまでに続けて出した通常攻撃の段数を求める。
--- 次の通常攻撃は（段数 + 1）段目になる。途切れる時間は Config.luau の Combo 節にある。
--- 時刻は引数で受け取り、Roblox の API は使わない。
+-- 次の通常攻撃は（段数 + 1）段目、チャージ攻撃は C（段数 + 1）になる。
+-- 途切れる時間は Config.luau の Combo 節にある。時刻は引数で受け取り、Roblox の API は使わない。
 --
 -- - 前の段のキャンセル受付が始まってから ComboResetTime 秒を超えると、コンボは途切れる
--- - 最後の段の後と、途切れた後は段数 0（次は1段目）
+-- - 最後の段の後と、途切れた後は段数 0（次は1段目、チャージ攻撃は C1）
 
 local Config = require("./Config")
 
@@ -30,6 +30,11 @@ function Combo.count(state: State, now: number, stepCount: number, resetTime: nu
 		return 0
 	end
 	return state.step
+end
+
+-- 時刻 now に出すチャージ攻撃の番号（C1〜C6 の数字）。0〜5段の後は C1〜C6、6段目の後と途切れた後は C1
+function Combo.chargeIndex(state: State, now: number, stepCount: number, resetTime: number?): number
+	return Combo.count(state, now, stepCount, resetTime) + 1
 end
 
 -- 通常攻撃の step 段目を時刻 startedAt に始め、startedAt + cancelFrom から次を受け付けるときの状態

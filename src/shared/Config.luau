@@ -30,12 +30,6 @@ export type ComboSection = {
 	ComboResetTime: number,
 }
 
-export type ChargeKogekiSection = {
-	Damage: number,
-	Radius: number,
-	Knockback: number,
-}
-
 export type OugiSection = {
 	PerStock: number,
 	MaxStock: number,
@@ -99,6 +93,8 @@ export type ActionTimeline = {
 export type BukishuDef = {
 	-- 通常攻撃の段。1段目から順に並べる
 	Attack: { ActionTimeline },
+	-- チャージ攻撃。C1 から順に並べる。通常攻撃を n 段出した後は C(n+1) になる
+	ChargeKogeki: { ActionTimeline },
 }
 
 export type BukishuSection = {
@@ -108,7 +104,6 @@ export type BukishuSection = {
 
 export type ActionSection = {
 	BufferTime: number,
-	ChargeKogeki: ActionTimeline,
 	Ougi: ActionTimeline,
 	Flinch: ActionTimeline,
 	Down: ActionTimeline,
@@ -178,7 +173,6 @@ export type Config = {
 	Stats: StatsSection,
 	Combo: ComboSection,
 	Bukishu: BukishuSection,
-	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
 	Action: ActionSection,
 	Damage: DamageSection,
@@ -217,7 +211,7 @@ local Config: Config = {
 		ComboResetTime = 0.5,
 	},
 
-	-- 武器種ごとの技。同じ武器種のキャラクターで共有する（ADR 0004）。
+	-- 武器種ごとの技（通常攻撃6段とチャージ攻撃 C1〜C6）。同じ武器種のキャラクターで共有する（ADR 0004）。
 	-- 行動のタイムラインに判定（Hits）を足したもの。時間はキャラクターの攻撃の速さ（Stats 節の AttackSpeed）で割る
 	Bukishu = {
 		-- 手裏剣セット（刃・酉花）。近くを斬り、ときどき手裏剣を投げる
@@ -334,6 +328,225 @@ local Config: Config = {
 					},
 				},
 			},
+			ChargeKogeki = {
+				-- C1 踏み込んで蹴り飛ばす
+				{
+					Startup = 0.18,
+					Active = 0.1,
+					Recovery = 0.42,
+					CancelFrom = 0.7,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 9, Width = 8 },
+							Power = 2,
+							Reaction = "Knockback",
+							Knockback = 40,
+						},
+					},
+				},
+				-- C2 蹴り上げて打ち上げる
+				{
+					Startup = 0.14,
+					Active = 0.1,
+					Recovery = 0.46,
+					CancelFrom = 0.7,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 8, Angle = 120 },
+							Power = 1.6,
+							Reaction = "Launch",
+							Knockback = 50,
+						},
+					},
+				},
+				-- C3 蹴り上げてから跳んで追い打ちする
+				{
+					Startup = 0.14,
+					Active = 0.5,
+					Recovery = 0.4,
+					CancelFrom = 1.04,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 8 },
+							Power = 1.2,
+							Reaction = "Launch",
+							Knockback = 45,
+						},
+						{
+							Shape = { Kind = "Box", Range = 10, Width = 8, Height = 18 },
+							Delay = 0.12,
+							Repeat = 3,
+							Interval = 0.12,
+							Power = 0.5,
+							Reaction = "Launch",
+							Knockback = 20,
+						},
+					},
+				},
+				-- C4 煙玉を炸裂させて周りを吹き飛ばす
+				{
+					Startup = 0.2,
+					Active = 0.1,
+					Recovery = 0.5,
+					CancelFrom = 0.8,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Sphere", Radius = 11 },
+							Power = 1.8,
+							Reaction = "Knockback",
+							Knockback = 55,
+						},
+					},
+				},
+				-- C5 八方へ手裏剣を3回撒く
+				{
+					Startup = 0.12,
+					Active = 0.45,
+					Recovery = 0.4,
+					CancelFrom = 0.97,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 0,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 45,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 90,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 135,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 180,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 225,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 270,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 26, Width = 3, Speed = 120 },
+							Yaw = 315,
+							Repeat = 3,
+							Interval = 0.15,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+					},
+				},
+				-- C6 手裏剣の雨を前へ浴びせ、最後に周りを吹き飛ばす
+				{
+					Startup = 0.15,
+					Active = 0.6,
+					Recovery = 0.55,
+					CancelFrom = 1.3,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 34, Width = 3, Speed = 120 },
+							Yaw = -30,
+							Repeat = 3,
+							Interval = 0.1,
+							Power = 0.7,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+						{
+							Shape = { Kind = "Line", Length = 34, Width = 3, Speed = 120 },
+							Yaw = -15,
+							Repeat = 3,
+							Interval = 0.1,
+							Power = 0.7,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+						{
+							Shape = { Kind = "Line", Length = 34, Width = 3, Speed = 120 },
+							Yaw = 0,
+							Repeat = 3,
+							Interval = 0.1,
+							Power = 0.7,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+						{
+							Shape = { Kind = "Line", Length = 34, Width = 3, Speed = 120 },
+							Yaw = 15,
+							Repeat = 3,
+							Interval = 0.1,
+							Power = 0.7,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+						{
+							Shape = { Kind = "Line", Length = 34, Width = 3, Speed = 120 },
+							Yaw = 30,
+							Repeat = 3,
+							Interval = 0.1,
+							Power = 0.7,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+						{
+							Shape = { Kind = "Sphere", Radius = 12 },
+							Delay = 0.5,
+							Power = 3,
+							Reaction = "Knockback",
+							Knockback = 60,
+						},
+					},
+				},
+			},
 		},
 		-- 刀セット（石舟斎・金鬼）。前方の箱と扇で斬る。金鬼の重さは攻撃の速さで出す
 		Katana = {
@@ -435,14 +648,130 @@ local Config: Config = {
 					},
 				},
 			},
+			ChargeKogeki = {
+				-- C1 溜めてから突進して斬る
+				{
+					Startup = 0.2,
+					Active = 0.1,
+					Recovery = 0.45,
+					CancelFrom = 0.75,
+					Advance = 4,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 11, Width = 6 },
+							Power = 2.2,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+				-- C2 斬り上げて打ち上げる
+				{
+					Startup = 0.15,
+					Active = 0.1,
+					Recovery = 0.5,
+					CancelFrom = 0.75,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 9, Angle = 100 },
+							Power = 1.7,
+							Reaction = "Launch",
+							Knockback = 55,
+						},
+					},
+				},
+				-- C3 斬り上げてから跳んで追い打ち
+				{
+					Startup = 0.14,
+					Active = 0.5,
+					Recovery = 0.4,
+					CancelFrom = 1.04,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 8 },
+							Power = 1.3,
+							Reaction = "Launch",
+							Knockback = 45,
+						},
+						{
+							Shape = { Kind = "Box", Range = 9, Width = 9, Height = 18 },
+							Delay = 0.12,
+							Repeat = 3,
+							Interval = 0.12,
+							Power = 0.5,
+							Reaction = "Launch",
+							Knockback = 20,
+						},
+					},
+				},
+				-- C4 回転斬りで周りを吹き飛ばす
+				{
+					Startup = 0.2,
+					Active = 0.12,
+					Recovery = 0.5,
+					CancelFrom = 0.82,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 11, Angle = 360 },
+							Power = 1.9,
+							Reaction = "Knockback",
+							Knockback = 55,
+						},
+					},
+				},
+				-- C5 乱れ斬りの後に斬り払う
+				{
+					Startup = 0.12,
+					Active = 0.6,
+					Recovery = 0.4,
+					CancelFrom = 1.12,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 10, Width = 10 },
+							Repeat = 5,
+							Interval = 0.1,
+							Power = 0.5,
+							Reaction = "Flinch",
+							Knockback = 5,
+						},
+						{
+							Shape = { Kind = "Box", Range = 10, Width = 10 },
+							Delay = 0.55,
+							Power = 1.4,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+				-- C6 大上段から斬り下ろし、衝撃波で周りも吹き飛ばす
+				{
+					Startup = 0.3,
+					Active = 0.2,
+					Recovery = 0.6,
+					CancelFrom = 1.1,
+					Advance = 3,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 14, Width = 12 },
+							Power = 3.2,
+							Reaction = "Knockback",
+							Knockback = 65,
+						},
+						{
+							Shape = { Kind = "Sphere", Radius = 13 },
+							Delay = 0.1,
+							Power = 1.5,
+							Reaction = "Knockback",
+							Knockback = 50,
+						},
+					},
+				},
+			},
 		},
-	},
-
-	-- チャージ攻撃（右クリック / E）。周囲を吹き飛ばす
-	ChargeKogeki = {
-		Damage = 30,
-		Radius = 12,
-		Knockback = 60,
 	},
 
 	-- 奥義（Q）と奥義ゲージ。ストック1本で1回発動する。本数の計算は OugiGauge.luau にある
@@ -462,10 +791,9 @@ local Config: Config = {
 	-- 行動のタイムライン。状態遷移は ActionState.luau が計算する
 	-- Startup は判定が出るまで、Active は判定が出ている間、Recovery はその後の硬直の秒数。
 	-- 開始から CancelFrom 秒たつと次の行動を受け付ける。Advance は発生と持続の間に前へ進む量。
-	-- Interrupt の行動は、受付の前でも今の行動に割り込める。通常攻撃の段は Bukishu 節にある
+	-- Interrupt の行動は、受付の前でも今の行動に割り込める。通常攻撃とチャージ攻撃は Bukishu 節にある
 	Action = {
 		BufferTime = 0.4, -- 受け付けられなかった入力を先行入力として持っておく秒数
-		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
 		-- 持続は Ougi.Pulses × Ougi.PulseInterval と同じにする
 		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
 		-- 被弾の反応。吹き飛びと打ち上げはダウンにし、ダウンの後は起き上がりを続ける

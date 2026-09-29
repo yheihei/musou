@@ -250,11 +250,16 @@ test("引数の状態は書き換えない", function()
 end)
 
 test("Config の行動のタイムラインは長さが正で、受付は行動の中にある", function()
-	local all = table.clone(Config.Bukishu.Shuriken.Attack)
-	for _, timeline in Config.Bukishu.Katana.Attack do
-		table.insert(all, timeline)
+	local all = {}
+	for _, set in { Config.Bukishu.Shuriken, Config.Bukishu.Katana } do
+		for _, timeline in set.Attack do
+			table.insert(all, timeline)
+		end
+		for _, timeline in set.ChargeKogeki do
+			table.insert(all, timeline)
+		end
 	end
-	for _, name in { "ChargeKogeki", "Ougi", "Flinch", "Down", "GetUp" } do
+	for _, name in { "Ougi", "Flinch", "Down", "GetUp" } do
 		table.insert(all, (Config.Action :: any)[name])
 	end
 	for _, timeline in all do
