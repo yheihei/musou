@@ -45,6 +45,8 @@ local templates: { [string]: Model } = {}
 local radii: { [string]: number } = {}
 local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
+-- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
+local spawning = true
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -256,6 +258,33 @@ function EnemyService.start()
 	)
 
 	DebugCommand.register(
+		"SetSpawning",
+		"<true|false>",
+		"一定間隔の敵の湧きを止める・再開する（プレイヤーの動きを確かめるときの確認用）",
+		function(value)
+			spawning = value == true or value == "true"
+			return `敵の湧きを{if spawning then "再開した" else "止めた"}`
+		end
+	)
+
+	DebugCommand.register(
+		"ClearEnemies",
+		"",
+		"生きている敵をすべて倒す（撃破数には数えない）",
+		function()
+			local count = 0
+			for _, enemy in enemies do
+				if enemy.humanoid.Health > 0 then
+					enemy.lastHitBy = nil
+					enemy.humanoid.Health = 0
+					count += 1
+				end
+			end
+			return `敵を {count} 体倒した`
+		end
+	)
+
+	DebugCommand.register(
 		"SpawnNpc",
 		"<キャラクター ID> <x> <z>",
 		"仮の見た目の NPC を地面の高さに合わせて1体出す（上忍・首領・役者の見た目の確認用）",
@@ -280,7 +309,7 @@ function EnemyService.start()
 		local butaiCount = 0
 		while true do
 			task.wait(Config.Spawner.ButaiInterval)
-			if aliveCount < Config.Spawner.MaxAlive then
+			if spawning and aliveCount < Config.Spawner.MaxAlive then
 				butaiCount += 1
 				spawnButai(butaiCount % Config.Spawner.JoninEvery == 0)
 			end
