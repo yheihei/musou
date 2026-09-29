@@ -288,7 +288,10 @@ test("Config の行動のタイムラインは長さが正で、受付は行動�
 		end
 		table.insert(all, set.JumpAttack)
 	end
-	for _, name in { "Ougi", "Flinch", "Down", "GetUp", "GuardHit" } do
+	for _, timeline in Config.Ougi.Timelines do
+		table.insert(all, timeline)
+	end
+	for _, name in { "Flinch", "Down", "GetUp", "GuardHit" } do
 		table.insert(all, (Config.Action :: any)[name])
 	end
 	for _, timeline in all do
@@ -305,7 +308,20 @@ test("被弾の反応の行動は、終わるまで次の行動を受け付け�
 	end
 end)
 
-test("奥義の持続は奥義の攻撃の回数 × 間隔と同じ", function()
-	expect(Config.Action.Ougi.Active).toBeNear(Config.Ougi.Pulses * Config.Ougi.PulseInterval)
-	expect(Config.Action.Ougi.Interrupt).toBe(true)
+test("奥義は攻撃の硬直にも割り込み、終わるまで次の行動を受け付けない", function()
+	for _, timeline in Config.Ougi.Timelines do
+		expect(timeline.Interrupt).toBe(true)
+		expect(timeline.CancelFrom).toBeNear(ActionState.duration(timeline))
+	end
+end)
+
+test("刃の火遁は前方の扇に多段で当たり、最後の一撃だけ吹き飛ばす", function()
+	local hits = ActionState.hits(Config.Ougi.Timelines.Katon)
+	expect(#hits > 2).toBe(true)
+	for index, scheduled in hits do
+		expect(scheduled.hit.Shape.Kind).toBe("Sector")
+		expect((scheduled.hit.Shape.Angle :: number) < 180).toBe(true)
+		expect(scheduled.hit.Reaction).toBe(if index == #hits then "Knockback" else "Flinch")
+	end
+	expect(hits[#hits].at > hits[#hits - 1].at).toBe(true)
 end)

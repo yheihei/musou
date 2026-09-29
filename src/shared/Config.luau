@@ -36,11 +36,8 @@ export type OugiSection = {
 	InitialStock: number,
 	GainPerHit: number,
 	GainPerDamageTaken: number,
-	Pulses: number,
-	PulseInterval: number,
-	Radius: number,
-	DamagePerPulse: number,
-	Knockback: number,
+	-- 奥義の技。キャラクター定義の ougi（忍術の英名）ごとに置く
+	Timelines: { [string]: ActionTimeline },
 }
 
 -- 攻撃を受けた側の反応。None は中断しない、Flinch はのけぞり、Knockback は吹き飛び、Launch は打ち上げ
@@ -106,7 +103,6 @@ export type BukishuSection = {
 
 export type ActionSection = {
 	BufferTime: number,
-	Ougi: ActionTimeline,
 	Flinch: ActionTimeline,
 	Down: ActionTimeline,
 	GetUp: ActionTimeline,
@@ -826,28 +822,51 @@ local Config: Config = {
 		},
 	},
 
-	-- 奥義（Q）と奥義ゲージ。ストック1本で1回発動する。本数の計算は OugiGauge.luau にある
+	-- 奥義（Q）と奥義ゲージ。ストック1本で1回発動し、発動中は無敵。本数の計算は OugiGauge.luau にある
 	Ougi = {
 		PerStock = 100, -- 1本分の量
 		MaxStock = 4, -- 本数の上限
 		InitialStock = 1, -- 最初に持っている本数
-		GainPerHit = 2,
+		GainPerHit = 2, -- 奥義以外の攻撃を1体に当てるたびに溜まる量
 		GainPerDamageTaken = 0.5,
-		Pulses = 6,
-		PulseInterval = 0.2,
-		Radius = 18,
-		DamagePerPulse = 40,
-		Knockback = 30,
+		-- 奥義の技。攻撃の速さでは伸び縮みさせない。Interrupt で攻撃の硬直にも割り込める
+		Timelines = {
+			-- 刃の火遁。前方の扇に炎を6回吐き、最後に大きな炎で吹き飛ばす
+			Katon = {
+				Startup = 0.25,
+				Active = 1.15,
+				Recovery = 0.3,
+				CancelFrom = 1.7,
+				Advance = 0,
+				Interrupt = true,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 16, Angle = 90, Height = 10 },
+						Repeat = 6,
+						Interval = 0.15,
+						Power = 2,
+						Reaction = "Flinch",
+						Knockback = 5,
+					},
+					{
+						Shape = { Kind = "Sector", Radius = 18, Angle = 100, Height = 10 },
+						Delay = 1,
+						Power = 5,
+						Reaction = "Knockback",
+						Knockback = 60,
+					},
+				},
+			},
+		},
 	},
 
 	-- 行動のタイムライン。状態遷移は ActionState.luau が計算する
 	-- Startup は判定が出るまで、Active は判定が出ている間、Recovery はその後の硬直の秒数。
 	-- 開始から CancelFrom 秒たつと次の行動を受け付ける。Advance は発生と持続の間に前へ進む量。
-	-- Interrupt の行動は、受付の前でも今の行動に割り込める。通常攻撃とチャージ攻撃は Bukishu 節にある
+	-- Interrupt の行動は、受付の前でも今の行動に割り込める。
+	-- 通常攻撃・チャージ攻撃・ジャンプ攻撃は Bukishu 節、奥義は Ougi 節の Timelines にある
 	Action = {
 		BufferTime = 0.4, -- 受け付けられなかった入力を先行入力として持っておく秒数
-		-- 持続は Ougi.Pulses × Ougi.PulseInterval と同じにする
-		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
 		-- 被弾の反応。吹き飛びと打ち上げはダウンにし、ダウンの後は起き上がりを続ける
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
 		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },

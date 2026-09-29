@@ -13,6 +13,13 @@ local Vfx = {}
 local SECTOR_STEP = 20
 -- 飛び道具の大きさ（スタッド）
 local PROJECTILE_SIZE = Vector3.new(1.4, 0.2, 1.4)
+-- 炎の塊の数と色
+local FLAME_COUNT = 7
+local FLAME_COLORS = {
+	Color3.fromRGB(255, 90, 30),
+	Color3.fromRGB(255, 160, 40),
+	Color3.fromRGB(255, 220, 90),
+}
 
 local function flash(part: BasePart, lifetime: number)
 	part.Anchored = true
@@ -44,11 +51,16 @@ function Vfx.ring(center: Vector3, radius: number, color: Color3)
 	flash(part, 0.18)
 end
 
+-- 原点の向きの水平成分
+local function forwardOf(origin: HitShape.Origin): Vector3
+	local flat = Vector3.new(origin.look.X, 0, origin.look.Z)
+	return if flat.Magnitude > 1e-6 then flat.Unit else Vector3.new(0, 0, -1)
+end
+
 -- 判定の形に合わせた仮エフェクト。直線は飛び道具が前へ飛ぶ
 function Vfx.shape(shape: HitShape.Shape, origin: HitShape.Origin, color: Color3)
 	local position: Vector3 = origin.position
-	local flat = Vector3.new(origin.look.X, 0, origin.look.Z)
-	local forward = if flat.Magnitude > 1e-6 then flat.Unit else Vector3.new(0, 0, -1)
+	local forward = forwardOf(origin)
 
 	if shape.kind == "Box" then
 		bar(position, forward, shape.range, shape.width, color)
@@ -72,6 +84,32 @@ function Vfx.shape(shape: HitShape.Shape, origin: HitShape.Origin, color: Color3
 			CFrame = CFrame.lookAt(position + forward * shape.length, position + forward * (shape.length + 1))
 				* CFrame.Angles(0, math.rad(720), 0),
 		}):Play()
+	end
+end
+
+-- 炎の仮エフェクト。扇の中に炎の塊を散らす。扇でない形は形のとおりに描く
+function Vfx.flame(shape: HitShape.Shape, origin: HitShape.Origin)
+	if shape.kind ~= "Sector" then
+		Vfx.shape(shape, origin, FLAME_COLORS[1])
+		return
+	end
+	local position: Vector3 = origin.position
+	local forward = forwardOf(origin)
+	for _ = 1, FLAME_COUNT do
+		local angle = math.rad((math.random() - 0.5) * shape.angle)
+		local distance = shape.radius * (0.3 + 0.7 * math.random())
+		local direction = CFrame.fromAxisAngle(Vector3.yAxis, angle):VectorToWorldSpace(forward)
+		local size = 2 + distance * 0.25
+		local part = Instance.new("Part")
+		part.Shape = Enum.PartType.Ball
+		part.Size = Vector3.new(size, size, size)
+		part.CFrame = CFrame.new(position + direction * distance)
+		part.Color = FLAME_COLORS[math.random(1, #FLAME_COLORS)]
+		local fire = Instance.new("Fire")
+		fire.Size = size * 1.5
+		fire.Heat = 8
+		fire.Parent = part
+		flash(part, 0.2)
 	end
 end
 

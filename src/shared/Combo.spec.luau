@@ -185,6 +185,9 @@ test("技の判定は形ごとの寸法を持ち、持続の間に出て、受�
 		end
 		table.insert(all, set.JumpAttack)
 	end
+	for _, timeline in Config.Ougi.Timelines do
+		table.insert(all, timeline)
+	end
 	for _, timeline in all do
 		expect(timeline.CancelFrom <= ActionState.duration(timeline) + 1e-9).toBe(true)
 		local hits = ActionState.hits(timeline)

@@ -8,6 +8,8 @@
 -- - 判定はタイムラインの Hits の時刻に出し、それまでに行動が変わっていたら出さない
 -- - 前進量は、発生から持続の終わりまでにサーバーの拘束で前へ動かす
 -- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。敵はまだ防御を持たない
+-- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
+--   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -27,15 +29,37 @@ local Hitbox = require(script.Parent.Parent.Combat.Hitbox)
 local Push = require(script.Parent.Parent.Combat.Push)
 local Vfx = require(script.Parent.Parent.Combat.Vfx)
 
+-- 判定の形の仮エフェクトの描き方
+export type Draw = (shape: HitShape.Shape, origin: HitShape.Origin) -> ()
+
+-- 奥義の中身。仮エフェクトの描き方と、判定のほかに出す中身（毒や追撃など）
+export type OugiEntry = {
+	draw: Draw,
+	perform: ((player: Player, t: number, timeline: ActionState.Timeline) -> ())?,
+}
+
+-- 技の見せ方。仮エフェクトの描き方と、当てたときに奥義ゲージを溜めるか
+type Style = {
+	draw: Draw,
+	gauge: boolean,
+}
+
 local CombatService = {}
 
 local combos: { [Player]: Combo.State } = {}
 -- 今の空中でジャンプ攻撃を出したか。着地で消す
 local jumpAttacked: { [Player]: boolean } = {}
+-- 奥義の ID（キャラクター定義の ougi）から引く中身
+local ougiEntries: { [string]: OugiEntry } = {}
 
-local SLASH_COLOR = Color3.fromRGB(255, 230, 150)
-local CHARGE_KOGEKI_COLOR = Color3.fromRGB(120, 200, 255)
-local OUGI_COLOR = Color3.fromRGB(255, 90, 40)
+local function colored(color: Color3): Draw
+	return function(shape, origin)
+		Vfx.shape(shape, origin, color)
+	end
+end
+
+local SLASH: Style = { draw = colored(Color3.fromRGB(255, 230, 150)), gauge = true }
+local CHARGE_KOGEKI: Style = { draw = colored(Color3.fromRGB(120, 200, 255)), gauge = true }
 
 local function getRoot(player: Player): BasePart?
 	local character = player.Character
@@ -76,50 +100,34 @@ local function knockbackVelocity(origin: Vector3, target: Model, reaction: Confi
 	return direction * force + Vector3.new(0, force * 0.3, 0)
 end
 
-local function hitOne(
-	player: Player,
-	origin: Vector3,
-	model: Model,
-	damage: number,
-	reaction: Config.Reaction,
-	force: number
-)
-	if EnemyService.damage(model, damage, player, knockbackVelocity(origin, model, reaction, force)) then
+local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, gauge: boolean)
+	local velocity = knockbackVelocity(origin, model, hit.Reaction, hit.Knockback)
+	if EnemyService.damage(model, damage, player, velocity) then
 		Vfx.hit(model)
-		PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
-	end
-end
-
--- 形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる
-local function hitAll(
-	player: Player,
-	origin: HitShape.Origin,
-	shape: HitShape.Shape,
-	damage: number,
-	reaction: Config.Reaction,
-	force: number
-)
-	local position: Vector3 = origin.position
-	for _, hit in Hitbox.query(shape, origin, EnemyService.getTargets()) do
-		if hit.delay > 0 then
-			task.delay(hit.delay, hitOne, player, position, hit.ref, damage, reaction, force)
-		else
-			hitOne(player, position, hit.ref, damage, reaction, force)
+		if gauge then
+			PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
 		end
 	end
 end
 
--- 技の判定を1つ出す
-local function doHit(player: Player, root: BasePart, hit: Config.HitDef, color: Color3)
+-- 技の判定を1つ出し、形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる
+local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: Style)
 	local shape = HitShape.fromDef(hit.Shape, Config.Hitbox.Height)
 	local origin = HitShape.rotate(Hitbox.originOf(root), hit.Yaw or 0)
-	Vfx.shape(shape, origin, color)
+	style.draw(shape, origin)
 	local damage = Stats.damage(hit.Power, PlayerService.getStats(player).Attack, 0)
-	hitAll(player, origin, shape, damage, hit.Reaction, hit.Knockback)
+	local position: Vector3 = origin.position
+	for _, target in Hitbox.query(shape, origin, EnemyService.getTargets()) do
+		if target.delay > 0 then
+			task.delay(target.delay, hitOne, player, position, target.ref, damage, hit, style.gauge)
+		else
+			hitOne(player, position, target.ref, damage, hit, style.gauge)
+		end
+	end
 end
 
 -- 時刻 t に始めた行動の前進と判定を出す。判定の時刻までに別の行動に変わっていたら出さない
-local function perform(player: Player, t: number, timeline: ActionState.Timeline, color: Color3)
+local function perform(player: Player, t: number, timeline: ActionState.Timeline, style: Style)
 	local root = getRoot(player)
 	if root and timeline.Advance > 0 then
 		Push.move(root, root.CFrame.LookVector, timeline.Advance, timeline.Startup + timeline.Active)
@@ -129,7 +137,7 @@ local function perform(player: Player, t: number, timeline: ActionState.Timeline
 			local _, startedAt = ActionService.current(player)
 			local current = getRoot(player)
 			if startedAt == t and current then
-				doHit(player, current, scheduled.hit, color)
+				doHit(player, current, scheduled.hit, style)
 			end
 		end
 		if scheduled.at <= 0 then
@@ -140,28 +148,20 @@ local function perform(player: Player, t: number, timeline: ActionState.Timeline
 	end
 end
 
--- 奥義の攻撃を間隔ごとに出す。奥義の最中の無敵は Damage.luau が行動から判定する
-local function doOugi(player: Player)
-	local ougi = Config.Ougi
+-- 奥義の中身を登録する。id はキャラクター定義の ougi（忍術の英名）で、技は Config.luau の Ougi 節の Timelines に置く
+function CombatService.registerOugi(id: string, entry: OugiEntry)
+	assert(ougiEntries[id] == nil, `CombatService: 奥義 {id} は登録済み`)
+	ougiEntries[id] = entry
+end
 
-	task.spawn(function()
-		for _ = 1, ougi.Pulses do
-			local root = getRoot(player)
-			if not root then
-				break
-			end
-			Vfx.ring(root.Position, ougi.Radius, OUGI_COLOR)
-			local shape: HitShape.Shape = { kind = "Sphere", radius = ougi.Radius }
-			for _, hit in Hitbox.query(shape, Hitbox.originOf(root), EnemyService.getTargets()) do
-				local model = hit.ref
-				local velocity = knockbackVelocity(root.Position, model, "Knockback", ougi.Knockback)
-				if EnemyService.damage(model, ougi.DamagePerPulse, player, velocity) then
-					Vfx.hit(model)
-				end
-			end
-			task.wait(ougi.PulseInterval)
-		end
-	end)
+-- 使うキャラクターの奥義の ID とタイムライン。中身か技の無い奥義は nil
+local function ougiOf(player: Player): (string?, ActionState.Timeline?)
+	local character = Characters.get(PlayerService.getCharacterId(player))
+	local id = character and character.ougi
+	if not id or not ougiEntries[id] then
+		return nil, nil
+	end
+	return id, Config.Ougi.Timelines[id]
 end
 
 local function registerActions()
@@ -175,7 +175,7 @@ local function registerActions()
 			local steps = bukishuOf(player).Attack
 			local step = Combo.count(comboOf(player), t, #steps) + 1
 			combos[player] = Combo.advance(step, t, timeline.CancelFrom)
-			perform(player, t, timeline, SLASH_COLOR)
+			perform(player, t, timeline, SLASH)
 			return step
 		end,
 	})
@@ -190,7 +190,7 @@ local function registerActions()
 			local set = bukishuOf(player)
 			local index = Combo.chargeIndex(comboOf(player), t, #set.Attack)
 			combos[player] = Combo.new()
-			perform(player, t, timeline, CHARGE_KOGEKI_COLOR)
+			perform(player, t, timeline, CHARGE_KOGEKI)
 			return index
 		end,
 	})
@@ -210,27 +210,35 @@ local function registerActions()
 			if root then
 				Push.fall(root, Config.Jump.DiveSpeed, timeline.Startup)
 			end
-			perform(player, t, timeline, SLASH_COLOR)
+			perform(player, t, timeline, SLASH)
 			return nil
 		end,
 	})
 
+	-- 奥義。ストックが1本以上あり、被弾の反応の最中でなく、中身を登録した奥義のときだけ出せる
 	ActionService.register(Actions.Ougi, {
 		timeline = function(player)
 			if PlayerService.getOugi(player).stock < 1 then
 				return nil
 			end
-			-- 被弾の反応の最中は出せない
 			if ActionService.isReaction((ActionService.current(player))) then
 				return nil
 			end
-			return Config.Action.Ougi
+			local _, timeline = ougiOf(player)
+			return timeline
 		end,
-		begin = function(player)
+		begin = function(player, t, timeline)
 			combos[player] = Combo.new()
 			-- 奥義ゲージは入力を受け付けた時点で1本使う
 			PlayerService.consumeOugiStock(player)
-			doOugi(player)
+			local id = ougiOf(player)
+			local entry = if id then ougiEntries[id] else nil
+			if entry then
+				perform(player, t, timeline, { draw = entry.draw, gauge = false })
+				if entry.perform then
+					entry.perform(player, t, timeline)
+				end
+			end
 			return nil
 		end,
 	})
@@ -238,6 +246,8 @@ end
 
 function CombatService.start()
 	registerActions()
+	-- 刃の火遁。前方の扇に炎を吐く
+	CombatService.registerOugi("Katon", { draw = Vfx.flame })
 
 	DebugCommand.register(
 		"ShowHitbox",

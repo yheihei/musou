@@ -1,5 +1,6 @@
 --!strict
 local Characters = require("./Characters")
+local Config = require("./Config")
 local testkit = require("@testkit")
 
 local test, expect = testkit.test, testkit.expect
@@ -48,4 +49,17 @@ test("クランの操作キャラクターを ID の順に引ける", function()
 	end
 	expect(ids).toEqual({ "Jin", "KanaOni", "Sekishusai", "Torika" })
 	expect(Characters.playableOf("Koga")).toEqual({})
+end)
+
+test("奥義の技は、キャラクター定義の奥義の ID で置く", function()
+	local ougiIds: { [string]: boolean } = {}
+	for _, character in Characters.definitions do
+		if character.ougi then
+			ougiIds[character.ougi] = true
+		end
+	end
+	for id in Config.Ougi.Timelines do
+		expect(ougiIds[id]).toBe(true)
+	end
+	expect(Config.Ougi.Timelines[(Characters.get("Jin") :: Characters.Character).ougi :: string] ~= nil).toBe(true)
 end)

@@ -6,7 +6,7 @@
 --
 -- - 行動と引数は Actions.validate で確かめ、不正な値は捨てる
 -- - 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionStartedAt を書く
--- - 攻撃・奥義の最中はジャンプを、ガードと被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
+-- - 攻撃の最中はジャンプを、奥義・ガード・被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
 -- - 空中の通常攻撃はジャンプ攻撃（JumpAttack）にし、空中のチャージ攻撃は捨てる
 -- - ガードは押している間続き、離すと終わる。攻撃の最中に押したガードはキャンセル受付から始まる。
 --   ほかの行動が終わったときにまだ押していれば、ガードに戻る
@@ -74,7 +74,7 @@ local LOCKS: { [string]: Lock } = {
 	Attack = JUMP_LOCK,
 	ChargeKogeki = JUMP_LOCK,
 	JumpAttack = JUMP_LOCK,
-	Ougi = JUMP_LOCK,
+	Ougi = FULL_LOCK,
 	Guard = FULL_LOCK,
 	GuardHit = FULL_LOCK,
 	KinkyuKaihi = FULL_LOCK,
