@@ -104,7 +104,12 @@ export type HikeiSection = {
 	Duration: { [string]: number },
 }
 
+export type PartySection = {
+	MaxMembers: number,
+}
+
 export type Config = {
+	Party: PartySection,
 	Stats: StatsSection,
 	Combo: ComboSection,
 	ChargeKogeki: ChargeKogekiSection,
@@ -118,6 +123,11 @@ export type Config = {
 }
 
 local Config: Config = {
+	-- パーティー。1サーバーが1パーティーにあたる。Roblox のサーバーの最大人数も同じ値にする
+	Party = {
+		MaxMembers = 4,
+	},
+
 	-- 能力値と与ダメージの計算。能力値の補正は Stats.luau が足す
 	Stats = {
 		-- 操作キャラクターの基本の能力値。キャラクター ID ごとに置く

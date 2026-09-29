@@ -4,11 +4,13 @@
 local Services = script:WaitForChild("Services")
 
 local DebugCommand = require(script:WaitForChild("DebugCommand"))
+local PartyService = require(Services:WaitForChild("PartyService"))
 local PlayerService = require(Services:WaitForChild("PlayerService"))
 local EnemyService = require(Services:WaitForChild("EnemyService"))
 local CombatService = require(Services:WaitForChild("CombatService"))
 
 DebugCommand.start()
+PartyService.start()
 PlayerService.start()
 EnemyService.start()
 CombatService.start()

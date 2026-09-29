@@ -7,6 +7,9 @@ local test, expect = testkit.test, testkit.expect
 -- 節を整理する前の Config.luau の値を書き写したもの。
 -- 下忍と上忍の色（Color3）は EnemyService へ移したので含めない。
 local SNAPSHOT = {
+	Party = {
+		MaxMembers = 4,
+	},
 	Stats = {
 		Characters = {
 			Jin = { MaxHealth = 300, Attack = 12, Defense = 10, WalkSpeed = 24, AttackSpeed = 1 },
