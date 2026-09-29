@@ -13,7 +13,7 @@ PC とゲームパッドで遊ぶ。割り当ては `src/shared/InputMap.luau` �
 | チャージ攻撃。周囲を吹き飛ばす | 右クリック・X・E | Y |
 | ジャンプ | Space | A |
 | ガード（ガード中に方向を入れると緊急回避） | Shift | L1 |
-| 奥義。奥義ゲージが満タンのときだけ出せ、発動中は無敵 | Q | B |
+| 奥義。奥義ゲージを1本使って出す（最大4本まで溜まる）。発動中は無敵 | Q | B |
 | 秘計 | 1〜3 | 十字キーの左・上・右 |
 
 - 右ドラッグでカメラを回す。右クリックは、ドラッグせずに離したときだけチャージ攻撃になる
@@ -132,5 +132,5 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - クライアントは Remotes.Action で「攻撃したい」だけを送る。クールダウン・コンボ・当たり判定はサーバーが決める
 - プレイヤーへのダメージは DamageService.damage（攻撃元の位置・威力・反応の種類）を通す。無敵・防御の軽減・のけぞりとダウン・奥義ゲージの増加はそこで決まる
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
-- 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`・`OugiGauge`）に持たせ、HUD はその変更を購読する
+- 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している

@@ -1,6 +1,6 @@
 --!strict
--- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージは Player の Attribute に
--- 持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
+-- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージ（本数と次の1本までの量）は
+-- Player の Attribute に持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
 -- 使うキャラクター（CharacterId）が変わったら出現し直す。
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
 
@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
+local OugiGauge = require(ReplicatedStorage.Shared.OugiGauge)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
@@ -34,17 +35,30 @@ function PlayerService.addGekihasu(player: Player)
 	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + 1)
 end
 
-function PlayerService.getOugiGauge(player: Player): number
-	return player:GetAttribute("OugiGauge") :: number? or 0
+-- 奥義ゲージ。溜まった本数は Attribute の OugiStock、次の1本までの量は OugiGauge に持つ
+function PlayerService.getOugi(player: Player): OugiGauge.Gauge
+	return {
+		stock = player:GetAttribute("OugiStock") :: number? or 0,
+		gauge = player:GetAttribute("OugiGauge") :: number? or 0,
+	}
+end
+
+local function setOugi(player: Player, value: OugiGauge.Gauge)
+	player:SetAttribute("OugiStock", value.stock)
+	player:SetAttribute("OugiGauge", value.gauge)
 end
 
 function PlayerService.addOugiGauge(player: Player, amount: number)
-	local value = math.clamp(PlayerService.getOugiGauge(player) + amount, 0, Config.Ougi.MaxGauge)
-	player:SetAttribute("OugiGauge", value)
+	setOugi(player, OugiGauge.add(PlayerService.getOugi(player), amount))
 end
 
-function PlayerService.resetOugiGauge(player: Player)
-	player:SetAttribute("OugiGauge", 0)
+-- 奥義のために1本使う。1本も無ければ使わずに false を返す
+function PlayerService.consumeOugiStock(player: Player): boolean
+	local ok, next = OugiGauge.consume(PlayerService.getOugi(player))
+	if ok then
+		setOugi(player, next)
+	end
+	return ok
 end
 
 local function onCharacterAdded(player: Player, character: Model)
@@ -61,7 +75,7 @@ local function onPlayerAdded(player: Player)
 		player:SetAttribute("CharacterId", Characters.DEFAULT_ID)
 	end
 	player:SetAttribute("Gekihasu", 0)
-	player:SetAttribute("OugiGauge", 0)
+	setOugi(player, OugiGauge.initial())
 
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
@@ -115,12 +129,23 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"SetOugiGauge",
 		"<プレイヤー名> <量>",
-		`奥義ゲージを書き換える（0〜{Config.Ougi.MaxGauge}）`,
+		`奥義ゲージの合計の量を書き換える（1本 {Config.Ougi.PerStock}、0〜{Config.Ougi.PerStock * Config.Ougi.MaxStock}）`,
 		function(name, value)
 			local player = DebugCommand.findPlayer(name)
-			local amount = math.clamp(DebugCommand.toNumber(value, "量"), 0, Config.Ougi.MaxGauge)
-			player:SetAttribute("OugiGauge", amount)
-			return `{player.Name} の奥義ゲージを {amount} にした`
+			local ougi = OugiGauge.fromTotal(DebugCommand.toNumber(value, "量"))
+			setOugi(player, ougi)
+			return `{player.Name} の奥義ゲージを {ougi.stock} 本と {ougi.gauge} にした`
+		end
+	)
+	DebugCommand.register(
+		"SetOugiStock",
+		"<プレイヤー名> <本数>",
+		`奥義ゲージの本数を書き換え、次の1本までの量を 0 にする（0〜{Config.Ougi.MaxStock}）`,
+		function(name, value)
+			local player = DebugCommand.findPlayer(name)
+			local stock = math.clamp(math.floor(DebugCommand.toNumber(value, "本数")), 0, Config.Ougi.MaxStock)
+			setOugi(player, { stock = stock, gauge = 0 })
+			return `{player.Name} の奥義ゲージを {stock} 本にした`
 		end
 	)
 end

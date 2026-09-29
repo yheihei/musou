@@ -35,7 +35,9 @@ local SNAPSHOT = {
 		Knockback = 60,
 	},
 	Ougi = {
-		MaxGauge = 100,
+		PerStock = 100,
+		MaxStock = 4,
+		InitialStock = 1,
 		GainPerHit = 2,
 		GainPerDamageTaken = 0.5,
 		Pulses = 6,

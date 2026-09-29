@@ -116,7 +116,6 @@ end
 -- 奥義の攻撃を間隔ごとに出す。奥義の最中の無敵は Damage.luau が行動から判定する
 local function doOugi(player: Player)
 	local ougi = Config.Ougi
-	PlayerService.resetOugiGauge(player)
 
 	task.spawn(function()
 		for _ = 1, ougi.Pulses do
@@ -182,7 +181,7 @@ local function registerActions()
 
 	ActionService.register(Actions.Ougi, {
 		timeline = function(player)
-			if PlayerService.getOugiGauge(player) < Config.Ougi.MaxGauge then
+			if PlayerService.getOugi(player).stock < 1 then
 				return nil
 			end
 			-- 被弾の反応の最中は出せない
@@ -193,7 +192,8 @@ local function registerActions()
 		end,
 		begin = function(player)
 			comboOf(player).comboIndex = 0
-			-- 奥義ゲージは入力を受け付けた時点で使う
+			-- 奥義ゲージは入力を受け付けた時点で1本使う
+			PlayerService.consumeOugiStock(player)
 			doOugi(player)
 			return nil
 		end,

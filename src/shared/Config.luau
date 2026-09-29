@@ -45,7 +45,9 @@ export type ChargeKogekiSection = {
 }
 
 export type OugiSection = {
-	MaxGauge: number,
+	PerStock: number,
+	MaxStock: number,
+	InitialStock: number,
 	GainPerHit: number,
 	GainPerDamageTaken: number,
 	Pulses: number,
@@ -194,9 +196,11 @@ local Config: Config = {
 		Knockback = 60,
 	},
 
-	-- 奥義（Q）と奥義ゲージ。ゲージが満タンで発動する
+	-- 奥義（Q）と奥義ゲージ。ストック1本で1回発動する。本数の計算は OugiGauge.luau にある
 	Ougi = {
-		MaxGauge = 100,
+		PerStock = 100, -- 1本分の量
+		MaxStock = 4, -- 本数の上限
+		InitialStock = 1, -- 最初に持っている本数
 		GainPerHit = 2,
 		GainPerDamageTaken = 0.5,
 		Pulses = 6,
