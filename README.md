@@ -136,3 +136,4 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
+- モーションの ID は `src/shared/Motions.luau` の一覧に置く。待機と移動は Roblox 公式の Ninja パックで、仮の見た目の HumanoidDescription に入れて当てる

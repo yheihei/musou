@@ -1,5 +1,6 @@
 --!strict
 -- キャラクターの仮の見た目。標準の R15 体型をキャラクターの色で塗り、頭上に名札を出す。
+-- 待機と移動のモーションは Motions.luau の Ninja パックにする。
 -- 操作キャラクターにも、NPC の上忍・首領・役者にも同じ関数を使う。M2 で本番の見た目に差し替える。
 -- 色は Colors.luau から引く。Roblox の API を使うので、Lune のテストからは読まない。
 
@@ -7,6 +8,7 @@ local Players = game:GetService("Players")
 
 local Characters = require("./Characters")
 local Colors = require("./Colors")
+local Motions = require("./Motions")
 
 local Appearance = {}
 
@@ -18,7 +20,7 @@ local FALLBACK_COLOR = Color3.fromRGB(128, 128, 128)
 
 local NAME_TAG = "NameTag"
 
--- キャラクター ID から、服も装飾も無い HumanoidDescription を作る
+-- キャラクター ID から、服も装飾も無く、待機と移動が Ninja パックの HumanoidDescription を作る
 function Appearance.describe(characterId: string): HumanoidDescription
 	local color = Colors.Character[characterId] or FALLBACK_COLOR
 	local legColor = color:Lerp(Color3.new(0, 0, 0), LEG_SHADE)
@@ -29,6 +31,14 @@ function Appearance.describe(characterId: string): HumanoidDescription
 	description.RightArmColor = color
 	description.LeftLegColor = legColor
 	description.RightLegColor = legColor
+	local locomotion = Motions.Locomotion
+	description.IdleAnimation = locomotion.Idle
+	description.WalkAnimation = locomotion.Walk
+	description.RunAnimation = locomotion.Run
+	description.JumpAnimation = locomotion.Jump
+	description.FallAnimation = locomotion.Fall
+	description.ClimbAnimation = locomotion.Climb
+	description.SwimAnimation = locomotion.Swim
 	return description
 end
 
