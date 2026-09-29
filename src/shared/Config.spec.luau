@@ -54,6 +54,13 @@ local SNAPSHOT = {
 		},
 		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
 		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
+		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
+		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
+		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+	},
+	Damage = {
+		FlinchImmunity = 1,
+		GetUpInvulnerable = 0.8,
 	},
 	Hitbox = {
 		Height = 8,
@@ -67,6 +74,7 @@ local SNAPSHOT = {
 		Damage = 6,
 		AttackRange = 4.5,
 		AttackCooldown = 1.5,
+		Reaction = "Flinch",
 		Scale = 1,
 	},
 	Jonin = {
@@ -76,6 +84,7 @@ local SNAPSHOT = {
 		Damage = 20,
 		AttackRange = 6,
 		AttackCooldown = 1.8,
+		Reaction = "Knockback",
 		Scale = 1.4,
 	},
 	Spawner = {

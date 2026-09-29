@@ -2,6 +2,7 @@
 -- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージは Player の Attribute に
 -- 持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
 -- 使うキャラクター（CharacterId）が変わったら出現し直す。
+-- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -53,14 +54,6 @@ local function onCharacterAdded(player: Player, character: Model)
 	humanoid.MaxHealth = stats.MaxHealth
 	humanoid.Health = stats.MaxHealth
 	task.spawn(Appearance.applyToCharacter, character, PlayerService.getCharacterId(player))
-
-	local lastHealth = humanoid.Health
-	humanoid.HealthChanged:Connect(function(health)
-		if health < lastHealth then
-			PlayerService.addOugiGauge(player, (lastHealth - health) * Config.Ougi.GainPerDamageTaken)
-		end
-		lastHealth = health
-	end)
 end
 
 local function onPlayerAdded(player: Player)

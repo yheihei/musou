@@ -1,6 +1,7 @@
 --!strict
 -- 敵兵の生成・AI・被ダメージ処理。
 -- 下忍を部隊単位で湧かせ続け、一定部隊ごとに上忍を混ぜる。
+-- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,6 +12,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local DamageService = require(script.Parent.DamageService)
 local PlayerService = require(script.Parent.PlayerService)
 
 type EnemyDef = Config.EnemySection
@@ -75,8 +77,8 @@ local function buildTemplate(kind: string, def: EnemyDef): Model
 	return model
 end
 
-local function findNearestTarget(position: Vector3): (Humanoid?, BasePart?)
-	local bestHumanoid, bestRoot, bestDistance = nil, nil, Config.Spawner.AggroRange
+local function findNearestTarget(position: Vector3): (Player?, BasePart?)
+	local bestPlayer, bestRoot, bestDistance = nil, nil, Config.Spawner.AggroRange
 	for _, player in Players:GetPlayers() do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -84,16 +86,16 @@ local function findNearestTarget(position: Vector3): (Humanoid?, BasePart?)
 		if humanoid and root and humanoid.Health > 0 then
 			local distance = (root.Position - position).Magnitude
 			if distance < bestDistance then
-				bestHumanoid, bestRoot, bestDistance = humanoid, root, distance
+				bestPlayer, bestRoot, bestDistance = player, root, distance
 			end
 		end
 	end
-	return bestHumanoid, bestRoot
+	return bestPlayer, bestRoot
 end
 
 local function updateEnemy(enemy: Enemy, now: number)
-	local targetHumanoid, targetRoot = findNearestTarget(enemy.root.Position)
-	if not targetHumanoid or not targetRoot then
+	local targetPlayer, targetRoot = findNearestTarget(enemy.root.Position)
+	if not targetPlayer or not targetRoot then
 		enemy.humanoid:Move(Vector3.zero)
 		return
 	end
@@ -110,11 +112,11 @@ local function updateEnemy(enemy: Enemy, now: number)
 	end
 	enemy.lastAttack = now
 
-	local character = targetHumanoid.Parent
-	if character and character:GetAttribute("Invulnerable") then
-		return
-	end
-	targetHumanoid:TakeDamage(enemy.def.Damage)
+	DamageService.damage(targetPlayer, {
+		origin = enemy.root.Position,
+		power = enemy.def.Damage,
+		reaction = enemy.def.Reaction,
+	})
 end
 
 local function onEnemyDied(enemy: Enemy)

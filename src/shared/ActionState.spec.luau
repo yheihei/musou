@@ -136,6 +136,41 @@ test("被弾で今の行動と先行入力を捨てて中断する", function()
 	expect(started).toBe("Attack")
 end)
 
+test("続きのある行動は、終わった時点で続きの行動を始める", function()
+	local down: ActionState.Timeline =
+		{ Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" }
+	local getUp: ActionState.Timeline = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 }
+	local function chainOf(action: string): ActionState.Timeline?
+		if action == "GetUp" then
+			return getUp
+		end
+		return timelines[action]
+	end
+	local state = ActionState.interrupt("Down", 0, down)
+	local during, startedDuring = ActionState.step(state, 0.79, nil, chainOf, BUFFER_TIME)
+	expect(startedDuring).toBe(nil)
+	expect(during.action).toBe("Down")
+
+	-- ダウンの間の入力は、起き上がりより後に回る
+	local buffered = ActionState.step(state, 0.7, "Attack", chainOf, BUFFER_TIME)
+	local next, started = ActionState.step(buffered, 0.8, nil, chainOf, BUFFER_TIME)
+	expect(started).toBe("GetUp")
+	expect(next.action).toBe("GetUp")
+	expect(next.startedAt).toBe(0.8)
+	local later, startedLater = ActionState.step(next, 1.3, "Attack", chainOf, BUFFER_TIME)
+	expect(startedLater).toBe("Attack")
+	expect(later.action).toBe("Attack")
+end)
+
+test("続きの行動を始められないときは待機に戻る", function()
+	local down: ActionState.Timeline =
+		{ Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" }
+	local state = ActionState.interrupt("Down", 0, down)
+	local next, started = step(state, 0.8)
+	expect(started).toBe(nil)
+	expect(next.action).toBe(nil)
+end)
+
 test("引数の状態は書き換えない", function()
 	local state = ActionState.new()
 	step(state, 0, "Attack")
@@ -147,12 +182,20 @@ end)
 
 test("Config の行動のタイムラインは長さが正で、受付は行動の中にある", function()
 	local all = table.clone(Config.Action.Attack)
-	table.insert(all, Config.Action.ChargeKogeki)
-	table.insert(all, Config.Action.Ougi)
+	for _, name in { "ChargeKogeki", "Ougi", "Flinch", "Down", "GetUp" } do
+		table.insert(all, (Config.Action :: any)[name])
+	end
 	for _, timeline in all do
 		expect(ActionState.duration(timeline) > 0).toBe(true)
 		expect(timeline.CancelFrom >= 0).toBe(true)
 		expect(timeline.CancelFrom <= ActionState.duration(timeline) + 1e-9).toBe(true)
+	end
+end)
+
+test("被弾の反応の行動は、終わるまで次の行動を受け付けない", function()
+	for _, name in { "Flinch", "Down", "GetUp" } do
+		local timeline = (Config.Action :: any)[name] :: ActionState.Timeline
+		expect(timeline.CancelFrom).toBeNear(ActionState.duration(timeline))
 	end
 end)
 

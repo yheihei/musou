@@ -55,6 +55,9 @@ export type OugiSection = {
 	Knockback: number,
 }
 
+-- 攻撃を受けた側の反応。None は中断しない、Flinch はのけぞり、Knockback は吹き飛び、Launch は打ち上げ
+export type Reaction = "None" | "Flinch" | "Knockback" | "Launch"
+
 -- 行動1回ぶんのタイムライン（秒）と前進量（スタッド）
 export type ActionTimeline = {
 	Startup: number,
@@ -63,6 +66,8 @@ export type ActionTimeline = {
 	CancelFrom: number,
 	Advance: number,
 	Interrupt: boolean?,
+	-- この行動が終わったときに続けて始める行動
+	Next: string?,
 }
 
 export type ActionSection = {
@@ -70,6 +75,14 @@ export type ActionSection = {
 	Attack: { ActionTimeline },
 	ChargeKogeki: ActionTimeline,
 	Ougi: ActionTimeline,
+	Flinch: ActionTimeline,
+	Down: ActionTimeline,
+	GetUp: ActionTimeline,
+}
+
+export type DamageSection = {
+	FlinchImmunity: number,
+	GetUpInvulnerable: number,
 }
 
 export type HitboxSection = {
@@ -86,6 +99,8 @@ export type EnemySection = {
 	Damage: number,
 	AttackRange: number,
 	AttackCooldown: number,
+	-- 攻撃を受けたプレイヤーの反応
+	Reaction: Reaction,
 	Scale: number,
 }
 
@@ -130,6 +145,7 @@ export type Config = {
 	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
 	Action: ActionSection,
+	Damage: DamageSection,
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
 	Jonin: EnemySection,
@@ -206,6 +222,16 @@ local Config: Config = {
 		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
 		-- 持続は Ougi.Pulses × Ougi.PulseInterval と同じにする
 		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
+		-- 被弾の反応。吹き飛びと打ち上げはダウンにし、ダウンの後は起き上がりを続ける
+		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
+		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
+		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+	},
+
+	-- プレイヤーの被ダメージ。無敵・反応・防御の軽減の判定は Damage.luau が計算する
+	Damage = {
+		FlinchImmunity = 1, -- のけぞりが明けてから、次の攻撃でのけぞらない秒数（囲まれての連続ののけぞりを防ぐ）
+		GetUpInvulnerable = 0.8, -- 起き上がった後の無敵の秒数。ダウンと起き上がりの間も無敵
 	},
 
 	-- 攻撃判定の形。形の計算は HitShape.luau にある
@@ -223,6 +249,7 @@ local Config: Config = {
 		Damage = 6,
 		AttackRange = 4.5,
 		AttackCooldown = 1.5,
+		Reaction = "Flinch",
 		Scale = 1,
 	},
 
@@ -234,6 +261,7 @@ local Config: Config = {
 		Damage = 20,
 		AttackRange = 6,
 		AttackCooldown = 1.8,
+		Reaction = "Knockback",
 		Scale = 1.4,
 	},
 

@@ -117,7 +117,10 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  PlayerService / EnemyService / CombatService
+    Services/  PartyService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+      ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
+      DamageService  プレイヤーの被ダメージの窓口
+      CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定と仮エフェクト
   client/   StarterPlayerScripts.Client 入力と HUD
 .lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
@@ -127,6 +130,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 ## 設計メモ
 
 - クライアントは Remotes.Action で「攻撃したい」だけを送る。クールダウン・コンボ・当たり判定はサーバーが決める
+- プレイヤーへのダメージは DamageService.damage（攻撃元の位置・威力・反応の種類）を通す。無敵・防御の軽減・のけぞりとダウン・奥義ゲージの増加はそこで決まる
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`・`OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している

@@ -8,6 +8,7 @@
 -- - 先行入力は BufferTime 秒たつと捨てる
 -- - 割り込める行動（Interrupt）は受付の前でも始める。同じ行動には割り込まない
 -- - 被弾は interrupt で、今の行動と先行入力を捨てて始める
+-- - 続き（Next）のある行動は、終わったときに先行入力より先に続きの行動を始める（ダウンの後の起き上がりなど）
 -- - 行動を始められるかは呼び出し側が timelineOf で決める。nil を返した入力は捨てる
 
 local Config = require("./Config")
@@ -78,10 +79,21 @@ function ActionState.step(
 ): (State, string?)
 	local next = expire(state, now, bufferTime or Config.Action.BufferTime)
 
+	-- 終わった行動に続きがあれば、先行入力より先に始める
+	local chained: string? = nil
+	local finished = state.timeline
+	if next.action == nil and state.action ~= nil and finished and finished.Next then
+		local timeline = timelineOf(finished.Next)
+		if timeline then
+			chained = finished.Next
+			next = start(finished.Next, timeline, now)
+		end
+	end
+
 	if input ~= nil then
 		local timeline = timelineOf(input)
 		if timeline == nil then
-			return next, nil
+			return next, chained
 		end
 		local interrupts = timeline.Interrupt == true and next.action ~= input
 		if ActionState.isCancelable(next, now) or interrupts then
@@ -90,9 +102,12 @@ function ActionState.step(
 		next = table.clone(next)
 		next.buffered = input
 		next.bufferedAt = now
-		return next, nil
+		return next, chained
 	end
 
+	if chained then
+		return next, chained
+	end
 	local buffered = next.buffered
 	if buffered ~= nil and ActionState.isCancelable(next, now) then
 		local timeline = timelineOf(buffered)
