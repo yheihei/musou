@@ -57,6 +57,12 @@ export type OugiSection = {
 	Knockback: number,
 }
 
+export type HitboxSection = {
+	Height: number,
+	ShowShapes: boolean,
+	ShapeLifetime: number,
+}
+
 -- 下忍と上忍で共通の敵の能力値
 export type EnemySection = {
 	DisplayName: string,
@@ -103,6 +109,7 @@ export type Config = {
 	Combo: ComboSection,
 	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
+	Hitbox: HitboxSection,
 	Genin: EnemySection,
 	Jonin: EnemySection,
 	Spawner: SpawnerSection,
@@ -155,6 +162,13 @@ local Config: Config = {
 		Radius = 18,
 		DamagePerPulse = 40,
 		Knockback = 30,
+	},
+
+	-- 攻撃判定の形。形の計算は HitShape.luau にある
+	Hitbox = {
+		Height = 8, -- 通常攻撃の箱の高さ（スタッド）
+		ShowShapes = false, -- 判定の形をデバッグ表示するか。窓口の ShowHitbox でも切り替えられる
+		ShapeLifetime = 0.3, -- デバッグ表示を残す秒数
 	},
 
 	-- 下忍。色は EnemyService に置く

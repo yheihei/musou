@@ -7,6 +7,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
+local HitShape = require(ReplicatedStorage.Shared.HitShape)
+local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local EnemyService = require(script.Parent.EnemyService)
 local PlayerService = require(script.Parent.PlayerService)
 local Hitbox = require(script.Parent.Parent.Combat.Hitbox)
@@ -45,11 +47,22 @@ local function knockbackFrom(origin: Vector3, target: Model, force: number): Vec
 	return direction.Unit * force + Vector3.new(0, force * 0.3, 0)
 end
 
-local function hitAll(player: Player, origin: Vector3, targets: { Model }, damage: number, knockback: number)
-	for _, model in targets do
-		if EnemyService.damage(model, damage, player, knockbackFrom(origin, model, knockback)) then
-			Vfx.hit(model)
-			PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
+local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, knockback: number)
+	if EnemyService.damage(model, damage, player, knockbackFrom(origin, model, knockback)) then
+		Vfx.hit(model)
+		PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
+	end
+end
+
+-- 形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる
+local function hitAll(player: Player, root: BasePart, shape: HitShape.Shape, damage: number, knockback: number)
+	local origin = Hitbox.originOf(root)
+	local position = root.Position
+	for _, hit in Hitbox.query(shape, origin, EnemyService.getTargets()) do
+		if hit.delay > 0 then
+			task.delay(hit.delay, hitOne, player, position, hit.ref, damage, knockback)
+		else
+			hitOne(player, position, hit.ref, damage, knockback)
 		end
 	end
 end
@@ -66,8 +79,9 @@ local function doAttack(player: Player, state: CombatState, root: BasePart, now:
 	state.busyUntil = now + step.Cooldown
 
 	Vfx.slash(root, step.Range, step.Width, SLASH_COLOR)
-	local targets = Hitbox.front(root, step.Range, step.Width, EnemyService.getFolder())
-	hitAll(player, root.Position, targets, step.Damage, step.Knockback)
+	local shape: HitShape.Shape =
+		{ kind = "Box", range = step.Range, width = step.Width, height = Config.Hitbox.Height }
+	hitAll(player, root, shape, step.Damage, step.Knockback)
 end
 
 local function doChargeKogeki(player: Player, state: CombatState, root: BasePart, now: number)
@@ -76,8 +90,7 @@ local function doChargeKogeki(player: Player, state: CombatState, root: BasePart
 	state.busyUntil = now + chargeKogeki.Cooldown
 
 	Vfx.ring(root.Position, chargeKogeki.Radius, CHARGE_KOGEKI_COLOR)
-	local targets = Hitbox.sphere(root.Position, chargeKogeki.Radius, EnemyService.getFolder())
-	hitAll(player, root.Position, targets, chargeKogeki.Damage, chargeKogeki.Knockback)
+	hitAll(player, root, { kind = "Sphere", radius = chargeKogeki.Radius }, chargeKogeki.Damage, chargeKogeki.Knockback)
 end
 
 local function doOugi(player: Player, state: CombatState, now: number)
@@ -103,8 +116,9 @@ local function doOugi(player: Player, state: CombatState, now: number)
 				break
 			end
 			Vfx.ring(root.Position, ougi.Radius, OUGI_COLOR)
-			local targets = Hitbox.sphere(root.Position, ougi.Radius, EnemyService.getFolder())
-			for _, model in targets do
+			local shape: HitShape.Shape = { kind = "Sphere", radius = ougi.Radius }
+			for _, hit in Hitbox.query(shape, Hitbox.originOf(root), EnemyService.getTargets()) do
+				local model = hit.ref
 				if
 					EnemyService.damage(
 						model,
@@ -156,6 +170,18 @@ end
 function CombatService.start()
 	local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Action") :: RemoteEvent
 	remote.OnServerEvent:Connect(onAction)
+
+	DebugCommand.register(
+		"ShowHitbox",
+		"<true|false> [残す秒数]",
+		"攻撃判定の形のデバッグ表示を切り替える",
+		function(value, lifetime)
+			local on = value == true or value == "true"
+			local seconds = if lifetime ~= nil then DebugCommand.toNumber(lifetime, "残す秒数") else nil
+			Hitbox.setShowShapes(on, seconds)
+			return `攻撃判定の形の表示を{if on then "オン" else "オフ"}にした`
+		end
+	)
 
 	local function track(player: Player)
 		states[player] = { comboIndex = 0, lastAttack = 0, busyUntil = 0, ougiActive = false }

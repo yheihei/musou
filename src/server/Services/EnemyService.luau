@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
+local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PlayerService = require(script.Parent.PlayerService)
 
@@ -27,6 +28,8 @@ type Enemy = {
 	humanoid: Humanoid,
 	root: BasePart,
 	def: EnemyDef,
+	-- 攻撃判定で使う水平の半径
+	radius: number,
 	lastAttack: number,
 	lastHitBy: Player?,
 }
@@ -35,6 +38,7 @@ local EnemyService = {}
 
 local enemiesFolder: Folder
 local templates: { [string]: Model } = {}
+local radii: { [string]: number } = {}
 local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 
@@ -144,6 +148,7 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 		humanoid = humanoid,
 		root = root,
 		def = def,
+		radius = radii[kind],
 		lastAttack = 0,
 		lastHitBy = nil,
 	}
@@ -205,8 +210,15 @@ function EnemyService.damage(model: Model, amount: number, attacker: Player, kno
 	return true
 end
 
-function EnemyService.getFolder(): Folder
-	return enemiesFolder
+-- 攻撃判定の対象にする、生きている敵の位置と半径
+function EnemyService.getTargets(): { HitShape.Target<Model> }
+	local targets = {}
+	for model, enemy in enemies do
+		if enemy.humanoid.Health > 0 then
+			table.insert(targets, { ref = model, position = enemy.root.Position, radius = enemy.radius })
+		end
+	end
+	return targets
 end
 
 function EnemyService.start()
@@ -215,7 +227,11 @@ function EnemyService.start()
 	enemiesFolder.Parent = workspace
 
 	for kind, def in ENEMY_DEFS do
-		templates[kind] = buildTemplate(kind, def)
+		local template = buildTemplate(kind, def)
+		templates[kind] = template
+		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ）
+		local size = template:GetExtentsSize()
+		radii[kind] = math.max(size.X, size.Z) / 2
 	end
 
 	DebugCommand.register(

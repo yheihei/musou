@@ -42,6 +42,11 @@ local SNAPSHOT = {
 		DamagePerPulse = 40,
 		Knockback = 30,
 	},
+	Hitbox = {
+		Height = 8,
+		ShowShapes = false,
+		ShapeLifetime = 0.3,
+	},
 	Genin = {
 		DisplayName = "下忍",
 		MaxHealth = 30,
