@@ -30,7 +30,6 @@ export type ComboStep = {
 	Damage: number,
 	Range: number,
 	Width: number,
-	Cooldown: number,
 	Knockback: number,
 }
 
@@ -42,7 +41,6 @@ export type ComboSection = {
 export type ChargeKogekiSection = {
 	Damage: number,
 	Radius: number,
-	Cooldown: number,
 	Knockback: number,
 }
 
@@ -55,6 +53,23 @@ export type OugiSection = {
 	Radius: number,
 	DamagePerPulse: number,
 	Knockback: number,
+}
+
+-- 行動1回ぶんのタイムライン（秒）と前進量（スタッド）
+export type ActionTimeline = {
+	Startup: number,
+	Active: number,
+	Recovery: number,
+	CancelFrom: number,
+	Advance: number,
+	Interrupt: boolean?,
+}
+
+export type ActionSection = {
+	BufferTime: number,
+	Attack: { ActionTimeline },
+	ChargeKogeki: ActionTimeline,
+	Ougi: ActionTimeline,
 }
 
 export type HitboxSection = {
@@ -114,6 +129,7 @@ export type Config = {
 	Combo: ComboSection,
 	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
+	Action: ActionSection,
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
 	Jonin: EnemySection,
@@ -143,14 +159,15 @@ local Config: Config = {
 		MinDamage = 1, -- 与ダメージの下限
 	},
 
-	-- 通常攻撃のコンボ。1段ずつ順に出て、ComboResetTime 秒以内に次を押すと繋がる
+	-- 通常攻撃のコンボ。1段ずつ順に出て、ComboResetTime 秒以内に次を押すと繋がる。
+	-- 段ごとの時間は Action 節の Attack にある
 	Combo = {
 		ComboResetTime = 0.8,
 		Steps = {
-			{ Damage = 12, Range = 7, Width = 8, Cooldown = 0.28, Knockback = 10 },
-			{ Damage = 12, Range = 7, Width = 8, Cooldown = 0.28, Knockback = 10 },
-			{ Damage = 16, Range = 8, Width = 10, Cooldown = 0.32, Knockback = 14 },
-			{ Damage = 28, Range = 10, Width = 14, Cooldown = 0.6, Knockback = 45 },
+			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
+			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
+			{ Damage = 16, Range = 8, Width = 10, Knockback = 14 },
+			{ Damage = 28, Range = 10, Width = 14, Knockback = 45 },
 		},
 	},
 
@@ -158,7 +175,6 @@ local Config: Config = {
 	ChargeKogeki = {
 		Damage = 30,
 		Radius = 12,
-		Cooldown = 1.2,
 		Knockback = 60,
 	},
 
@@ -172,6 +188,24 @@ local Config: Config = {
 		Radius = 18,
 		DamagePerPulse = 40,
 		Knockback = 30,
+	},
+
+	-- 行動のタイムライン。状態遷移は ActionState.luau が計算する
+	-- Startup は判定が出るまで、Active は判定が出ている間、Recovery はその後の硬直の秒数。
+	-- 開始から CancelFrom 秒たつと次の行動を受け付ける。Advance は行動中に前へ進む量。
+	-- Interrupt の行動は、受付の前でも今の行動に割り込める
+	Action = {
+		BufferTime = 0.4, -- 受け付けられなかった入力を先行入力として持っておく秒数
+		-- 通常攻撃の段ごと。Combo.Steps と同じ順に並べる
+		Attack = {
+			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
+			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
+			{ Startup = 0, Active = 0.08, Recovery = 0.24, CancelFrom = 0.32, Advance = 0 },
+			{ Startup = 0, Active = 0.1, Recovery = 0.5, CancelFrom = 0.6, Advance = 0 },
+		},
+		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
+		-- 持続は Ougi.Pulses × Ougi.PulseInterval と同じにする
+		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
 	},
 
 	-- 攻撃判定の形。形の計算は HitShape.luau にある

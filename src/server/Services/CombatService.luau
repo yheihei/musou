@@ -1,11 +1,15 @@
 --!strict
 -- プレイヤーの攻撃処理。クライアントからは「何をしたいか」だけを受け取り、
--- クールダウン・コンボ段数・当たり判定はすべてサーバーで決める。
+-- 行動の状態遷移・コンボ段数・当たり判定はすべてサーバーで決める。
 -- 行動と引数は Actions.validate で確かめ、不正な値は捨てる。
+-- 状態遷移は ReplicatedStorage.Shared.ActionState が計算し、タイムラインは Config.luau の Action 節にある。
+-- 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionStartedAt を書く。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
+local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
@@ -16,10 +20,10 @@ local Hitbox = require(script.Parent.Parent.Combat.Hitbox)
 local Vfx = require(script.Parent.Parent.Combat.Vfx)
 
 type CombatState = {
+	machine: ActionState.State,
+	-- 最後に出した通常攻撃の段と、その開始時刻
 	comboIndex: number,
-	lastAttack: number,
-	busyUntil: number,
-	ougiActive: boolean,
+	lastAttackAt: number,
 }
 
 local CombatService = {}
@@ -29,6 +33,11 @@ local states: { [Player]: CombatState } = {}
 local SLASH_COLOR = Color3.fromRGB(255, 230, 150)
 local CHARGE_KOGEKI_COLOR = Color3.fromRGB(120, 200, 255)
 local OUGI_COLOR = Color3.fromRGB(255, 90, 40)
+
+-- 行動の時刻。クライアントと同じ時計で Attribute に書く
+local function now(): number
+	return workspace:GetServerTimeNow()
+end
 
 local function getRoot(player: Player): BasePart?
 	local character = player.Character
@@ -68,42 +77,73 @@ local function hitAll(player: Player, root: BasePart, shape: HitShape.Shape, dam
 	end
 end
 
-local function doAttack(player: Player, state: CombatState, root: BasePart, now: number)
-	local steps = Config.Combo.Steps
-	if now - state.lastAttack > Config.Combo.ComboResetTime or state.comboIndex >= #steps then
-		state.comboIndex = 0
+-- 次に出す通常攻撃の段。最後の段の後と、途切れる時間を超えた後は1段目に戻る
+local function nextComboStep(state: CombatState, t: number): number
+	if t - state.lastAttackAt > Config.Combo.ComboResetTime or state.comboIndex >= #Config.Combo.Steps then
+		return 1
 	end
-	state.comboIndex += 1
-	state.lastAttack = now
-
-	local step = steps[state.comboIndex]
-	state.busyUntil = now + step.Cooldown
-
-	Vfx.slash(root, step.Range, step.Width, SLASH_COLOR)
-	local shape: HitShape.Shape =
-		{ kind = "Box", range = step.Range, width = step.Width, height = Config.Hitbox.Height }
-	hitAll(player, root, shape, step.Damage, step.Knockback)
+	return state.comboIndex + 1
 end
 
-local function doChargeKogeki(player: Player, state: CombatState, root: BasePart, now: number)
-	local chargeKogeki = Config.ChargeKogeki
-	state.comboIndex = 0
-	state.busyUntil = now + chargeKogeki.Cooldown
+-- 行動を始めるときのタイムライン。始められない行動は nil
+local function timelineFor(player: Player, state: CombatState, t: number): ActionState.TimelineOf
+	return function(action: string): ActionState.Timeline?
+		if action == Actions.Attack then
+			return Config.Action.Attack[nextComboStep(state, t)]
+		elseif action == Actions.ChargeKogeki then
+			return Config.Action.ChargeKogeki
+		elseif action == Actions.Ougi then
+			if PlayerService.getOugiGauge(player) < Config.Ougi.MaxGauge then
+				return nil
+			end
+			return Config.Action.Ougi
+		end
+		return nil
+	end
+end
 
+-- 今の行動をキャラクターの Attribute に書く。待機に戻ったときは action を nil にする
+local function publish(player: Player, action: string?, step: number?, t: number)
+	local character = player.Character
+	if not character then
+		return
+	end
+	character:SetAttribute("Action", action)
+	character:SetAttribute("ActionStep", step)
+	character:SetAttribute("ActionStartedAt", t)
+end
+
+-- 発生の時刻になったら fn を呼ぶ。それまでに別の行動に変わっていたら呼ばない
+local function atStartup(player: Player, t: number, timeline: ActionState.Timeline, fn: () -> ())
+	if timeline.Startup <= 0 then
+		fn()
+		return
+	end
+	task.delay(timeline.Startup, function()
+		local state = states[player]
+		if state and state.machine.startedAt == t then
+			fn()
+		end
+	end)
+end
+
+local function doAttack(player: Player, root: BasePart, step: number)
+	local combo = Config.Combo.Steps[step]
+	Vfx.slash(root, combo.Range, combo.Width, SLASH_COLOR)
+	local shape: HitShape.Shape =
+		{ kind = "Box", range = combo.Range, width = combo.Width, height = Config.Hitbox.Height }
+	hitAll(player, root, shape, combo.Damage, combo.Knockback)
+end
+
+local function doChargeKogeki(player: Player, root: BasePart)
+	local chargeKogeki = Config.ChargeKogeki
 	Vfx.ring(root.Position, chargeKogeki.Radius, CHARGE_KOGEKI_COLOR)
 	hitAll(player, root, { kind = "Sphere", radius = chargeKogeki.Radius }, chargeKogeki.Damage, chargeKogeki.Knockback)
 end
 
-local function doOugi(player: Player, state: CombatState, now: number)
+local function doOugi(player: Player)
 	local ougi = Config.Ougi
-	if PlayerService.getOugiGauge(player) < ougi.MaxGauge then
-		return
-	end
-
 	PlayerService.resetOugiGauge(player)
-	state.ougiActive = true
-	state.comboIndex = 0
-	state.busyUntil = now + ougi.Pulses * ougi.PulseInterval
 
 	local character = player.Character
 	if character then
@@ -134,11 +174,58 @@ local function doOugi(player: Player, state: CombatState, now: number)
 			task.wait(ougi.PulseInterval)
 		end
 
-		state.ougiActive = false
 		if character then
 			character:SetAttribute("Invulnerable", nil)
 		end
 	end)
+end
+
+-- 状態遷移が行動を始めたときに、その行動の中身を出す
+local function begin(player: Player, state: CombatState, action: string, t: number)
+	local root = getRoot(player)
+	local timeline = state.machine.timeline
+	if not root or not timeline then
+		return
+	end
+	local step: number? = nil
+	if action == Actions.Attack then
+		local comboStep = nextComboStep(state, t)
+		step = comboStep
+		state.comboIndex = comboStep
+		state.lastAttackAt = t
+		atStartup(player, t, timeline, function()
+			local current = getRoot(player)
+			if current then
+				doAttack(player, current, comboStep)
+			end
+		end)
+	elseif action == Actions.ChargeKogeki then
+		state.comboIndex = 0
+		atStartup(player, t, timeline, function()
+			local current = getRoot(player)
+			if current then
+				doChargeKogeki(player, current)
+			end
+		end)
+	elseif action == Actions.Ougi then
+		state.comboIndex = 0
+		-- 奥義ゲージは入力を受け付けた時点で使う
+		doOugi(player)
+	end
+	publish(player, action, step, t)
+end
+
+-- 入力（無ければ nil）で状態を1つ進める
+local function advance(player: Player, state: CombatState, input: string?)
+	local t = now()
+	local before = state.machine.action
+	local machine, started = ActionState.step(state.machine, t, input, timelineFor(player, state, t))
+	state.machine = machine
+	if started then
+		begin(player, state, started, t)
+	elseif before ~= nil and machine.action == nil then
+		publish(player, nil, nil, t)
+	end
 end
 
 -- 受け取った行動をコンソールに出すか。窓口の LogAction で切り替える
@@ -157,26 +244,20 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 		return
 	end
 	local state = states[player]
-	local root = getRoot(player)
-	if not state or not root or state.ougiActive then
+	if not state or not getRoot(player) then
 		return
 	end
+	advance(player, state, action :: string)
+end
 
-	local now = os.clock()
-	-- 奥義は攻撃の硬直中でも割り込める
-	if action == Actions.Ougi then
-		doOugi(player, state, now)
-		return
-	end
-	if now < state.busyUntil then
-		return
-	end
-
-	if action == Actions.Attack then
-		doAttack(player, state, root, now)
-	elseif action == Actions.ChargeKogeki then
-		doChargeKogeki(player, state, root, now)
-	end
+local function track(player: Player)
+	local state: CombatState = { machine = ActionState.new(), comboIndex = 0, lastAttackAt = -math.huge }
+	states[player] = state
+	-- 出現し直したら待機から始める
+	player.CharacterAdded:Connect(function()
+		state.machine = ActionState.new()
+		state.comboIndex = 0
+	end)
 end
 
 function CombatService.start()
@@ -224,15 +305,21 @@ function CombatService.start()
 		end
 	)
 
-	local function track(player: Player)
-		states[player] = { comboIndex = 0, lastAttack = 0, busyUntil = 0, ougiActive = false }
-	end
 	Players.PlayerAdded:Connect(track)
 	for _, player in Players:GetPlayers() do
 		track(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		states[player] = nil
+	end)
+
+	-- 終わった行動を待機に戻し、先行入力を受付の開始と同時に出す
+	RunService.Heartbeat:Connect(function()
+		for player, state in states do
+			if state.machine.action ~= nil or state.machine.buffered ~= nil then
+				advance(player, state, nil)
+			end
+		end
 	end)
 end
 

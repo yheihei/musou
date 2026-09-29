@@ -23,16 +23,15 @@ local SNAPSHOT = {
 	Combo = {
 		ComboResetTime = 0.8,
 		Steps = {
-			{ Damage = 12, Range = 7, Width = 8, Cooldown = 0.28, Knockback = 10 },
-			{ Damage = 12, Range = 7, Width = 8, Cooldown = 0.28, Knockback = 10 },
-			{ Damage = 16, Range = 8, Width = 10, Cooldown = 0.32, Knockback = 14 },
-			{ Damage = 28, Range = 10, Width = 14, Cooldown = 0.6, Knockback = 45 },
+			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
+			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
+			{ Damage = 16, Range = 8, Width = 10, Knockback = 14 },
+			{ Damage = 28, Range = 10, Width = 14, Knockback = 45 },
 		},
 	},
 	ChargeKogeki = {
 		Damage = 30,
 		Radius = 12,
-		Cooldown = 1.2,
 		Knockback = 60,
 	},
 	Ougi = {
@@ -44,6 +43,17 @@ local SNAPSHOT = {
 		Radius = 18,
 		DamagePerPulse = 40,
 		Knockback = 30,
+	},
+	Action = {
+		BufferTime = 0.4,
+		Attack = {
+			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
+			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
+			{ Startup = 0, Active = 0.08, Recovery = 0.24, CancelFrom = 0.32, Advance = 0 },
+			{ Startup = 0, Active = 0.1, Recovery = 0.5, CancelFrom = 0.6, Advance = 0 },
+		},
+		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
+		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
 	},
 	Hitbox = {
 		Height = 8,
