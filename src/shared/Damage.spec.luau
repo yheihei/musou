@@ -7,7 +7,9 @@ local testkit = require("@testkit")
 
 local test, expect = testkit.test, testkit.expect
 
+-- 受ける側は原点に立って -Z を向き、攻撃は正面の 5 スタッド先から来る
 local ORIGIN = vector.create(0, 0, -5)
+local BEHIND = vector.create(0, 0, 5)
 
 local function defender(overrides: { [string]: any }?): Damage.Defender
 	local result: { [string]: any } = {
@@ -16,6 +18,8 @@ local function defender(overrides: { [string]: any }?): Damage.Defender
 		forceField = false,
 		invulnerableUntil = 0,
 		flinchImmuneUntil = 0,
+		position = vector.create(0, 0, 0),
+		facing = vector.create(0, 0, -1),
 	}
 	for key, value in overrides or {} do
 		result[key] = value
@@ -49,6 +53,37 @@ test("ForceField を持つ間と、無敵が切れる時刻の前は無敵", fun
 	expect(Damage.resolve(defender({ forceField = true }), attack(30, "Flinch"), 10).result).toBe("Invulnerable")
 	expect(Damage.resolve(defender({ invulnerableUntil = 11 }), attack(30, "Flinch"), 10).result).toBe("Invulnerable")
 	expect(Damage.resolve(defender({ invulnerableUntil = 10 }), attack(30, "Flinch"), 10).result).toBe("Hit")
+end)
+
+test(
+	"ガードの最中は正面からの攻撃を被ダメージ 0 で受け、ガードの硬直を起こす",
+	function()
+		for _, action in { "Guard", "GuardHit" } do
+			local outcome = Damage.resolve(defender({ action = action }), attack(30, "Knockback"), 10)
+			expect(outcome.result).toBe("Guard")
+			expect(outcome.amount).toBe(0)
+			expect(outcome.action).toBe("GuardHit")
+			expect(outcome.gauge).toBe(0)
+		end
+	end
+)
+
+test("ガードの最中でも背後と真横からの攻撃は通常どおり受ける", function()
+	local fromBehind =
+		Damage.resolve(defender({ action = "Guard" }), { origin = BEHIND, power = 30, reaction = "Flinch" }, 10)
+	expect(fromBehind.result).toBe("Hit")
+	expect(fromBehind.amount > 0).toBe(true)
+	expect(fromBehind.action).toBe("Flinch")
+	local fromSide = Damage.resolve(
+		defender({ action = "Guard" }),
+		{ origin = vector.create(5, 0, 0), power = 30, reaction = "Flinch" },
+		10
+	)
+	expect(fromSide.result).toBe("Hit")
+end)
+
+test("ガードしていなければ正面からの攻撃も受ける", function()
+	expect(Damage.resolve(defender(), attack(30, "Flinch"), 10).result).toBe("Hit")
 end)
 
 test("攻撃中は無敵ではない", function()

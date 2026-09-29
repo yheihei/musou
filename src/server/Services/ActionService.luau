@@ -6,8 +6,10 @@
 --
 -- - 行動と引数は Actions.validate で確かめ、不正な値は捨てる
 -- - 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionStartedAt を書く
--- - 攻撃・奥義の最中はジャンプを、被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
+-- - 攻撃・奥義の最中はジャンプを、ガードと被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
 -- - 空中の通常攻撃はジャンプ攻撃（JumpAttack）にし、空中のチャージ攻撃は捨てる
+-- - ガードは押している間続き、離すと終わる。攻撃の最中に押したガードはキャンセル受付から始まる。
+--   ほかの行動が終わったときにまだ押していれば、ガードに戻る
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -44,13 +46,19 @@ ActionService.started = started.Event
 
 local handlers: { [string]: Handler } = {}
 local machines: { [Player]: ActionState.State } = {}
+-- ガードのボタンを押しているか
+local guardHeld: { [Player]: boolean } = {}
 
 -- 被弾の反応の行動。入力からは始めず、interrupt と続き（Next）で始める
 local REACTIONS: { [string]: ActionState.Timeline } = {
 	Flinch = Config.Action.Flinch,
 	Down = Config.Action.Down,
 	GetUp = Config.Action.GetUp,
+	GuardHit = Config.Action.GuardHit,
 }
+
+-- ガード。離すまで続き、始めから次の行動（攻撃や奥義）を受け付ける
+local GUARD: ActionState.Timeline = { Startup = 0, Active = math.huge, Recovery = 0, CancelFrom = 0, Advance = 0 }
 
 local FULL_LOCK: Lock = { walk = true, jump = true, turn = true }
 local JUMP_LOCK: Lock = { walk = false, jump = true, turn = false }
@@ -60,6 +68,8 @@ local LOCKS: { [string]: Lock } = {
 	ChargeKogeki = JUMP_LOCK,
 	JumpAttack = JUMP_LOCK,
 	Ougi = JUMP_LOCK,
+	Guard = FULL_LOCK,
+	GuardHit = FULL_LOCK,
 	Flinch = FULL_LOCK,
 	Down = FULL_LOCK,
 	GetUp = FULL_LOCK,
@@ -91,7 +101,7 @@ function ActionService.current(player: Player): (string?, number)
 	return machine.action, machine.startedAt
 end
 
--- 被弾の反応（のけぞり・ダウン・起き上がり）の行動か
+-- 被弾の反応（のけぞり・ダウン・起き上がり・ガードで受けた硬直）の行動か
 function ActionService.isReaction(action: string?): boolean
 	return action ~= nil and REACTIONS[action] ~= nil
 end
@@ -142,12 +152,19 @@ local function onStarted(player: Player, action: string, t: number, timeline: Ac
 	started:Fire(player, action, t)
 end
 
--- 行動を始めるときのタイムライン。被弾の反応は Config から、ほかは登録した中身から引く
+-- 行動を始めるときのタイムライン。被弾の反応は Config から、ガードはここで、ほかは登録した中身から引く
 local function timelineFor(player: Player, t: number): ActionState.TimelineOf
 	return function(action: string): ActionState.Timeline?
 		local reaction = REACTIONS[action]
 		if reaction then
 			return reaction
+		end
+		if action == Actions.Guard then
+			-- 空中では始めない。押したままなら着地した後に始まる
+			if not guardHeld[player] or ActionService.isAirborne(player) then
+				return nil
+			end
+			return GUARD
 		end
 		local handler = handlers[action]
 		return if handler then handler.timeline(player, t) else nil
@@ -172,6 +189,26 @@ local function advance(player: Player, input: string?)
 	end
 end
 
+-- ガードを離す。ガードの最中なら待機に戻し、先行入力のガードは捨てる
+local function releaseGuard(player: Player)
+	guardHeld[player] = false
+	local machine = machines[player]
+	if not machine then
+		return
+	end
+	local next = ActionState.finish(machine, Actions.Guard)
+	machines[player] = next
+	if machine.action == Actions.Guard and next.action == nil then
+		publish(player, nil, nil, ActionService.now())
+		applyLock(player, nil)
+	end
+end
+
+-- ガードを押している間か
+function ActionService.isGuardHeld(player: Player): boolean
+	return guardHeld[player] == true
+end
+
 -- 被弾の反応の行動を、今の行動と先行入力を捨てて始める
 function ActionService.interrupt(player: Player, action: string)
 	local timeline = REACTIONS[action]
@@ -194,12 +231,19 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	if not valid then
 		return
 	end
-	-- ガード・緊急回避・秘計は受け取るだけで、まだ何もしない（#56・#64・#93 で作る）
-	if action == Actions.Guard or action == Actions.KinkyuKaihi or action == Actions.Hikei then
+	-- 緊急回避・秘計は受け取るだけで、まだ何もしない（#64・#93 で作る）
+	if action == Actions.KinkyuKaihi or action == Actions.Hikei then
+		return
+	end
+	if action == Actions.Guard and argument == false then
+		releaseGuard(player)
 		return
 	end
 	if not getHumanoid(player) then
 		return
+	end
+	if action == Actions.Guard then
+		guardHeld[player] = true
 	end
 	local input = action :: string
 	if ActionService.isAirborne(player) then
@@ -217,6 +261,7 @@ local function track(player: Player)
 	-- 出現し直したら待機から始める
 	player.CharacterAdded:Connect(function()
 		machines[player] = ActionState.new()
+		guardHeld[player] = false
 	end)
 end
 
@@ -262,13 +307,16 @@ function ActionService.start()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		machines[player] = nil
+		guardHeld[player] = nil
 	end)
 
-	-- 終わった行動を待機に戻し、続きの行動と先行入力を始める
+	-- 終わった行動を待機に戻し、続きの行動と先行入力を始める。待機でガードを押したままならガードに戻る
 	RunService.Heartbeat:Connect(function()
 		for player, machine in machines do
 			if machine.action ~= nil or machine.buffered ~= nil then
 				advance(player, nil)
+			elseif guardHeld[player] and getHumanoid(player) then
+				advance(player, Actions.Guard)
 			end
 		end
 	end)

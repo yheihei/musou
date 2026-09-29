@@ -600,10 +600,14 @@ local SNAPSHOT = {
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
 		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
 		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+		GuardHit = { Startup = 0, Active = 0, Recovery = 0.25, CancelFrom = 0.25, Advance = 0, Next = "Guard" },
 	},
 	Jump = {
 		Height = 7.2,
 		DiveSpeed = 90,
+	},
+	Guard = {
+		Angle = 140,
 	},
 	Damage = {
 		FlinchImmunity = 1,

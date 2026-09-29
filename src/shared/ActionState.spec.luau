@@ -171,6 +171,34 @@ test("続きの行動を始められないときは待機に戻る", function()
 	expect(next.action).toBe(nil)
 end)
 
+test("押している間だけ続く行動は、離すと待機に戻り、先行入力なら捨てる", function()
+	local guard: ActionState.Timeline = { Startup = 0, Active = math.huge, Recovery = 0, CancelFrom = 0, Advance = 0 }
+	local function withGuard(action: string): ActionState.Timeline?
+		if action == "Guard" then
+			return guard
+		end
+		return timelines[action]
+	end
+	local state = ActionState.step(ActionState.new(), 0, "Guard", withGuard, BUFFER_TIME)
+	expect(state.action).toBe("Guard")
+	-- 離すまでは続く
+	expect(ActionState.step(state, 100, nil, withGuard, BUFFER_TIME).action).toBe("Guard")
+	expect(ActionState.finish(state, "Guard").action).toBe(nil)
+
+	-- 攻撃の受付の前に押したガードは先行入力になり、離すと捨てる
+	local attacking = ActionState.step(ActionState.new(), 0, "Attack", withGuard, BUFFER_TIME)
+	local buffered = ActionState.step(attacking, 0.1, "Guard", withGuard, BUFFER_TIME)
+	expect(buffered.buffered).toBe("Guard")
+	local released = ActionState.finish(buffered, "Guard")
+	expect(released.action).toBe("Attack")
+	expect(released.buffered).toBe(nil)
+	expect(buffered.buffered).toBe("Guard")
+
+	-- 受付の後の攻撃はガードから始められる
+	local _, started = ActionState.step(state, 1, "Attack", withGuard, BUFFER_TIME)
+	expect(started).toBe("Attack")
+end)
+
 test("攻撃の速さで時間を割り、前進量はそのまま", function()
 	local timeline: ActionState.Timeline = {
 		Startup = 0.1,
@@ -260,7 +288,7 @@ test("Config の行動のタイムラインは長さが正で、受付は行動�
 		end
 		table.insert(all, set.JumpAttack)
 	end
-	for _, name in { "Ougi", "Flinch", "Down", "GetUp" } do
+	for _, name in { "Ougi", "Flinch", "Down", "GetUp", "GuardHit" } do
 		table.insert(all, (Config.Action :: any)[name])
 	end
 	for _, timeline in all do
@@ -271,7 +299,7 @@ test("Config の行動のタイムラインは長さが正で、受付は行動�
 end)
 
 test("被弾の反応の行動は、終わるまで次の行動を受け付けない", function()
-	for _, name in { "Flinch", "Down", "GetUp" } do
+	for _, name in { "Flinch", "Down", "GetUp", "GuardHit" } do
 		local timeline = (Config.Action :: any)[name] :: ActionState.Timeline
 		expect(timeline.CancelFrom).toBeNear(ActionState.duration(timeline))
 	end

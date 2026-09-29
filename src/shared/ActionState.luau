@@ -126,6 +126,22 @@ function ActionState.interrupt(action: string, now: number, timeline: Timeline):
 	return start(action, timeline, now)
 end
 
+-- 押している間だけ続く行動（ガード）を終える。今の行動が action なら待機に戻し、
+-- 先行入力が action なら捨てる。ほかの行動と先行入力はそのまま
+function ActionState.finish(state: State, action: string): State
+	local next = state
+	if state.action == action then
+		next = table.clone(next)
+		next.action = nil
+		next.timeline = nil
+	end
+	if next.buffered == action then
+		next = if next == state then table.clone(next) else next
+		next.buffered = nil
+	end
+	return next
+end
+
 -- 攻撃の速さの倍率 speed で時間を割ったタイムライン。1 より小さいと遅くなる。前進量は変えない
 function ActionState.scale(timeline: Timeline, speed: number): Timeline
 	if speed == 1 then

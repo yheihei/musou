@@ -1,7 +1,7 @@
 --!strict
 -- プレイヤーの被ダメージの窓口。敵・秘計など、プレイヤーにダメージを与える処理はすべて damage を通す。
--- 無敵・防御の軽減・反応・奥義ゲージの増加は ReplicatedStorage.Shared.Damage が決める。
--- ここは体力を減らし、奥義ゲージを足し、のけぞりとダウンを ActionService で始める。
+-- 無敵・ガード・防御の軽減・反応・奥義ゲージの増加は ReplicatedStorage.Shared.Damage が決める。
+-- ここは体力を減らし、奥義ゲージを足し、のけぞり・ダウン・ガードの硬直を ActionService で始める。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,6 +33,11 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 		return nil
 	end
 
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not root then
+		return nil
+	end
+
 	local t = ActionService.now()
 	local action = ActionService.current(player)
 	local outcome = Damage.resolve({
@@ -41,6 +46,8 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 		forceField = character:FindFirstChildOfClass("ForceField") ~= nil,
 		invulnerableUntil = record.invulnerableUntil,
 		flinchImmuneUntil = record.flinchImmuneUntil,
+		position = root.Position,
+		facing = root.CFrame.LookVector,
 	}, attack, t)
 	record.invulnerableUntil = outcome.invulnerableUntil
 	record.flinchImmuneUntil = outcome.flinchImmuneUntil

@@ -110,6 +110,11 @@ export type ActionSection = {
 	Flinch: ActionTimeline,
 	Down: ActionTimeline,
 	GetUp: ActionTimeline,
+	GuardHit: ActionTimeline,
+}
+
+export type GuardSection = {
+	Angle: number,
 }
 
 export type JumpSection = {
@@ -183,6 +188,7 @@ export type Config = {
 	Ougi: OugiSection,
 	Action: ActionSection,
 	Jump: JumpSection,
+	Guard: GuardSection,
 	Damage: DamageSection,
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
@@ -835,12 +841,19 @@ local Config: Config = {
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
 		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
 		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+		-- ガードで受けたときの短い硬直。ガードは続いていて、押したままならガードに戻る
+		GuardHit = { Startup = 0, Active = 0, Recovery = 0.25, CancelFrom = 0.25, Advance = 0, Next = "Guard" },
 	},
 
 	-- ジャンプ。操作は Roblox 標準の Space と A
 	Jump = {
 		Height = 7.2, -- ジャンプの高さ（スタッド）。攻撃・ガード・奥義・被弾の最中は 0 にして跳べなくする
 		DiveSpeed = 90, -- ジャンプ攻撃で真下へ落ちる速さ（スタッド/秒）。発生までの間だけ落とす
+	},
+
+	-- ガード（Shift / L1）。押している間は動けず、向きも変わらない。正面の判定は Guard.luau が計算する
+	Guard = {
+		Angle = 140, -- 正面とみなす角度（度）。この内からの攻撃は被ダメージ 0 になる
 	},
 
 	-- プレイヤーの被ダメージ。無敵・反応・防御の軽減の判定は Damage.luau が計算する
