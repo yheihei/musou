@@ -6,25 +6,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local Ui = require(script.Parent.Parent.Ui)
 
 local HUDController = {}
 
 local player = Players.LocalPlayer
 
--- 操作の案内。ボタン表記は入力の種類で切り替える（割り当ては InputController と合わせる）
-local ATTACK_LABELS: Ui.Labels = { Keyboard = "左クリック", Gamepad = "R2" }
-local CHARGE_KOGEKI_LABELS: Ui.Labels = { Keyboard = "E", Gamepad = "X" }
-local OUGI_LABELS: Ui.Labels = { Keyboard = "Q", Gamepad = "Y" }
-
+-- 操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える
 local function hintText(full: boolean): string
-	local ougi = Ui.label(OUGI_LABELS)
+	local ougi = Ui.label(InputMap.Ougi.labels)
 	if full then
 		return `奥義ゲージ MAX！ {ougi} で奥義`
 	end
-	local attack = Ui.label(ATTACK_LABELS)
-	local chargeKogeki = Ui.label(CHARGE_KOGEKI_LABELS)
-	return `{attack}: 攻撃   {chargeKogeki}: チャージ攻撃   {ougi}: 奥義`
+	local attack = Ui.label(InputMap.Attack.labels)
+	local chargeKogeki = Ui.label(InputMap.ChargeKogeki.labels)
+	local guard = Ui.label(InputMap.Guard.labels)
+	return `{attack}: 攻撃   {chargeKogeki}: チャージ攻撃   {guard}: ガード   {ougi}: 奥義`
 end
 
 local function buildGui()
@@ -67,7 +65,7 @@ local function buildGui()
 		Name = "Hint",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -56),
-		Size = UDim2.fromOffset(420, 20),
+		Size = UDim2.fromOffset(520, 20),
 		BackgroundTransparency = 1,
 		Font = Ui.Font.Bold,
 		TextSize = Ui.TextSize.Small,

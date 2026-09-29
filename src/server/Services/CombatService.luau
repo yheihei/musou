@@ -1,6 +1,7 @@
 --!strict
 -- プレイヤーの攻撃処理。クライアントからは「何をしたいか」だけを受け取り、
 -- クールダウン・コンボ段数・当たり判定はすべてサーバーで決める。
+-- 行動と引数は Actions.validate で確かめ、不正な値は捨てる。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -140,8 +141,19 @@ local function doOugi(player: Player, state: CombatState, now: number)
 	end)
 end
 
-local function onAction(player: Player, action: unknown)
-	if not Actions.isValid(action) then
+-- 受け取った行動をコンソールに出すか。窓口の LogAction で切り替える
+local logActions = false
+
+local function onAction(player: Player, action: unknown, argument: unknown)
+	local valid = Actions.validate(action, argument)
+	if logActions then
+		print(`[Action] {player.Name} {tostring(action)} {tostring(argument)}{if valid then "" else " 拒否"}`)
+	end
+	if not valid then
+		return
+	end
+	-- ガード・緊急回避・秘計は受け取るだけで、まだ何もしない（#56・#64・#93 で作る）
+	if action == Actions.Guard or action == Actions.KinkyuKaihi or action == Actions.Hikei then
 		return
 	end
 	local state = states[player]
@@ -180,6 +192,35 @@ function CombatService.start()
 			local seconds = if lifetime ~= nil then DebugCommand.toNumber(lifetime, "残す秒数") else nil
 			Hitbox.setShowShapes(on, seconds)
 			return `攻撃判定の形の表示を{if on then "オン" else "オフ"}にした`
+		end
+	)
+
+	DebugCommand.register(
+		"Action",
+		"<プレイヤー名> <行動> [引数]",
+		"Remotes.Action と同じ処理に行動を渡す（Guard は true か false、KinkyuKaihi は x と z、Hikei は枚の番号）",
+		function(name, action, first, second)
+			local player = DebugCommand.findPlayer(name)
+			local argument: any = first
+			if action == Actions.Guard and type(first) == "string" then
+				argument = first == "true"
+			elseif action == Actions.KinkyuKaihi and typeof(first) ~= "Vector3" then
+				argument = Vector3.new(DebugCommand.toNumber(first, "x"), 0, DebugCommand.toNumber(second, "z"))
+			elseif action == Actions.Hikei and type(first) == "string" then
+				argument = tonumber(first)
+			end
+			onAction(player, action, argument)
+			local valid = Actions.validate(action, argument)
+			return `{player.Name} の {tostring(action)} を{if valid then "受け付けた" else "拒否した"}`
+		end
+	)
+	DebugCommand.register(
+		"LogAction",
+		"<true|false>",
+		"受け取った行動をコンソールに出すかを切り替える",
+		function(value)
+			logActions = value == true or value == "true"
+			return `受け取った行動の表示を{if logActions then "オン" else "オフ"}にした`
 		end
 	)
 
