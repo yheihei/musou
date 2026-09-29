@@ -91,9 +91,9 @@ test("秘計のボタンの数は持ち込みの上限枚数と同じ", function
 end)
 
 test("設計のボタン表どおりの割り当て", function()
-	expect(InputMap.Attack.keyboard).toEqual({ "UserInputType.MouseButton1" })
+	expect(InputMap.Attack.keyboard).toEqual({ "UserInputType.MouseButton1", "KeyCode.Z" })
 	expect(InputMap.Attack.gamepad).toEqual({ "KeyCode.ButtonX" })
-	expect(InputMap.ChargeKogeki.keyboard).toEqual({ "UserInputType.MouseButton2", "KeyCode.E" })
+	expect(InputMap.ChargeKogeki.keyboard).toEqual({ "UserInputType.MouseButton2", "KeyCode.X", "KeyCode.E" })
 	expect(InputMap.ChargeKogeki.gamepad).toEqual({ "KeyCode.ButtonY" })
 	expect(InputMap.Guard.gamepad).toEqual({ "KeyCode.ButtonL1" })
 	expect(InputMap.Ougi.keyboard).toEqual({ "KeyCode.Q" })

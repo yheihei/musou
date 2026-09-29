@@ -29,18 +29,19 @@ export type Operation = Binding & {
 
 local InputMap = {}
 
+-- Z と X は、矢印キーで動く人と、マウスのクリックがタッチとして届く環境（Studio のテストプレイなど）向け
 InputMap.Attack = {
 	trigger = "Repeat",
-	keyboard = { "UserInputType.MouseButton1" },
+	keyboard = { "UserInputType.MouseButton1", "KeyCode.Z" },
 	gamepad = { "KeyCode.ButtonX" },
-	labels = { Keyboard = "左クリック", Gamepad = "X" },
+	labels = { Keyboard = "左クリック・Z", Gamepad = "X" },
 } :: Operation
 
 InputMap.ChargeKogeki = {
 	trigger = "Press",
-	keyboard = { "UserInputType.MouseButton2", "KeyCode.E" },
+	keyboard = { "UserInputType.MouseButton2", "KeyCode.X", "KeyCode.E" },
 	gamepad = { "KeyCode.ButtonY" },
-	labels = { Keyboard = "右クリック・E", Gamepad = "Y" },
+	labels = { Keyboard = "右クリック・X・E", Gamepad = "Y" },
 } :: Operation
 
 InputMap.Guard = {
