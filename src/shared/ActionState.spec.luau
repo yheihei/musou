@@ -171,6 +171,75 @@ test("続きの行動を始められないときは待機に戻る", function()
 	expect(next.action).toBe(nil)
 end)
 
+test("攻撃の速さで時間を割り、前進量はそのまま", function()
+	local timeline: ActionState.Timeline = {
+		Startup = 0.1,
+		Active = 0.2,
+		Recovery = 0.4,
+		CancelFrom = 0.5,
+		Advance = 2,
+		Hits = {
+			{
+				Shape = { Kind = "Sphere", Radius = 5 },
+				Power = 1,
+				Reaction = "Flinch",
+				Knockback = 0,
+				Delay = 0.1,
+				Repeat = 2,
+				Interval = 0.05,
+			},
+		},
+	}
+	local slow = ActionState.scale(timeline, 0.8)
+	expect(slow.Startup).toBeNear(0.125)
+	expect(ActionState.duration(slow)).toBeNear(0.7 / 0.8)
+	expect(slow.CancelFrom).toBeNear(0.625)
+	expect(slow.Advance).toBe(2)
+	local hit = (slow.Hits :: { any })[1]
+	expect(hit.Delay).toBeNear(0.125)
+	expect(hit.Interval).toBeNear(0.0625)
+	-- 元の表は書き換えない
+	expect(timeline.Startup).toBe(0.1)
+	expect(((timeline.Hits :: { any })[1]).Delay).toBe(0.1)
+	expect(ActionState.scale(timeline, 1)).toBe(timeline)
+end)
+
+test("判定は発生から Delay 秒後に出て、繰り返す判定は Interval ごとに並ぶ", function()
+	local timeline: ActionState.Timeline = {
+		Startup = 0.1,
+		Active = 0.5,
+		Recovery = 0.2,
+		CancelFrom = 0.8,
+		Advance = 0,
+		Hits = {
+			{
+				Shape = { Kind = "Sphere", Radius = 5 },
+				Power = 2,
+				Reaction = "Knockback",
+				Knockback = 30,
+				Delay = 0.4,
+			},
+			{
+				Shape = { Kind = "Sphere", Radius = 3 },
+				Power = 0.5,
+				Reaction = "Flinch",
+				Knockback = 0,
+				Repeat = 3,
+				Interval = 0.1,
+			},
+		},
+	}
+	local times = {}
+	local powers = {}
+	for _, scheduled in ActionState.hits(timeline) do
+		table.insert(times, math.floor(scheduled.at * 100 + 0.5) / 100)
+		table.insert(powers, scheduled.hit.Power)
+	end
+	expect(times).toEqual({ 0.1, 0.2, 0.3, 0.5 })
+	expect(powers).toEqual({ 0.5, 0.5, 0.5, 2 })
+	expect(#ActionState.hits(ATTACK)).toBe(0)
+end)
+
 test("引数の状態は書き換えない", function()
 	local state = ActionState.new()
 	step(state, 0, "Attack")
@@ -181,7 +250,10 @@ test("引数の状態は書き換えない", function()
 end)
 
 test("Config の行動のタイムラインは長さが正で、受付は行動の中にある", function()
-	local all = table.clone(Config.Action.Attack)
+	local all = table.clone(Config.Bukishu.Shuriken.Attack)
+	for _, timeline in Config.Bukishu.Katana.Attack do
+		table.insert(all, timeline)
+	end
 	for _, name in { "ChargeKogeki", "Ougi", "Flinch", "Down", "GetUp" } do
 		table.insert(all, (Config.Action :: any)[name])
 	end
@@ -197,10 +269,6 @@ test("被弾の反応の行動は、終わるまで次の行動を受け付け�
 		local timeline = (Config.Action :: any)[name] :: ActionState.Timeline
 		expect(timeline.CancelFrom).toBeNear(ActionState.duration(timeline))
 	end
-end)
-
-test("通常攻撃のタイムラインはコンボの段と同じ数だけある", function()
-	expect(#Config.Action.Attack).toBe(#Config.Combo.Steps)
 end)
 
 test("奥義の持続は奥義の攻撃の回数 × 間隔と同じ", function()

@@ -138,3 +138,39 @@ end)
 test("対象が無ければ空を返す", function()
 	expect(HitShape.query(SPHERE, ORIGIN, {})).toEqual({})
 end)
+
+test("Config の形の定義を判定の形にし、高さを省いた形は既定の高さにする", function()
+	expect(HitShape.fromDef({ Kind = "Box", Range = 7, Width = 8 }, 8)).toEqual({
+		kind = "Box",
+		range = 7,
+		width = 8,
+		height = 8,
+	})
+	expect(HitShape.fromDef({ Kind = "Sector", Radius = 9, Angle = 140, Height = 4 }, 8)).toEqual({
+		kind = "Sector",
+		radius = 9,
+		angle = 140,
+		height = 4,
+	})
+	expect(HitShape.fromDef({ Kind = "Sphere", Radius = 9 }, 8)).toEqual({ kind = "Sphere", radius = 9 })
+	expect(HitShape.fromDef({ Kind = "Line", Length = 30, Width = 3, Speed = 120 }, 8)).toEqual({
+		kind = "Line",
+		length = 30,
+		width = 3,
+		speed = 120,
+	})
+end)
+
+test("向きを回すと、上から見て時計回りが正になる", function()
+	local right = HitShape.rotate(ORIGIN, 90)
+	expect(right.look.x).toBeNear(1)
+	expect(right.look.z).toBeNear(0)
+	local left = HitShape.rotate(ORIGIN, -90)
+	expect(left.look.x).toBeNear(-1)
+	expect(HitShape.rotate(ORIGIN, 0)).toBe(ORIGIN)
+	-- 右へ 15 度回した直線は、右前の対象に当たる
+	local line: HitShape.Shape = { kind = "Line", length = 20, width = 1, speed = 100 }
+	local target = v(math.sin(math.rad(15)) * 10, 0, -math.cos(math.rad(15)) * 10)
+	expect(inside(line, ORIGIN, target)).toBe(false)
+	expect(inside(line, HitShape.rotate(ORIGIN, 15), target)).toBe(true)
+end)

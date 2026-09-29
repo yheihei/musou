@@ -21,12 +21,210 @@ local SNAPSHOT = {
 		MinDamage = 1,
 	},
 	Combo = {
-		ComboResetTime = 0.8,
-		Steps = {
-			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
-			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
-			{ Damage = 16, Range = 8, Width = 10, Knockback = 14 },
-			{ Damage = 28, Range = 10, Width = 14, Knockback = 45 },
+		ComboResetTime = 0.5,
+	},
+	Bukishu = {
+		Shuriken = {
+			Attack = {
+				{
+					Startup = 0.05,
+					Active = 0.08,
+					Recovery = 0.17,
+					CancelFrom = 0.26,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 7, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				{
+					Startup = 0.05,
+					Active = 0.08,
+					Recovery = 0.17,
+					CancelFrom = 0.26,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 7, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.17,
+					CancelFrom = 0.3,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+							Power = 0.9,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+					},
+				},
+				{
+					Startup = 0.06,
+					Active = 0.1,
+					Recovery = 0.2,
+					CancelFrom = 0.32,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 8, Angle = 180 },
+							Power = 1.1,
+							Reaction = "Flinch",
+							Knockback = 10,
+						},
+					},
+				},
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.22,
+					CancelFrom = 0.36,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Yaw = -15,
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Yaw = 15,
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+					},
+				},
+				{
+					Startup = 0.12,
+					Active = 0.12,
+					Recovery = 0.46,
+					CancelFrom = 0.68,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Sphere", Radius = 9 },
+							Power = 2.2,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+			},
+		},
+		Katana = {
+			Attack = {
+				{
+					Startup = 0.06,
+					Active = 0.08,
+					Recovery = 0.2,
+					CancelFrom = 0.3,
+					Advance = 1.5,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				{
+					Startup = 0.06,
+					Active = 0.08,
+					Recovery = 0.2,
+					CancelFrom = 0.3,
+					Advance = 1.5,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 9 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.22,
+					CancelFrom = 0.34,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 9, Angle = 140 },
+							Power = 1.1,
+							Reaction = "Flinch",
+							Knockback = 10,
+						},
+					},
+				},
+				{
+					Startup = 0.1,
+					Active = 0.08,
+					Recovery = 0.24,
+					CancelFrom = 0.36,
+					Advance = 3,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 12, Width = 4 },
+							Power = 1.2,
+							Reaction = "Flinch",
+							Knockback = 12,
+						},
+					},
+				},
+				{
+					Startup = 0.08,
+					Active = 0.12,
+					Recovery = 0.24,
+					CancelFrom = 0.4,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 9, Angle = 360 },
+							Power = 1.2,
+							Reaction = "Flinch",
+							Knockback = 12,
+						},
+					},
+				},
+				{
+					Startup = 0.14,
+					Active = 0.1,
+					Recovery = 0.5,
+					CancelFrom = 0.72,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 10, Width = 10 },
+							Power = 2.4,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+			},
 		},
 	},
 	ChargeKogeki = {
@@ -48,12 +246,6 @@ local SNAPSHOT = {
 	},
 	Action = {
 		BufferTime = 0.4,
-		Attack = {
-			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
-			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
-			{ Startup = 0, Active = 0.08, Recovery = 0.24, CancelFrom = 0.32, Advance = 0 },
-			{ Startup = 0, Active = 0.1, Recovery = 0.5, CancelFrom = 0.6, Advance = 0 },
-		},
 		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
 		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },

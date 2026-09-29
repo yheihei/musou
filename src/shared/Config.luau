@@ -26,16 +26,8 @@ export type StatsSection = {
 	MinDamage: number,
 }
 
-export type ComboStep = {
-	Damage: number,
-	Range: number,
-	Width: number,
-	Knockback: number,
-}
-
 export type ComboSection = {
 	ComboResetTime: number,
-	Steps: { ComboStep },
 }
 
 export type ChargeKogekiSection = {
@@ -60,6 +52,35 @@ export type OugiSection = {
 -- 攻撃を受けた側の反応。None は中断しない、Flinch はのけぞり、Knockback は吹き飛び、Launch は打ち上げ
 export type Reaction = "None" | "Flinch" | "Knockback" | "Launch"
 
+-- 攻撃判定の形。HitShape.luau の形に直して使う。Kind ごとに使う寸法（スタッド）が違う
+-- Box は Range・Width・Height、Sector は Radius・Angle（度）・Height、Sphere は Radius、
+-- Line は Length・Width・Speed（スタッド/秒）。Height を省くと Hitbox 節の Height を使う
+export type ShapeDef = {
+	Kind: "Box" | "Sector" | "Sphere" | "Line",
+	Range: number?,
+	Width: number?,
+	Height: number?,
+	Radius: number?,
+	Angle: number?,
+	Length: number?,
+	Speed: number?,
+}
+
+-- 技の判定1つ。発生（Startup）から Delay 秒後に出て、Repeat 回を Interval 秒ごとに繰り返す
+export type HitDef = {
+	Shape: ShapeDef,
+	-- 判定の向きを右へ回す角度（度）
+	Yaw: number?,
+	-- 技の倍率。与ダメージは 倍率 × 攻撃 を、受ける側の防御で軽減したもの
+	Power: number,
+	Reaction: Reaction,
+	-- 吹き飛ばす強さ。軌道の計算ができるまでは、敵にこの大きさの速さを与える
+	Knockback: number,
+	Delay: number?,
+	Repeat: number?,
+	Interval: number?,
+}
+
 -- 行動1回ぶんのタイムライン（秒）と前進量（スタッド）
 export type ActionTimeline = {
 	Startup: number,
@@ -70,11 +91,23 @@ export type ActionTimeline = {
 	Interrupt: boolean?,
 	-- この行動が終わったときに続けて始める行動
 	Next: string?,
+	-- 攻撃の判定。攻撃でない行動には無い
+	Hits: { HitDef }?,
+}
+
+-- 武器種1つぶんの技
+export type BukishuDef = {
+	-- 通常攻撃の段。1段目から順に並べる
+	Attack: { ActionTimeline },
+}
+
+export type BukishuSection = {
+	Shuriken: BukishuDef,
+	Katana: BukishuDef,
 }
 
 export type ActionSection = {
 	BufferTime: number,
-	Attack: { ActionTimeline },
 	ChargeKogeki: ActionTimeline,
 	Ougi: ActionTimeline,
 	Flinch: ActionTimeline,
@@ -144,6 +177,7 @@ export type Config = {
 	Party: PartySection,
 	Stats: StatsSection,
 	Combo: ComboSection,
+	Bukishu: BukishuSection,
 	ChargeKogeki: ChargeKogekiSection,
 	Ougi: OugiSection,
 	Action: ActionSection,
@@ -177,15 +211,230 @@ local Config: Config = {
 		MinDamage = 1, -- 与ダメージの下限
 	},
 
-	-- 通常攻撃のコンボ。1段ずつ順に出て、ComboResetTime 秒以内に次を押すと繋がる。
-	-- 段ごとの時間は Action 節の Attack にある
+	-- 通常攻撃のコンボ。1段ずつ順に出て、前の段のキャンセル受付が始まってから
+	-- ComboResetTime 秒以内に次を押すと繋がる。段の中身は Bukishu 節にある
 	Combo = {
-		ComboResetTime = 0.8,
-		Steps = {
-			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
-			{ Damage = 12, Range = 7, Width = 8, Knockback = 10 },
-			{ Damage = 16, Range = 8, Width = 10, Knockback = 14 },
-			{ Damage = 28, Range = 10, Width = 14, Knockback = 45 },
+		ComboResetTime = 0.5,
+	},
+
+	-- 武器種ごとの技。同じ武器種のキャラクターで共有する（ADR 0004）。
+	-- 行動のタイムラインに判定（Hits）を足したもの。時間はキャラクターの攻撃の速さ（Stats 節の AttackSpeed）で割る
+	Bukishu = {
+		-- 手裏剣セット（刃・酉花）。近くを斬り、ときどき手裏剣を投げる
+		Shuriken = {
+			Attack = {
+				-- 1段目 斬り払い
+				{
+					Startup = 0.05,
+					Active = 0.08,
+					Recovery = 0.17,
+					CancelFrom = 0.26,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 7, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				-- 2段目 斬り返し
+				{
+					Startup = 0.05,
+					Active = 0.08,
+					Recovery = 0.17,
+					CancelFrom = 0.26,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 7, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				-- 3段目 手裏剣を1枚投げる
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.17,
+					CancelFrom = 0.3,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+							Power = 0.9,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+					},
+				},
+				-- 4段目 回し蹴り
+				{
+					Startup = 0.06,
+					Active = 0.1,
+					Recovery = 0.2,
+					CancelFrom = 0.32,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 8, Angle = 180 },
+							Power = 1.1,
+							Reaction = "Flinch",
+							Knockback = 10,
+						},
+					},
+				},
+				-- 5段目 手裏剣を3枚、扇に投げる
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.22,
+					CancelFrom = 0.36,
+					Advance = 0,
+					Hits = {
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Yaw = -15,
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+						{
+							Shape = { Kind = "Line", Length = 28, Width = 3, Speed = 120 },
+							Yaw = 15,
+							Power = 0.8,
+							Reaction = "Flinch",
+							Knockback = 6,
+						},
+					},
+				},
+				-- 6段目 宙返りして周りを斬る。締めで吹き飛ばす
+				{
+					Startup = 0.12,
+					Active = 0.12,
+					Recovery = 0.46,
+					CancelFrom = 0.68,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Sphere", Radius = 9 },
+							Power = 2.2,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+			},
+		},
+		-- 刀セット（石舟斎・金鬼）。前方の箱と扇で斬る。金鬼の重さは攻撃の速さで出す
+		Katana = {
+			Attack = {
+				-- 1段目 袈裟斬り
+				{
+					Startup = 0.06,
+					Active = 0.08,
+					Recovery = 0.2,
+					CancelFrom = 0.3,
+					Advance = 1.5,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 8 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				-- 2段目 逆袈裟
+				{
+					Startup = 0.06,
+					Active = 0.08,
+					Recovery = 0.2,
+					CancelFrom = 0.3,
+					Advance = 1.5,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 8, Width = 9 },
+							Power = 1,
+							Reaction = "Flinch",
+							Knockback = 8,
+						},
+					},
+				},
+				-- 3段目 横薙ぎ
+				{
+					Startup = 0.08,
+					Active = 0.1,
+					Recovery = 0.22,
+					CancelFrom = 0.34,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 9, Angle = 140 },
+							Power = 1.1,
+							Reaction = "Flinch",
+							Knockback = 10,
+						},
+					},
+				},
+				-- 4段目 踏み込んで突く
+				{
+					Startup = 0.1,
+					Active = 0.08,
+					Recovery = 0.24,
+					CancelFrom = 0.36,
+					Advance = 3,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 12, Width = 4 },
+							Power = 1.2,
+							Reaction = "Flinch",
+							Knockback = 12,
+						},
+					},
+				},
+				-- 5段目 回転斬り
+				{
+					Startup = 0.08,
+					Active = 0.12,
+					Recovery = 0.24,
+					CancelFrom = 0.4,
+					Advance = 1,
+					Hits = {
+						{
+							Shape = { Kind = "Sector", Radius = 9, Angle = 360 },
+							Power = 1.2,
+							Reaction = "Flinch",
+							Knockback = 12,
+						},
+					},
+				},
+				-- 6段目 唐竹割り。締めで吹き飛ばす
+				{
+					Startup = 0.14,
+					Active = 0.1,
+					Recovery = 0.5,
+					CancelFrom = 0.72,
+					Advance = 2,
+					Hits = {
+						{
+							Shape = { Kind = "Box", Range = 10, Width = 10 },
+							Power = 2.4,
+							Reaction = "Knockback",
+							Knockback = 45,
+						},
+					},
+				},
+			},
 		},
 	},
 
@@ -212,17 +461,10 @@ local Config: Config = {
 
 	-- 行動のタイムライン。状態遷移は ActionState.luau が計算する
 	-- Startup は判定が出るまで、Active は判定が出ている間、Recovery はその後の硬直の秒数。
-	-- 開始から CancelFrom 秒たつと次の行動を受け付ける。Advance は行動中に前へ進む量。
-	-- Interrupt の行動は、受付の前でも今の行動に割り込める
+	-- 開始から CancelFrom 秒たつと次の行動を受け付ける。Advance は発生と持続の間に前へ進む量。
+	-- Interrupt の行動は、受付の前でも今の行動に割り込める。通常攻撃の段は Bukishu 節にある
 	Action = {
 		BufferTime = 0.4, -- 受け付けられなかった入力を先行入力として持っておく秒数
-		-- 通常攻撃の段ごと。Combo.Steps と同じ順に並べる
-		Attack = {
-			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
-			{ Startup = 0, Active = 0.08, Recovery = 0.2, CancelFrom = 0.28, Advance = 0 },
-			{ Startup = 0, Active = 0.08, Recovery = 0.24, CancelFrom = 0.32, Advance = 0 },
-			{ Startup = 0, Active = 0.1, Recovery = 0.5, CancelFrom = 0.6, Advance = 0 },
-		},
 		ChargeKogeki = { Startup = 0, Active = 0.1, Recovery = 1.1, CancelFrom = 1.2, Advance = 0 },
 		-- 持続は Ougi.Pulses × Ougi.PulseInterval と同じにする
 		Ougi = { Startup = 0, Active = 1.2, Recovery = 0, CancelFrom = 1.2, Advance = 0, Interrupt = true },

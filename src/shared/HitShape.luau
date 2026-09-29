@@ -6,6 +6,9 @@
 -- - 箱・扇・直線は原点の向きの水平成分を前とし、高さは原点を中心に上下へ広げる
 -- - 対象は半径を持つ円柱として扱い、半径の分だけ形からはみ出していても当てる
 -- - 直線は飛び道具用。前へ進んだ距離を速さで割った秒数を、当たるまでの時間差として返す
+-- - 技の形は Config.luau の ShapeDef で書き、fromDef でこの形にする
+
+local Config = require("./Config")
 
 export type Box = {
 	kind: "Box",
@@ -80,6 +83,30 @@ local function localOf(origin: Origin, position: vector): (number, number, numbe
 	local right = vector.cross(forward, UP)
 	local offset = position - origin.position
 	return vector.dot(offset, forward), vector.dot(offset, right), offset.y
+end
+
+-- Config.luau の形の定義を判定の形にする。高さを省いた形は defaultHeight を使う
+function HitShape.fromDef(def: Config.ShapeDef, defaultHeight: number): Shape
+	local height = def.Height or defaultHeight
+	if def.Kind == "Box" then
+		return { kind = "Box", range = def.Range :: number, width = def.Width :: number, height = height }
+	elseif def.Kind == "Sector" then
+		return { kind = "Sector", radius = def.Radius :: number, angle = def.Angle :: number, height = height }
+	elseif def.Kind == "Sphere" then
+		return { kind = "Sphere", radius = def.Radius :: number }
+	end
+	return { kind = "Line", length = def.Length :: number, width = def.Width :: number, speed = def.Speed :: number }
+end
+
+-- 原点の向きを水平に yaw 度だけ回す。上から見て時計回り（右）が正
+function HitShape.rotate(origin: Origin, yaw: number): Origin
+	if yaw == 0 then
+		return origin
+	end
+	local forward = forwardOf(origin.look)
+	local right = vector.cross(forward, UP)
+	local radians = math.rad(yaw)
+	return { position = origin.position, look = forward * math.cos(radians) + right * math.sin(radians) }
 end
 
 -- 対象が形に入っているか。入っていれば true と原点からの距離を返す

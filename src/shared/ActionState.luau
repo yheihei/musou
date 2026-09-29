@@ -126,4 +126,49 @@ function ActionState.interrupt(action: string, now: number, timeline: Timeline):
 	return start(action, timeline, now)
 end
 
+-- 攻撃の速さの倍率 speed で時間を割ったタイムライン。1 より小さいと遅くなる。前進量は変えない
+function ActionState.scale(timeline: Timeline, speed: number): Timeline
+	if speed == 1 then
+		return timeline
+	end
+	local scaled = table.clone(timeline)
+	scaled.Startup = timeline.Startup / speed
+	scaled.Active = timeline.Active / speed
+	scaled.Recovery = timeline.Recovery / speed
+	scaled.CancelFrom = timeline.CancelFrom / speed
+	local hits = timeline.Hits
+	if hits then
+		local scaledHits = {}
+		for index, hit in hits do
+			local copy = table.clone(hit)
+			copy.Delay = if hit.Delay then hit.Delay / speed else nil
+			copy.Interval = if hit.Interval then hit.Interval / speed else nil
+			scaledHits[index] = copy
+		end
+		scaled.Hits = scaledHits
+	end
+	return scaled
+end
+
+export type ScheduledHit = {
+	-- 行動の開始から判定が出るまでの秒数
+	at: number,
+	hit: Config.HitDef,
+}
+
+-- 判定を、行動の開始から出るまでの秒数と組にして、出る順に並べる。繰り返す判定は回数だけ並べる
+function ActionState.hits(timeline: Timeline): { ScheduledHit }
+	local list: { ScheduledHit } = {}
+	for _, hit in timeline.Hits or {} do
+		for index = 1, hit.Repeat or 1 do
+			local at = timeline.Startup + (hit.Delay or 0) + (index - 1) * (hit.Interval or 0)
+			table.insert(list, { at = at, hit = hit })
+		end
+	end
+	table.sort(list, function(a, b)
+		return a.at < b.at
+	end)
+	return list
+end
+
 return ActionState
