@@ -117,6 +117,16 @@ export type GuardSection = {
 	Angle: number,
 }
 
+export type KinkyuKaihiSection = {
+	Distance: number,
+	Duration: number,
+	Invulnerable: number,
+	Recovery: number,
+	RecoveryPerChain: number,
+	MaxRecovery: number,
+	ChainDecay: number,
+}
+
 export type JumpSection = {
 	Height: number,
 	DiveSpeed: number,
@@ -189,6 +199,7 @@ export type Config = {
 	Action: ActionSection,
 	Jump: JumpSection,
 	Guard: GuardSection,
+	KinkyuKaihi: KinkyuKaihiSection,
 	Damage: DamageSection,
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
@@ -854,6 +865,17 @@ local Config: Config = {
 	-- ガード（Shift / L1）。押している間は動けず、向きも変わらない。正面の判定は Guard.luau が計算する
 	Guard = {
 		Angle = 140, -- 正面とみなす角度（度）。この内からの攻撃は被ダメージ 0 になる
+	},
+
+	-- 緊急回避。ガード中に方向を入れて出す。後隙の計算は KinkyuKaihi.luau にある
+	KinkyuKaihi = {
+		Distance = 14, -- 動く距離（スタッド）
+		Duration = 0.3, -- 動いている秒数
+		Invulnerable = 0.3, -- 始めてから無敵の秒数
+		Recovery = 0.1, -- 1回目の後隙（秒）
+		RecoveryPerChain = 0.15, -- 続けて出すたびに後隙へ足す秒数
+		MaxRecovery = 0.55, -- 後隙の上限（秒）
+		ChainDecay = 0.6, -- 続けた回数が1つ減るまでの秒数（前の回避を始めてから数える）
 	},
 
 	-- プレイヤーの被ダメージ。無敵・反応・防御の軽減の判定は Damage.luau が計算する

@@ -39,9 +39,10 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 	end
 
 	local t = ActionService.now()
-	local action = ActionService.current(player)
+	local action, startedAt = ActionService.current(player)
 	local outcome = Damage.resolve({
 		action = action,
+		startedAt = startedAt,
 		defense = PlayerService.getStats(player).Defense,
 		forceField = character:FindFirstChildOfClass("ForceField") ~= nil,
 		invulnerableUntil = record.invulnerableUntil,

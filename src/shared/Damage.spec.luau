@@ -14,6 +14,7 @@ local BEHIND = vector.create(0, 0, 5)
 local function defender(overrides: { [string]: any }?): Damage.Defender
 	local result: { [string]: any } = {
 		action = nil,
+		startedAt = 0,
 		defense = 10,
 		forceField = false,
 		invulnerableUntil = 0,
@@ -47,6 +48,17 @@ test("奥義の最中は無敵で、ダメージも反応もゲージの増加�
 	expect(outcome.amount).toBe(0)
 	expect(outcome.action).toBe(nil)
 	expect(outcome.gauge).toBe(0)
+end)
+
+test("緊急回避は始めてから Invulnerable 秒だけ無敵", function()
+	local seconds = Config.KinkyuKaihi.Invulnerable
+	local during =
+		Damage.resolve(defender({ action = "KinkyuKaihi", startedAt = 10 }), attack(30, "Flinch"), 10 + seconds - 0.01)
+	expect(during.result).toBe("Invulnerable")
+	expect(during.amount).toBe(0)
+	local after =
+		Damage.resolve(defender({ action = "KinkyuKaihi", startedAt = 10 }), attack(30, "Flinch"), 10 + seconds)
+	expect(after.result).toBe("Hit")
 end)
 
 test("ForceField を持つ間と、無敵が切れる時刻の前は無敵", function()

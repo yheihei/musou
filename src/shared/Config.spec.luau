@@ -609,6 +609,15 @@ local SNAPSHOT = {
 	Guard = {
 		Angle = 140,
 	},
+	KinkyuKaihi = {
+		Distance = 14,
+		Duration = 0.3,
+		Invulnerable = 0.3,
+		Recovery = 0.1,
+		RecoveryPerChain = 0.15,
+		MaxRecovery = 0.55,
+		ChainDecay = 0.6,
+	},
 	Damage = {
 		FlinchImmunity = 1,
 		GetUpInvulnerable = 0.8,

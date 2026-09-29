@@ -10,6 +10,8 @@
 -- - 空中の通常攻撃はジャンプ攻撃（JumpAttack）にし、空中のチャージ攻撃は捨てる
 -- - ガードは押している間続き、離すと終わる。攻撃の最中に押したガードはキャンセル受付から始まる。
 --   ほかの行動が終わったときにまだ押していれば、ガードに戻る
+-- - 緊急回避はガードの最中だけ出せ、入れた方向へサーバーの拘束で動かす。続けて出すほど後隙が伸びる
+--   （計算は ReplicatedStorage.Shared.KinkyuKaihi）
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,8 +20,10 @@ local RunService = game:GetService("RunService")
 local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
+local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PlayerService = require(script.Parent.PlayerService)
+local Push = require(script.Parent.Parent.Combat.Push)
 
 export type Handler = {
 	-- 行動を始めるときのタイムライン。始められないなら nil を返し、入力は捨てる
@@ -48,6 +52,9 @@ local handlers: { [string]: Handler } = {}
 local machines: { [Player]: ActionState.State } = {}
 -- ガードのボタンを押しているか
 local guardHeld: { [Player]: boolean } = {}
+-- 緊急回避で動く水平の向きと、続けて出した回数
+local kaihiDirections: { [Player]: Vector3 } = {}
+local kaihiChains: { [Player]: KinkyuKaihi.Chain } = {}
 
 -- 被弾の反応の行動。入力からは始めず、interrupt と続き（Next）で始める
 local REACTIONS: { [string]: ActionState.Timeline } = {
@@ -70,6 +77,7 @@ local LOCKS: { [string]: Lock } = {
 	Ougi = JUMP_LOCK,
 	Guard = FULL_LOCK,
 	GuardHit = FULL_LOCK,
+	KinkyuKaihi = FULL_LOCK,
 	Flinch = FULL_LOCK,
 	Down = FULL_LOCK,
 	GetUp = FULL_LOCK,
@@ -144,9 +152,29 @@ local function applyLock(player: Player, action: string?)
 	humanoid.AutoRotate = not (lock and lock.turn)
 end
 
+local function chainOf(player: Player): KinkyuKaihi.Chain
+	return kaihiChains[player] or KinkyuKaihi.newChain()
+end
+
+-- 緊急回避を始める。動いている間に入れた方向へ前進量だけ動かし、Attribute の ActionStep に続けた回数を書く
+local function beginKinkyuKaihi(player: Player, t: number, timeline: ActionState.Timeline): number
+	local chain = KinkyuKaihi.record(chainOf(player), t)
+	kaihiChains[player] = chain
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local direction = kaihiDirections[player]
+	if root and direction then
+		Push.move(root, direction, timeline.Advance, timeline.Active)
+	end
+	return chain.count
+end
+
 local function onStarted(player: Player, action: string, t: number, timeline: ActionState.Timeline)
 	local handler = handlers[action]
 	local step = if handler then handler.begin(player, t, timeline) else nil
+	if action == Actions.KinkyuKaihi then
+		step = beginKinkyuKaihi(player, t, timeline)
+	end
 	publish(player, action, step, t)
 	applyLock(player, action)
 	started:Fire(player, action, t)
@@ -165,6 +193,13 @@ local function timelineFor(player: Player, t: number): ActionState.TimelineOf
 				return nil
 			end
 			return GUARD
+		elseif action == Actions.KinkyuKaihi then
+			-- ガードの最中だけ出せる
+			local machine = machines[player]
+			if not machine or machine.action ~= Actions.Guard or not kaihiDirections[player] then
+				return nil
+			end
+			return KinkyuKaihi.timeline(KinkyuKaihi.nextCount(chainOf(player), t))
 		end
 		local handler = handlers[action]
 		return if handler then handler.timeline(player, t) else nil
@@ -231,8 +266,8 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	if not valid then
 		return
 	end
-	-- 緊急回避・秘計は受け取るだけで、まだ何もしない（#64・#93 で作る）
-	if action == Actions.KinkyuKaihi or action == Actions.Hikei then
+	-- 秘計は受け取るだけで、まだ何もしない（#93 で作る）
+	if action == Actions.Hikei then
 		return
 	end
 	if action == Actions.Guard and argument == false then
@@ -244,6 +279,8 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	end
 	if action == Actions.Guard then
 		guardHeld[player] = true
+	elseif action == Actions.KinkyuKaihi then
+		kaihiDirections[player] = Actions.horizontal(argument :: any)
 	end
 	local input = action :: string
 	if ActionService.isAirborne(player) then
@@ -262,6 +299,7 @@ local function track(player: Player)
 	player.CharacterAdded:Connect(function()
 		machines[player] = ActionState.new()
 		guardHeld[player] = false
+		kaihiChains[player] = nil
 	end)
 end
 
@@ -308,6 +346,8 @@ function ActionService.start()
 	Players.PlayerRemoving:Connect(function(player)
 		machines[player] = nil
 		guardHeld[player] = nil
+		kaihiDirections[player] = nil
+		kaihiChains[player] = nil
 	end)
 
 	-- 終わった行動を待機に戻し、続きの行動と先行入力を始める。待機でガードを押したままならガードに戻る

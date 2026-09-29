@@ -2,13 +2,13 @@
 -- プレイヤーの被ダメージの判定。受ける側の状態と攻撃から、無敵・防御の軽減・反応・奥義ゲージの増加を決める。
 -- サーバーの被ダメージの窓口（DamageService）が使う。時刻は引数で受け取り、Roblox の API は使わない。
 --
--- - 奥義の最中と、出現直後の ForceField を持つ間は無敵で、何も起きない
+-- - 奥義の最中、緊急回避を始めてから Invulnerable 秒、出現直後の ForceField を持つ間は無敵で、何も起きない
 -- - ガードの最中（ガードで受けた硬直を含む）に正面から受けた攻撃は、被ダメージ 0 で短い硬直だけ起こす
 -- - 与ダメージは Stats.damage で求め、威力を受ける側の防御で軽減する
 -- - のけぞりは、明けてから FlinchImmunity 秒の間は起こさない（ダメージは受ける）
 -- - 吹き飛びと打ち上げはダウンにする。ダウンと起き上がりの間と、その後の GetUpInvulnerable 秒は無敵
 -- - 奥義ゲージは、受けたダメージ × GainPerDamageTaken だけ溜まる
--- 数値は Config.luau の Damage 節・Guard 節・Action 節にある。
+-- 数値は Config.luau の Damage 節・Guard 節・KinkyuKaihi 節・Action 節にある。
 
 local ActionState = require("./ActionState")
 local Config = require("./Config")
@@ -28,8 +28,9 @@ export type Attack = {
 
 -- 受ける側の状態
 export type Defender = {
-	-- 今の行動。nil は待機
+	-- 今の行動と、それを始めた時刻。action が nil なら待機
 	action: string?,
+	startedAt: number,
 	defense: number,
 	-- 出現直後の ForceField を持っているか
 	forceField: boolean,
@@ -84,6 +85,9 @@ end
 function Damage.isInvulnerable(defender: Defender, now: number): boolean
 	if defender.forceField or now < defender.invulnerableUntil then
 		return true
+	end
+	if defender.action == "KinkyuKaihi" then
+		return now - defender.startedAt < Config.KinkyuKaihi.Invulnerable
 	end
 	return defender.action ~= nil and INVULNERABLE_ACTIONS[defender.action] == true
 end
