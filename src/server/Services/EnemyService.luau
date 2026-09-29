@@ -5,6 +5,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Appearance = require(ReplicatedStorage.Shared.Appearance)
+local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
@@ -248,6 +250,27 @@ function EnemyService.start()
 			end
 			local position = model:GetPivot().Position
 			return string.format("%s を (%.1f, %.1f, %.1f) に出した", kind, position.X, position.Y, position.Z)
+		end
+	)
+
+	DebugCommand.register(
+		"SpawnNpc",
+		"<キャラクター ID> <x> <z>",
+		"仮の見た目の NPC を地面の高さに合わせて1体出す（上忍・首領・役者の見た目の確認用）",
+		function(characterId, x, z)
+			if type(characterId) ~= "string" or not Characters.get(characterId) then
+				error(`キャラクター ID {tostring(characterId)} は定義表に無い`, 0)
+			end
+			local model = Appearance.createModel(characterId)
+			if not Ground.placeCharacter(model, DebugCommand.toNumber(x, "x"), DebugCommand.toNumber(z, "z")) then
+				model:Destroy()
+				return "地面が見つからず出せなかった"
+			end
+			local folder = workspace:FindFirstChild("Npcs") or Instance.new("Folder")
+			folder.Name = "Npcs"
+			folder.Parent = workspace
+			model.Parent = folder
+			return `{characterId} を出した`
 		end
 	)
 
