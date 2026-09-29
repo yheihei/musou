@@ -47,6 +47,8 @@ Ui.Color = {
 	Disabled = Color3.fromRGB(90, 90, 90),
 	Gauge = Color3.fromRGB(255, 140, 40),
 	GaugeFull = Color3.fromRGB(255, 60, 30),
+	Health = Color3.fromRGB(90, 200, 110),
+	HealthLow = Color3.fromRGB(230, 70, 60),
 }
 
 -- className の Instance を作り、props を設定して children を入れる

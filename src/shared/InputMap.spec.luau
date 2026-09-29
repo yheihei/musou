@@ -102,3 +102,25 @@ test("設計のボタン表どおりの割り当て", function()
 	expect(InputMap.Hikei[2].gamepad).toEqual({ "KeyCode.DPadUp" })
 	expect(InputMap.Hikei[3].gamepad).toEqual({ "KeyCode.DPadRight" })
 end)
+
+test(
+	"画面の操作の案内は設計のボタン表と同じ順で、どれにも PC とゲームパッドの表記がある",
+	function()
+		local names = {}
+		for _, hint in InputMap.hints() do
+			table.insert(names, hint.name)
+			expect(#hint.labels.Keyboard > 0).toBe(true)
+			expect(#hint.labels.Gamepad > 0).toBe(true)
+		end
+		expect(names).toEqual({ "通常攻撃", "チャージ攻撃", "ジャンプ", "ガード", "奥義", "秘計" })
+	end
+)
+
+test("秘計の案内の表記は、枚ごとの表記と合っている", function()
+	expect(InputMap.HikeiLabels.Keyboard).toBe(
+		`{InputMap.Hikei[1].labels.Keyboard}〜{InputMap.Hikei[#InputMap.Hikei].labels.Keyboard}`
+	)
+	for _, binding in InputMap.Hikei do
+		expect(string.find(binding.labels.Gamepad, InputMap.HikeiLabels.Gamepad, 1, true) ~= nil).toBe(true)
+	end
+end)

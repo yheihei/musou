@@ -77,6 +77,27 @@ InputMap.Hikei = {
 	},
 } :: { Binding }
 
+-- ジャンプと秘計の表記。ジャンプは Roblox 標準の割り当てなので表記だけを持つ。秘計は枚をまとめて出す
+InputMap.JumpLabels = { Keyboard = "Space", Gamepad = "A" } :: Labels
+InputMap.HikeiLabels = { Keyboard = "1〜3", Gamepad = "十字キー" } :: Labels
+
+export type Hint = {
+	name: string,
+	labels: Labels,
+}
+
+-- 画面の操作の案内。設計のボタン表と同じ順に、操作の名前とボタン表記を並べる
+function InputMap.hints(): { Hint }
+	return {
+		{ name = "通常攻撃", labels = InputMap.Attack.labels },
+		{ name = "チャージ攻撃", labels = InputMap.ChargeKogeki.labels },
+		{ name = "ジャンプ", labels = InputMap.JumpLabels },
+		{ name = "ガード", labels = InputMap.Guard.labels },
+		{ name = "奥義", labels = InputMap.Ougi.labels },
+		{ name = "秘計", labels = InputMap.HikeiLabels },
+	}
+end
+
 -- 入力の文字列を Enum の種類と名前に分ける。形が違えば nil
 function InputMap.parse(input: string): (("KeyCode" | "UserInputType")?, string?)
 	local kind, name = string.match(input, "^(%a+)%.(%w+)$")
