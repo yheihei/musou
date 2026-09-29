@@ -1,5 +1,5 @@
 --!strict
--- プレイヤーの攻撃の中身。通常攻撃・チャージ攻撃・奥義のタイムラインと判定を ActionService に登録する。
+-- プレイヤーの攻撃の中身。通常攻撃・チャージ攻撃・ジャンプ攻撃・奥義のタイムラインと判定を ActionService に登録する。
 -- 入力の受け取りと行動の状態遷移は ActionService が持ち、コンボの段数と当たり判定はここで決める。
 --
 -- - 通常攻撃の段とチャージ攻撃 C1〜C6 は武器種ごとに Config.luau の Bukishu 節にあり、キャラクターの武器種から引く
@@ -30,6 +30,8 @@ local Vfx = require(script.Parent.Parent.Combat.Vfx)
 local CombatService = {}
 
 local combos: { [Player]: Combo.State } = {}
+-- 今の空中でジャンプ攻撃を出したか。着地で消す
+local jumpAttacked: { [Player]: boolean } = {}
 
 local SLASH_COLOR = Color3.fromRGB(255, 230, 150)
 local CHARGE_KOGEKI_COLOR = Color3.fromRGB(120, 200, 255)
@@ -193,6 +195,26 @@ local function registerActions()
 		end,
 	})
 
+	-- ジャンプ攻撃。空中の通常攻撃で、着地まで1回だけ出せる。発生までの間に真下へ落とす
+	ActionService.register(ActionService.JumpAttack, {
+		timeline = function(player)
+			if jumpAttacked[player] or not ActionService.isAirborne(player) then
+				return nil
+			end
+			return scaled(player, bukishuOf(player).JumpAttack)
+		end,
+		begin = function(player, t, timeline)
+			jumpAttacked[player] = true
+			combos[player] = Combo.new()
+			local root = getRoot(player)
+			if root then
+				Push.fall(root, Config.Jump.DiveSpeed, timeline.Startup)
+			end
+			perform(player, t, timeline, SLASH_COLOR)
+			return nil
+		end,
+	})
+
 	ActionService.register(Actions.Ougi, {
 		timeline = function(player)
 			if PlayerService.getOugi(player).stock < 1 then
@@ -240,11 +262,24 @@ function CombatService.start()
 		end
 	end)
 
-	-- 出現し直したら1段目から始める
-	local function track(player: Player)
-		player.CharacterAdded:Connect(function()
-			combos[player] = Combo.new()
+	-- 出現し直したら1段目から始める。着地したらジャンプ攻撃をまた出せる
+	local function watch(player: Player, character: Model)
+		combos[player] = Combo.new()
+		jumpAttacked[player] = nil
+		local humanoid = character:WaitForChild("Humanoid") :: Humanoid
+		humanoid.StateChanged:Connect(function(_, state)
+			if state ~= Enum.HumanoidStateType.Jumping and state ~= Enum.HumanoidStateType.Freefall then
+				jumpAttacked[player] = nil
+			end
 		end)
+	end
+	local function track(player: Player)
+		player.CharacterAdded:Connect(function(character)
+			watch(player, character)
+		end)
+		if player.Character then
+			task.spawn(watch, player, player.Character)
+		end
 	end
 	Players.PlayerAdded:Connect(track)
 	for _, player in Players:GetPlayers() do
@@ -252,6 +287,7 @@ function CombatService.start()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		combos[player] = nil
+		jumpAttacked[player] = nil
 	end)
 end
 

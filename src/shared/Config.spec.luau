@@ -344,6 +344,16 @@ local SNAPSHOT = {
 					},
 				},
 			},
+			JumpAttack = {
+				Startup = 0.12,
+				Active = 0.1,
+				Recovery = 0.3,
+				CancelFrom = 0.45,
+				Advance = 0,
+				Hits = {
+					{ Shape = { Kind = "Sphere", Radius = 8 }, Power = 1.5, Reaction = "Knockback", Knockback = 30 },
+				},
+			},
 		},
 		Katana = {
 			Attack = {
@@ -555,6 +565,21 @@ local SNAPSHOT = {
 					},
 				},
 			},
+			JumpAttack = {
+				Startup = 0.14,
+				Active = 0.1,
+				Recovery = 0.34,
+				CancelFrom = 0.5,
+				Advance = 0,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 9, Width = 8, Height = 12 },
+						Power = 1.8,
+						Reaction = "Knockback",
+						Knockback = 35,
+					},
+				},
+			},
 		},
 	},
 	Ougi = {
@@ -575,6 +600,10 @@ local SNAPSHOT = {
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
 		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
 		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+	},
+	Jump = {
+		Height = 7.2,
+		DiveSpeed = 90,
 	},
 	Damage = {
 		FlinchImmunity = 1,

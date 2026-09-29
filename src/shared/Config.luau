@@ -95,6 +95,8 @@ export type BukishuDef = {
 	Attack: { ActionTimeline },
 	-- チャージ攻撃。C1 から順に並べる。通常攻撃を n 段出した後は C(n+1) になる
 	ChargeKogeki: { ActionTimeline },
+	-- ジャンプ攻撃。空中の通常攻撃で、着地まで1回だけ出せる叩きつけ
+	JumpAttack: ActionTimeline,
 }
 
 export type BukishuSection = {
@@ -108,6 +110,11 @@ export type ActionSection = {
 	Flinch: ActionTimeline,
 	Down: ActionTimeline,
 	GetUp: ActionTimeline,
+}
+
+export type JumpSection = {
+	Height: number,
+	DiveSpeed: number,
 }
 
 export type DamageSection = {
@@ -175,6 +182,7 @@ export type Config = {
 	Bukishu: BukishuSection,
 	Ougi: OugiSection,
 	Action: ActionSection,
+	Jump: JumpSection,
 	Damage: DamageSection,
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
@@ -211,7 +219,7 @@ local Config: Config = {
 		ComboResetTime = 0.5,
 	},
 
-	-- 武器種ごとの技（通常攻撃6段とチャージ攻撃 C1〜C6）。同じ武器種のキャラクターで共有する（ADR 0004）。
+	-- 武器種ごとの技（通常攻撃6段、チャージ攻撃 C1〜C6、ジャンプ攻撃）。同じ武器種のキャラクターで共有する（ADR 0004）。
 	-- 行動のタイムラインに判定（Hits）を足したもの。時間はキャラクターの攻撃の速さ（Stats 節の AttackSpeed）で割る
 	Bukishu = {
 		-- 手裏剣セット（刃・酉花）。近くを斬り、ときどき手裏剣を投げる
@@ -547,6 +555,17 @@ local Config: Config = {
 					},
 				},
 			},
+			-- ジャンプ攻撃 急降下して着地の衝撃で周りを吹き飛ばす
+			JumpAttack = {
+				Startup = 0.12,
+				Active = 0.1,
+				Recovery = 0.3,
+				CancelFrom = 0.45,
+				Advance = 0,
+				Hits = {
+					{ Shape = { Kind = "Sphere", Radius = 8 }, Power = 1.5, Reaction = "Knockback", Knockback = 30 },
+				},
+			},
 		},
 		-- 刀セット（石舟斎・金鬼）。前方の箱と扇で斬る。金鬼の重さは攻撃の速さで出す
 		Katana = {
@@ -771,6 +790,22 @@ local Config: Config = {
 					},
 				},
 			},
+			-- ジャンプ攻撃 落ちながら前へ斬り下ろす
+			JumpAttack = {
+				Startup = 0.14,
+				Active = 0.1,
+				Recovery = 0.34,
+				CancelFrom = 0.5,
+				Advance = 0,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 9, Width = 8, Height = 12 },
+						Power = 1.8,
+						Reaction = "Knockback",
+						Knockback = 35,
+					},
+				},
+			},
 		},
 	},
 
@@ -800,6 +835,12 @@ local Config: Config = {
 		Flinch = { Startup = 0, Active = 0, Recovery = 0.35, CancelFrom = 0.35, Advance = 0 },
 		Down = { Startup = 0, Active = 0, Recovery = 0.8, CancelFrom = 0.8, Advance = 0, Next = "GetUp" },
 		GetUp = { Startup = 0, Active = 0, Recovery = 0.5, CancelFrom = 0.5, Advance = 0 },
+	},
+
+	-- ジャンプ。操作は Roblox 標準の Space と A
+	Jump = {
+		Height = 7.2, -- ジャンプの高さ（スタッド）。攻撃・ガード・奥義・被弾の最中は 0 にして跳べなくする
+		DiveSpeed = 90, -- ジャンプ攻撃で真下へ落ちる速さ（スタッド/秒）。発生までの間だけ落とす
 	},
 
 	-- プレイヤーの被ダメージ。無敵・反応・防御の軽減の判定は Damage.luau が計算する

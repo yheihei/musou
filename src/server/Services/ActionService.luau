@@ -6,12 +6,12 @@
 --
 -- - 行動と引数は Actions.validate で確かめ、不正な値は捨てる
 -- - 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionStartedAt を書く
--- - 被弾の反応の最中は、歩き・ジャンプ・向きの変更を止める
+-- - 攻撃・奥義の最中はジャンプを、被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
+-- - 空中の通常攻撃はジャンプ攻撃（JumpAttack）にし、空中のチャージ攻撃は捨てる
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local StarterPlayer = game:GetService("StarterPlayer")
 
 local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
@@ -35,6 +35,9 @@ type Lock = {
 
 local ActionService = {}
 
+-- 空中の通常攻撃から始める行動。入力からは直接始めない
+ActionService.JumpAttack = "JumpAttack"
+
 local started = Instance.new("BindableEvent")
 -- 行動を始めたとき（被弾の反応を含む）に、プレイヤー・行動・時刻で発火する
 ActionService.started = started.Event
@@ -50,11 +53,22 @@ local REACTIONS: { [string]: ActionState.Timeline } = {
 }
 
 local FULL_LOCK: Lock = { walk = true, jump = true, turn = true }
+local JUMP_LOCK: Lock = { walk = false, jump = true, turn = false }
 -- 最中に動きを止める行動。載っていない行動は何も止めない
 local LOCKS: { [string]: Lock } = {
+	Attack = JUMP_LOCK,
+	ChargeKogeki = JUMP_LOCK,
+	JumpAttack = JUMP_LOCK,
+	Ougi = JUMP_LOCK,
 	Flinch = FULL_LOCK,
 	Down = FULL_LOCK,
 	GetUp = FULL_LOCK,
+}
+
+-- 空中にいるとみなす Humanoid の状態。クライアントの状態がサーバーへ複製される
+local AIR_STATES: { [Enum.HumanoidStateType]: boolean } = {
+	[Enum.HumanoidStateType.Jumping] = true,
+	[Enum.HumanoidStateType.Freefall] = true,
 }
 
 -- 行動の時刻。クライアントと同じ時計で Attribute に書く
@@ -91,6 +105,12 @@ local function getHumanoid(player: Player): Humanoid?
 	return humanoid
 end
 
+-- ジャンプや落下で空中にいるか
+function ActionService.isAirborne(player: Player): boolean
+	local humanoid = getHumanoid(player)
+	return humanoid ~= nil and AIR_STATES[humanoid:GetState()] == true
+end
+
 -- 今の行動をキャラクターの Attribute に書く。待機に戻ったときは action を nil にする
 local function publish(player: Player, action: string?, step: number?, t: number)
 	local character = player.Character
@@ -110,7 +130,7 @@ local function applyLock(player: Player, action: string?)
 	end
 	local lock = if action then LOCKS[action] else nil
 	humanoid.WalkSpeed = if lock and lock.walk then 0 else PlayerService.getStats(player).WalkSpeed
-	humanoid.JumpHeight = if lock and lock.jump then 0 else StarterPlayer.CharacterJumpHeight
+	humanoid.JumpHeight = if lock and lock.jump then 0 else Config.Jump.Height
 	humanoid.AutoRotate = not (lock and lock.turn)
 end
 
@@ -181,7 +201,15 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	if not getHumanoid(player) then
 		return
 	end
-	advance(player, action :: string)
+	local input = action :: string
+	if ActionService.isAirborne(player) then
+		if input == Actions.ChargeKogeki then
+			return
+		elseif input == Actions.Attack then
+			input = ActionService.JumpAttack
+		end
+	end
+	advance(player, input)
 end
 
 local function track(player: Player)

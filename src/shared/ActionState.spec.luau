@@ -258,6 +258,7 @@ test("Config の行動のタイムラインは長さが正で、受付は行動�
 		for _, timeline in set.ChargeKogeki do
 			table.insert(all, timeline)
 		end
+		table.insert(all, set.JumpAttack)
 	end
 	for _, name in { "Ougi", "Flinch", "Down", "GetUp" } do
 		table.insert(all, (Config.Action :: any)[name])

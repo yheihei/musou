@@ -65,6 +65,8 @@ local function onCharacterAdded(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	local stats = PlayerService.getStats(player)
 	humanoid.WalkSpeed = stats.WalkSpeed
+	humanoid.UseJumpPower = false
+	humanoid.JumpHeight = Config.Jump.Height
 	humanoid.MaxHealth = stats.MaxHealth
 	humanoid.Health = stats.MaxHealth
 	task.spawn(Appearance.applyToCharacter, character, PlayerService.getCharacterId(player))

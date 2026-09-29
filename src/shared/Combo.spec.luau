@@ -108,6 +108,17 @@ test(
 	end
 )
 
+test("どの武器種もジャンプ攻撃は1回の叩きつけで、周りの敵を吹き飛ばす", function()
+	for _, bukishu in { "Shuriken", "Katana" } do
+		local jumpAttack = ((Config.Bukishu :: any)[bukishu] :: Config.BukishuDef).JumpAttack
+		local hits = ActionState.hits(jumpAttack)
+		expect(#hits).toBe(1)
+		expect(hits[1].hit.Reaction).toBe("Knockback")
+	end
+	expect(Config.Jump.Height > 0).toBe(true)
+	expect(Config.Jump.DiveSpeed > 0).toBe(true)
+end)
+
 test("C2 と C3 は打ち上げ、C1 と C4 は吹き飛ばす", function()
 	for _, bukishu in { "Shuriken", "Katana" } do
 		local list = (Config.Bukishu :: any)[bukishu].ChargeKogeki :: { Config.ActionTimeline }
@@ -172,6 +183,7 @@ test("技の判定は形ごとの寸法を持ち、持続の間に出て、受�
 		for _, timeline in set.ChargeKogeki do
 			table.insert(all, timeline)
 		end
+		table.insert(all, set.JumpAttack)
 	end
 	for _, timeline in all do
 		expect(timeline.CancelFrom <= ActionState.duration(timeline) + 1e-9).toBe(true)
