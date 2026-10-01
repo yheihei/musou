@@ -10,11 +10,15 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Ground = require(ReplicatedStorage.Shared.Ground)
 local OugiGauge = require(ReplicatedStorage.Shared.OugiGauge)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
 local PlayerService = {}
+
+-- 出撃などで出現し直す前に、出現位置の周りを読み込ませるのを待つ秒数の上限
+local STREAM_TIMEOUT = 5
 
 -- 使うキャラクターの ID。Attribute が無いか操作キャラクターでなければ既定のキャラクター
 function PlayerService.getCharacterId(player: Player): string
@@ -59,6 +63,47 @@ function PlayerService.consumeOugiStock(player: Player): boolean
 		setOugi(player, next)
 	end
 	return ok
+end
+
+-- 出現し直して、cframe の位置に cframe の向き（水平の成分）で立たせる。高さは地面に合わせる。
+-- StreamingEnabled なので、先に出現位置の周りをクライアントへ読み込ませる。出現し直すまで待つ
+function PlayerService.spawnAt(player: Player, cframe: CFrame)
+	local position = cframe.Position
+	local streamed, streamError = pcall(function()
+		player:RequestStreamAroundAsync(position, STREAM_TIMEOUT)
+	end)
+	if not streamed then
+		warn(`PlayerService: {player.Name} の出現位置の周りを読み込めなかった: {streamError}`)
+	end
+	if not player.Parent then
+		return
+	end
+	local loaded, loadError = pcall(function()
+		player:LoadCharacter()
+	end)
+	local character = player.Character
+	if not loaded or not character then
+		warn(`PlayerService: {player.Name} を出現し直せなかった: {loadError}`)
+		return
+	end
+	local look = cframe.LookVector
+	local flat = Vector3.new(look.X, 0, look.Z)
+	local facing = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
+	character:PivotTo(CFrame.lookAt(position, position + facing))
+	Ground.placeCharacter(character, position.X, position.Z)
+end
+
+-- ロビーの SpawnLocation に出現し直す。出現し直すまで待つ
+function PlayerService.spawnInLobby(player: Player)
+	if not player.Parent then
+		return
+	end
+	local ok, err = pcall(function()
+		player:LoadCharacter()
+	end)
+	if not ok then
+		warn(`PlayerService: {player.Name} をロビーに出現し直せなかった: {err}`)
+	end
 end
 
 local function onCharacterAdded(player: Player, character: Model)

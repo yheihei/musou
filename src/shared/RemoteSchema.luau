@@ -53,6 +53,7 @@ export type RejectReason =
 	| "HikeiTaken" -- パーティーの他のメンバーが選んでいる
 	| "HikeiLimit" -- 持ち込みの上限を超える
 	| "MembersNotReady" -- キャラクターを選んでいないメンバーがいる
+	| "KukakuMissing" -- ステージの区画か出撃地点がプレースに無い
 RemoteSchema.rejectReasons = {
 	"NotLobby",
 	"NotLeader",
@@ -71,6 +72,7 @@ RemoteSchema.rejectReasons = {
 	"HikeiTaken",
 	"HikeiLimit",
 	"MembersNotReady",
+	"KukakuMissing",
 } :: { RejectReason }
 
 -- パーティーのメンバーごとの写し

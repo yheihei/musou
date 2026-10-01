@@ -8,6 +8,8 @@
 --   そのステージの首領と NPC、パーティーの他のメンバーが選んだキャラクターは選べない
 -- - 秘計は1枚ずつ選ぶか外す。持ち込みの上限まで、パーティーの他のメンバーと重ならずに選べる。
 --   選んだ順が戦闘中のボタン（1〜3、十字キーの左・上・右）の順になる
+-- - 出撃はリーダーだけが、開放済みのステージを選び、出撃するメンバー全員がキャラクターを選んだ後にできる。
+--   秘計の枚数は出撃の条件にしない
 
 local Characters = require("./Characters")
 local Hikei = require("./Hikei")
@@ -37,6 +39,17 @@ local function checkRequester(requester: Requester): Reject?
 	return nil
 end
 
+-- 定義表にあり、リーダーが開放済みのステージか
+local function checkStageId(stageId: string, unlocked: { string }): Reject?
+	if not Stages.get(stageId) then
+		return "UnknownStage"
+	end
+	if not table.find(unlocked, stageId) then
+		return "StageLocked"
+	end
+	return nil
+end
+
 -- ステージの選択。unlocked はリーダーの開放済みのステージ
 function SelectionRules.checkStage(requester: Requester, stageId: string, unlocked: { string }): Reject?
 	local reject = checkRequester(requester)
@@ -46,13 +59,7 @@ function SelectionRules.checkStage(requester: Requester, stageId: string, unlock
 	if not requester.isLeader then
 		return "NotLeader"
 	end
-	if not Stages.get(stageId) then
-		return "UnknownStage"
-	end
-	if not table.find(unlocked, stageId) then
-		return "StageLocked"
-	end
-	return nil
+	return checkStageId(stageId, unlocked)
 end
 
 -- リーダーが代わったときなどに、選んでいるステージを残すか。リーダーが開放していなければ外す
@@ -146,6 +153,34 @@ function SelectionRules.applyHikei(
 		return reject, mine
 	end
 	return nil, next
+end
+
+-- 出撃。stageId はリーダーが選んでいるステージ（選んでいなければ nil）、unlocked はリーダーの開放済みのステージ、
+-- ready は出撃するメンバー（待機中でない人）が全員キャラクターを選んでいるか
+function SelectionRules.checkShutsugeki(
+	requester: Requester,
+	stageId: string?,
+	unlocked: { string },
+	ready: boolean
+): Reject?
+	local reject = checkRequester(requester)
+	if reject then
+		return reject
+	end
+	if not requester.isLeader then
+		return "NotLeader"
+	end
+	if not stageId then
+		return "StageNotSelected"
+	end
+	reject = checkStageId(stageId, unlocked)
+	if reject then
+		return reject
+	end
+	if not ready then
+		return "MembersNotReady"
+	end
+	return nil
 end
 
 return SelectionRules

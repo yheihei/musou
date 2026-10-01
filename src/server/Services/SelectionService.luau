@@ -10,6 +10,7 @@
 -- - 秘計は1枚ずつ選ぶか外し、持ち込みの上限まで、他のメンバーと重ならずに選べる（先に選んだ人のもの）。
 --   秘計の枚数は出撃の条件にしない
 -- - 抜けた人の選択は外し、ほかの人が選べるようにする
+-- - リザルトからロビーへ戻ったら、StageService が clear で選択を全部外す
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -127,6 +128,14 @@ function SelectionService.selectHikei(player: Player, hikeiId: string, selected:
 		PartyService.refresh()
 	end
 	return nil
+end
+
+-- ステージ・キャラクター・秘計の選択を全部外し、全員に送り直す（リザルトからロビーへ戻ったとき）
+function SelectionService.clear()
+	selectedStage = nil
+	table.clear(characters)
+	table.clear(hikei)
+	PartyService.refresh()
 end
 
 -- 今のリーダーが開放していないステージの選択を外し、全員に送り直す

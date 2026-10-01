@@ -190,3 +190,35 @@ test("秘計の選択は引数の秘計を書き換えない", function()
 	SelectionRules.applyHikei(MEMBER, "Fukuhei", false, mine, {})
 	expect(mine).toEqual({ "Fukuhei" })
 end)
+
+test(
+	"リーダーは、開放済みのステージを選び、全員がキャラクターを選んだ後に出撃できる",
+	function()
+		expect(SelectionRules.checkShutsugeki(LEADER, "Iga1", { "Iga1" }, true)).toBe(nil)
+	end
+)
+
+test("リーダー以外は出撃できない", function()
+	expect(SelectionRules.checkShutsugeki(MEMBER, "Iga1", { "Iga1" }, true)).toBe("NotLeader")
+end)
+
+test("キャラクターを選んでいないメンバーがいると出撃できない", function()
+	expect(SelectionRules.checkShutsugeki(LEADER, "Iga1", { "Iga1" }, false)).toBe("MembersNotReady")
+end)
+
+test("ステージを選ぶ前と、開放していないステージには出撃できない", function()
+	expect(SelectionRules.checkShutsugeki(LEADER, nil, { "Iga1" }, true)).toBe("StageNotSelected")
+	expect(SelectionRules.checkShutsugeki(LEADER, "Iga1", {}, true)).toBe("StageLocked")
+	expect(SelectionRules.checkShutsugeki(LEADER, "Nowhere", { "Nowhere" }, true)).toBe("UnknownStage")
+end)
+
+test("ロビー以外のフェーズと待機中の人は出撃できない", function()
+	expect(SelectionRules.checkShutsugeki(at(LEADER, { phase = "Battle" }), "Iga1", { "Iga1" }, true)).toBe("NotLobby")
+	expect(SelectionRules.checkShutsugeki(at(LEADER, { waiting = true }), "Iga1", { "Iga1" }, true)).toBe("Waiting")
+end)
+
+test("出撃の拒否の理由は Remote の拒否の理由に含まれる", function()
+	for _, reason in { "NotLeader", "StageNotSelected", "StageLocked", "UnknownStage", "MembersNotReady" } do
+		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
+	end
+end)

@@ -1,7 +1,7 @@
 --!strict
 -- パーティーとリーダーの管理。入退室をパーティーに反映し、変化のたびに全員へ、
 -- 入室した人には入室直後に PartyState を送る。計算は ReplicatedStorage.Shared.Party が持つ。
--- フェーズはステージの進行の処理が setPhase で変える。
+-- フェーズはステージの進行（StageService）が setPhase で変える。
 -- 選択中のステージやキャラクターなど、ほかのサービスが持つ状態は setExtraProvider で PartyState に載せる。
 
 local Players = game:GetService("Players")
@@ -47,6 +47,18 @@ function PartyService.isMember(userId: number): boolean
 	return Party.get(party, userId) ~= nil
 end
 
+-- 出撃するメンバー（待機中でない人）の Player を入った順に返す
+function PartyService.getActivePlayers(): { Player }
+	local result = {}
+	for _, member in Party.activeMembers(party) do
+		local player = Players:GetPlayerByUserId(member.userId)
+		if player then
+			table.insert(result, player)
+		end
+	end
+	return result
+end
+
 -- 出撃中に入ってロビーで待っているか
 function PartyService.isWaiting(player: Player): boolean
 	local member = Party.get(party, player.UserId)
@@ -87,21 +99,6 @@ local function registerDebugCommands()
 	DebugCommand.register("DumpParty", "", "パーティーの状態を JSON で返す", function()
 		return game:GetService("HttpService"):JSONEncode(PartyService.getState())
 	end)
-	DebugCommand.register(
-		"SetPhase",
-		"<" .. table.concat(RemoteSchema.phases, "|") .. ">",
-		"フェーズを変える（ステージの進行の処理ができるまでの確認用）",
-		function(phase)
-			if not table.find(RemoteSchema.phases, phase) then
-				error(
-					`フェーズは {table.concat(RemoteSchema.phases, "、")} のどれか（{tostring(phase)}）`,
-					0
-				)
-			end
-			PartyService.setPhase(phase)
-			return `フェーズを {phase} にした`
-		end
-	)
 end
 
 function PartyService.start()
