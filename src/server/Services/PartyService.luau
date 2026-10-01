@@ -42,6 +42,11 @@ function PartyService.getLeader(): Player?
 	return if leader then Players:GetPlayerByUserId(leader.userId) else nil
 end
 
+-- パーティーのメンバーか。抜けた後は false
+function PartyService.isMember(userId: number): boolean
+	return Party.get(party, userId) ~= nil
+end
+
 -- 出撃中に入ってロビーで待っているか
 function PartyService.isWaiting(player: Player): boolean
 	local member = Party.get(party, player.UserId)

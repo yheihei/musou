@@ -1,6 +1,7 @@
 --!strict
 local RemoteSchema = require("./RemoteSchema")
 local SelectionRules = require("./SelectionRules")
+local Stages = require("./Stages")
 local testkit = require("@testkit")
 
 local test, expect = testkit.test, testkit.expect
@@ -54,3 +55,84 @@ test("ステージの選択の拒否の理由は Remote の拒否の理由に含
 		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
 	end
 end)
+
+local IGA1 = Stages.get("Iga1") :: Stages.Stage
+
+-- 甲賀のストーリーの架空のステージ。酉花が NPC として登場する
+local KOGA_TEST: Stages.Stage = {
+	id = "KogaTest",
+	clan = "Koga",
+	order = 1,
+	next = nil,
+	tekigun = "Iga",
+	shuryo = { mikatagun = nil, tekigun = nil },
+	npcs = { "Torika" },
+	kukaku = "KogaTest",
+	eventScenes = {},
+}
+
+test("ステージを選んだ後は、ストーリーのクランの操作キャラクターを選べる", function()
+	for _, id in { "Jin", "Torika", "Sekishusai", "KanaOni" } do
+		expect(SelectionRules.checkCharacter(MEMBER, id, IGA1, {})).toBe(nil)
+	end
+	expect(SelectionRules.checkCharacter(LEADER, "Jin", IGA1, {})).toBe(nil)
+end)
+
+test("ステージを選ぶ前はキャラクターを選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Jin", nil, {})).toBe("StageNotSelected")
+end)
+
+test("Iga1 では首領のハヤテを選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Hayate", IGA1, {})).toBe("Shuryo")
+end)
+
+test("他のメンバーが選んだキャラクターは選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Jin", IGA1, { "Jin" })).toBe("CharacterTaken")
+	expect(SelectionRules.checkCharacter(MEMBER, "Torika", IGA1, { "Jin" })).toBe(nil)
+end)
+
+test("ストーリーのクランに属さないキャラクターと、ステージの NPC は選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Jin", KOGA_TEST, {})).toBe("OtherClan")
+	expect(SelectionRules.checkCharacter(MEMBER, "Torika", KOGA_TEST, {})).toBe("NpcInStage")
+end)
+
+test("首領でも NPC でもない、操作キャラクター以外は選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Hayate", KOGA_TEST, {})).toBe("NotPlayable")
+end)
+
+test("存在しないキャラクターは選べない", function()
+	expect(SelectionRules.checkCharacter(MEMBER, "Nobody", IGA1, {})).toBe("UnknownCharacter")
+end)
+
+test("ロビー以外と待機中の人のキャラクターの選択は拒否する", function()
+	expect(SelectionRules.checkCharacter(at(MEMBER, { phase = "Battle" }), "Jin", IGA1, {})).toBe("NotLobby")
+	expect(SelectionRules.checkCharacter(at(MEMBER, { waiting = true }), "Jin", IGA1, {})).toBe("Waiting")
+end)
+
+test("ステージを変えたとき、新しいステージで選べないキャラクターは外す", function()
+	expect(SelectionRules.keepsCharacter("Jin", IGA1)).toBe(true)
+	expect(SelectionRules.keepsCharacter("Jin", KOGA_TEST)).toBe(false)
+	expect(SelectionRules.keepsCharacter("Torika", KOGA_TEST)).toBe(false)
+	expect(SelectionRules.keepsCharacter("Hayate", IGA1)).toBe(false)
+end)
+
+test(
+	"キャラクターの選択の拒否の理由は制限ごとに別の値で、Remote の拒否の理由に含まれる",
+	function()
+		local reasons = {
+			"StageNotSelected",
+			"UnknownCharacter",
+			"Shuryo",
+			"NpcInStage",
+			"NotPlayable",
+			"OtherClan",
+			"CharacterTaken",
+		}
+		local seen = {}
+		for _, reason in reasons do
+			expect(seen[reason]).toBe(nil)
+			seen[reason] = true
+			expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
+		end
+	end
+)

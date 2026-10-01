@@ -4,7 +4,10 @@
 --
 -- - 選択はロビーのフェーズでだけ受け付け、待機中の人からは受け付けない
 -- - ステージはリーダーだけが、リーダーの開放済みのステージから選べる
+-- - キャラクターはステージを選んだ後に、そのストーリーのクランの操作キャラクターから選べる。
+--   そのステージの首領と NPC、パーティーの他のメンバーが選んだキャラクターは選べない
 
+local Characters = require("./Characters")
 local RemoteSchema = require("./RemoteSchema")
 local Stages = require("./Stages")
 
@@ -52,6 +55,57 @@ end
 -- リーダーが代わったときなどに、選んでいるステージを残すか。リーダーが開放していなければ外す
 function SelectionRules.keepsStage(stageId: string?, unlocked: { string }): boolean
 	return stageId == nil or table.find(unlocked, stageId) ~= nil
+end
+
+-- ステージで選べるキャラクターか。選べなければ理由を返す（他のメンバーとの重なりは見ない）
+local function checkCharacterInStage(characterId: string, stage: Stages.Stage): Reject?
+	local character = Characters.get(characterId)
+	if not character then
+		return "UnknownCharacter"
+	end
+	if characterId == stage.shuryo.mikatagun or characterId == stage.shuryo.tekigun then
+		return "Shuryo"
+	end
+	if table.find(stage.npcs, characterId) then
+		return "NpcInStage"
+	end
+	if not character.playable then
+		return "NotPlayable"
+	end
+	if character.clan ~= stage.clan then
+		return "OtherClan"
+	end
+	return nil
+end
+
+-- キャラクターの選択。stage は選んでいるステージの定義（選んでいなければ nil）、
+-- takenByOthers はパーティーの他のメンバーが選んだキャラクター
+function SelectionRules.checkCharacter(
+	requester: Requester,
+	characterId: string,
+	stage: Stages.Stage?,
+	takenByOthers: { string }
+): Reject?
+	local reject = checkRequester(requester)
+	if reject then
+		return reject
+	end
+	if not stage then
+		return "StageNotSelected"
+	end
+	reject = checkCharacterInStage(characterId, stage)
+	if reject then
+		return reject
+	end
+	if table.find(takenByOthers, characterId) then
+		return "CharacterTaken"
+	end
+	return nil
+end
+
+-- ステージが変わったとき、選んでいるキャラクターを残すか。新しいステージで選べなければ外す
+function SelectionRules.keepsCharacter(characterId: string, stage: Stages.Stage): boolean
+	return checkCharacterInStage(characterId, stage) == nil
 end
 
 return SelectionRules

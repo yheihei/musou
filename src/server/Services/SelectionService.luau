@@ -5,12 +5,16 @@
 --
 -- - ステージはリーダーだけが、ロビーのフェーズで、リーダーの開放済みのステージから選べる
 -- - リーダーが代わったときと、リーダーの開放済みが変わったときに確かめ直し、開放していないステージの選択は外す
+-- - キャラクターはステージを選んだ後に、ストーリーのクランの操作キャラクターから、他のメンバーと重ならずに選べる
+-- - ステージが変わったら、新しいステージで選べなくなったキャラクターの選択を外す
+-- - 抜けた人の選択は外し、ほかの人が選べるようにする
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Party = require(ReplicatedStorage.Shared.Party)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local SelectionRules = require(ReplicatedStorage.Shared.SelectionRules)
+local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PartyService = require(script.Parent.PartyService)
 local ProgressService = require(script.Parent.ProgressService)
@@ -19,6 +23,8 @@ local SelectionService = {}
 
 -- リーダーが選んでいるステージ
 local selectedStage: string? = nil
+-- メンバーの UserId から引く、選んだキャラクター
+local characters: { [number]: string } = {}
 -- 最後に確かめたときのリーダー
 local lastLeader: Player? = nil
 local rejectedRemote: RemoteEvent
@@ -42,6 +48,24 @@ function SelectionService.getStage(): string?
 	return selectedStage
 end
 
+-- 選んだキャラクター。選んでいなければ nil
+function SelectionService.getCharacter(player: Player): string?
+	return characters[player.UserId]
+end
+
+-- 新しいステージで選べなくなったキャラクターの選択を外す
+local function releaseInvalidCharacters()
+	local stage = if selectedStage then Stages.get(selectedStage) else nil
+	if not stage then
+		return
+	end
+	for userId, characterId in characters do
+		if not SelectionRules.keepsCharacter(characterId, stage) then
+			characters[userId] = nil
+		end
+	end
+end
+
 -- ステージを選ぶ。受け付けたら nil、受け付けなければ拒否の理由を返す
 function SelectionService.selectStage(player: Player, stageId: string): SelectionRules.Reject?
 	local reject = SelectionRules.checkStage(requesterOf(player), stageId, leaderUnlocked())
@@ -50,6 +74,27 @@ function SelectionService.selectStage(player: Player, stageId: string): Selectio
 	end
 	if selectedStage ~= stageId then
 		selectedStage = stageId
+		releaseInvalidCharacters()
+		PartyService.refresh()
+	end
+	return nil
+end
+
+-- キャラクターを選ぶ。受け付けたら nil、受け付けなければ拒否の理由を返す。前に選んでいたキャラクターは外れる
+function SelectionService.selectCharacter(player: Player, characterId: string): SelectionRules.Reject?
+	local takenByOthers = {}
+	for userId, id in characters do
+		if userId ~= player.UserId then
+			table.insert(takenByOthers, id)
+		end
+	end
+	local stage = if selectedStage then Stages.get(selectedStage) else nil
+	local reject = SelectionRules.checkCharacter(requesterOf(player), characterId, stage, takenByOthers)
+	if reject then
+		return reject
+	end
+	if characters[player.UserId] ~= characterId then
+		characters[player.UserId] = characterId
 		PartyService.refresh()
 	end
 	return nil
@@ -63,7 +108,18 @@ local function recheckStage()
 	PartyService.refresh()
 end
 
+-- 抜けた人の選択を外す
+local function releaseLeftMembers()
+	for userId in characters do
+		if not PartyService.isMember(userId) then
+			characters[userId] = nil
+		end
+	end
+end
+
+-- 入退室とフェーズの変化のたびに呼ぶ。抜けた人の選択は PartyState に載らないので、送り直すのはリーダーが代わったときだけ
 local function onPartyChanged()
+	releaseLeftMembers()
 	local leader = PartyService.getLeader()
 	if leader ~= lastLeader then
 		lastLeader = leader
@@ -80,6 +136,16 @@ local function onSelectStage(player: Player, stageId: unknown)
 		return
 	end
 	local reason = SelectionService.selectStage(player, stageId :: string)
+	if reason then
+		reject(player, reason)
+	end
+end
+
+local function onSelectCharacter(player: Player, characterId: unknown)
+	if not RemoteSchema.validate.SelectCharacter(characterId) then
+		return
+	end
+	local reason = SelectionService.selectCharacter(player, characterId :: string)
 	if reason then
 		reject(player, reason)
 	end
@@ -102,6 +168,22 @@ local function registerDebugCommands()
 			return `{player.Name} が {stageId} を選んだ`
 		end
 	)
+	DebugCommand.register(
+		"SelectCharacter",
+		"<プレイヤー名> <キャラクター ID>",
+		"Remotes.SelectCharacter と同じ処理でキャラクターを選ぶ",
+		function(name, characterId)
+			local player = DebugCommand.findPlayer(name)
+			if not RemoteSchema.validate.SelectCharacter(characterId) then
+				error(`キャラクター ID の形が正しくない（{tostring(characterId)}）`, 0)
+			end
+			local reason = SelectionService.selectCharacter(player, characterId)
+			if reason then
+				return `{player.Name} の {characterId} の選択を拒否した（{reason}）`
+			end
+			return `{player.Name} が {characterId} を選んだ`
+		end
+	)
 end
 
 function SelectionService.start()
@@ -109,11 +191,16 @@ function SelectionService.start()
 	rejectedRemote = remotes:WaitForChild("SelectionRejected") :: RemoteEvent
 	local selectStage = remotes:WaitForChild("SelectStage") :: RemoteEvent
 	selectStage.OnServerEvent:Connect(onSelectStage)
+	local selectCharacter = remotes:WaitForChild("SelectCharacter") :: RemoteEvent
+	selectCharacter.OnServerEvent:Connect(onSelectCharacter)
 
 	PartyService.setExtraProvider(function(): Party.Extra
 		return {
 			stage = selectedStage,
 			unlockedStages = leaderUnlocked(),
+			characterOf = function(userId: number): string?
+				return characters[userId]
+			end,
 		}
 	end)
 	PartyService.changed:Connect(onPartyChanged)
