@@ -191,6 +191,14 @@ export type PartySection = {
 	MaxMembers: number,
 }
 
+export type SerifuSection = {
+	CharInterval: number,
+	HoldTime: number,
+	HoldPerChar: number,
+	BattleTime: number,
+	BattleQueueMax: number,
+}
+
 export type SoundSection = {
 	Volume: { [string]: number },
 	RollOffMinDistance: number,
@@ -216,6 +224,7 @@ export type Config = {
 	Kosen: KosenSection,
 	Butai: ButaiSection,
 	Hikei: HikeiSection,
+	Serifu: SerifuSection,
 	Sound: SoundSection,
 }
 
@@ -1001,6 +1010,16 @@ local Config: Config = {
 			Kishinka = 60,
 			Daikatsu = 30, -- 動揺させる時間
 		},
+	},
+
+	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある
+	Serifu = {
+		-- 会話窓は全員が同じ進行で見るよう、ボタンでなく時間で送る
+		CharInterval = 0.04, -- 会話窓に1文字ずつ出す間隔（秒）
+		HoldTime = 1.5, -- 全部出し終えてから次の台詞へ送るまでの秒数
+		HoldPerChar = 0.03, -- 長い台詞ほど長く見せるため、1文字ごとに送るまでの秒数へ足す秒数
+		BattleTime = 4, -- 戦闘中の台詞を1本出しておく秒数
+		BattleQueueMax = 3, -- 戦闘中の台詞の順番待ちの上限。超えたら古い台詞から捨てる
 	},
 
 	-- 効果音。素材は Sounds.luau の登録表にあり、SoundPlayer.luau が鳴らす

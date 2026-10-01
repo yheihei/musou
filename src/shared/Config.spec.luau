@@ -712,6 +712,13 @@ local SNAPSHOT = {
 			Daikatsu = 30,
 		},
 	},
+	Serifu = {
+		CharInterval = 0.04,
+		HoldTime = 1.5,
+		HoldPerChar = 0.03,
+		BattleTime = 4,
+		BattleQueueMax = 3,
+	},
 	Sound = {
 		Volume = {
 			Swing = 0.5,
