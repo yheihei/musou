@@ -97,6 +97,12 @@ function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: stri
 		warn(`PlayerService: {player.Name} を出現し直せなかった: {loadError}`)
 		return
 	end
+	-- 出現し直すとロビーの SpawnLocation の ForceField が付く。出撃地点では無敵にしないので外す
+	for _, child in character:GetChildren() do
+		if child:IsA("ForceField") then
+			child:Destroy()
+		end
+	end
 	local look = cframe.LookVector
 	local flat = Vector3.new(look.X, 0, look.Z)
 	local facing = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
