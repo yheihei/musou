@@ -119,17 +119,20 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
       SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、勝敗の結果）
+      SerifuService  戦闘中の台詞を全員の画面の端に出す
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定と仮エフェクト
-  client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生
+  client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面
+    Selection/  出撃前の画面（ステージ・キャラクター・秘計の選択と出撃ボタン）の欄
+    Dialogue    イベントシーンの会話窓
 assets/
   weapons/  武器の仮のモデル（Rojo の JSON モデル）。ReplicatedStorage.Weapons に置く
 .lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
