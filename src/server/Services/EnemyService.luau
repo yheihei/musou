@@ -1,6 +1,7 @@
 --!strict
 -- 敵兵の生成・AI・被ダメージ処理。
--- 下忍を部隊単位で湧かせ続け、一定部隊ごとに上忍を混ぜる。
+-- 戦闘のフェーズの間だけ、出撃したステージの区画にいるメンバーの周りに、下忍を部隊単位で湧かせ続け、
+-- 一定部隊ごとに上忍を混ぜる。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）敵を片付ける。
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 
 local Players = game:GetService("Players")
@@ -11,9 +12,14 @@ local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
+local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
+local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
+local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local DamageService = require(script.Parent.DamageService)
+local KukakuService = require(script.Parent.KukakuService)
 local PlayerService = require(script.Parent.PlayerService)
+local StageService = require(script.Parent.StageService)
 
 type EnemyDef = Config.EnemySection
 
@@ -47,6 +53,8 @@ local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 -- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
 local spawning = true
+-- 部隊を出す位置を区画の中から選ぶときに試す回数
+local BUTAI_CENTER_TRIES = 8
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -122,6 +130,10 @@ local function updateEnemy(enemy: Enemy, now: number)
 end
 
 local function onEnemyDied(enemy: Enemy)
+	-- 片付けで先に表から外した敵は数え直さない
+	if enemies[enemy.model] == nil then
+		return
+	end
 	enemies[enemy.model] = nil
 	aliveCount -= 1
 
@@ -167,13 +179,35 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 	return model
 end
 
--- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる
+-- 戦闘のフェーズなら、出撃したステージの区画の範囲の目印。戦闘のフェーズでなければ nil
+local function battleBounds(): BasePart?
+	if StageService.getPhase() ~= "Battle" then
+		return nil
+	end
+	local stageId = StageService.getStage()
+	local stage = if stageId then Stages.get(stageId) else nil
+	if not stage then
+		return nil
+	end
+	return KukakuService.bounds(stage.kukaku)
+end
+
+local function insideBounds(bounds: BasePart, position: Vector3): boolean
+	local offset = bounds.CFrame:PointToObjectSpace(position)
+	return Mejirushi.insideBounds(offset.X, offset.Z, bounds.Size.X, bounds.Size.Z)
+end
+
+-- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる。
+-- 戦闘のフェーズで、区画の中にいるメンバーの周りの、区画の中の位置を選ぶ。選べなければ nil
 local function pickButaiCenter(): Vector2?
-	local players = Players:GetPlayers()
+	local bounds = battleBounds()
+	if not bounds then
+		return nil
+	end
 	local candidates = {}
-	for _, player in players do
-		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if root then
+	for _, member in StageService.getMembers() do
+		local root = member.Character and member.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root and insideBounds(bounds, root.Position) then
 			table.insert(candidates, root.Position)
 		end
 	end
@@ -182,18 +216,19 @@ local function pickButaiCenter(): Vector2?
 	end
 
 	local base = candidates[math.random(1, #candidates)]
-	local angle = math.random() * math.pi * 2
-	local distance = Config.Spawner.MinDistance
-		+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
-	return Vector2.new(base.X + math.cos(angle) * distance, base.Z + math.sin(angle) * distance)
+	for _ = 1, BUTAI_CENTER_TRIES do
+		local angle = math.random() * math.pi * 2
+		local distance = Config.Spawner.MinDistance
+			+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
+		local center = base + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
+		if insideBounds(bounds, center) then
+			return Vector2.new(center.X, center.Z)
+		end
+	end
+	return nil
 end
 
-local function spawnButai(withJonin: boolean)
-	local center = pickButaiCenter()
-	if not center then
-		return
-	end
-
+local function spawnButai(center: Vector2, withJonin: boolean)
 	local count = math.min(Config.Spawner.ButaiSize, Config.Spawner.MaxAlive - aliveCount)
 	for i = 1, count do
 		local kind = if withJonin and i == 1 then "Jonin" else "Genin"
@@ -227,10 +262,27 @@ function EnemyService.getTargets(): { HitShape.Target<Model> }
 	return targets
 end
 
+-- 敵をすべて消す。倒れて消える前の敵も消し、撃破数には数えない
+local function removeAll()
+	for model in enemies do
+		model:Destroy()
+	end
+	table.clear(enemies)
+	aliveCount = 0
+	enemiesFolder:ClearAllChildren()
+end
+
 function EnemyService.start()
 	enemiesFolder = Instance.new("Folder")
 	enemiesFolder.Name = "Enemies"
 	enemiesFolder.Parent = workspace
+
+	-- 戦闘のフェーズが終わったら片付ける
+	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
+		if next ~= "Battle" then
+			removeAll()
+		end
+	end)
 
 	for kind, def in ENEMY_DEFS do
 		local template = buildTemplate(kind, def)
@@ -310,8 +362,11 @@ function EnemyService.start()
 		while true do
 			task.wait(Config.Spawner.ButaiInterval)
 			if spawning and aliveCount < Config.Spawner.MaxAlive then
-				butaiCount += 1
-				spawnButai(butaiCount % Config.Spawner.JoninEvery == 0)
+				local center = pickButaiCenter()
+				if center then
+					butaiCount += 1
+					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0)
+				end
 			end
 		end
 	end)

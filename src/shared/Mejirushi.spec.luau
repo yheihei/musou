@@ -49,3 +49,14 @@ test("経由点の名前を番号の順に並べ、番号でない名前は分�
 	expect(numbered).toEqual({ "1", "2", "10" })
 	expect(unknown).toEqual({ "0", "Part" })
 end)
+
+test("区画の範囲の中かを水平の位置で判定し、縁の上は中に含める", function()
+	-- 1100 × 1400 の範囲（伊賀第1ステージの区画と同じ大きさ）
+	expect(Mejirushi.insideBounds(0, 0, 1100, 1400)).toBe(true)
+	expect(Mejirushi.insideBounds(-549, 699, 1100, 1400)).toBe(true)
+	expect(Mejirushi.insideBounds(550, -700, 1100, 1400)).toBe(true)
+	expect(Mejirushi.insideBounds(551, 0, 1100, 1400)).toBe(false)
+	expect(Mejirushi.insideBounds(0, -701, 1100, 1400)).toBe(false)
+	-- ロビーは伊賀第1ステージの区画の中心から 3000 離れている
+	expect(Mejirushi.insideBounds(-3000, 0, 1100, 1400)).toBe(false)
+end)

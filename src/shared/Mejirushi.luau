@@ -107,4 +107,10 @@ function Mejirushi.shutsugekiNumberOf(memberIndex: number, available: { number }
 	return available[(memberIndex - 1) % #available + 1]
 end
 
+-- 区画の範囲の目印の中か（水平だけを見る）。localX・localZ は範囲の目印から見た位置
+-- （CFrame:PointToObjectSpace の X と Z）、sizeX・sizeZ は範囲の目印の Size の X と Z。縁の上は中に含める
+function Mejirushi.insideBounds(localX: number, localZ: number, sizeX: number, sizeZ: number): boolean
+	return math.abs(localX) <= sizeX / 2 and math.abs(localZ) <= sizeZ / 2
+end
+
 return Mejirushi
