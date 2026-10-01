@@ -9,6 +9,7 @@
 -- - 拒否の音は Cancel
 
 local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RejectMessage = require(ReplicatedStorage.Shared.RejectMessage)
@@ -35,6 +36,10 @@ local HEADER_HEIGHT = 40
 local MESSAGE_HEIGHT = 40
 -- 拒否の理由を出しておく秒数
 local MESSAGE_TIME = 4
+-- ゲームパッドで最初のボタンを選べるようになる、入室からの秒数（time()）
+local SELECT_AFTER_START = 3
+-- キャラクターの Humanoid を待つ秒数の上限
+local HUMANOID_TIMEOUT = 10
 
 type Gui = {
 	screen: ScreenGui,
@@ -160,6 +165,33 @@ function SelectionController.start()
 		return nil
 	end
 
+	-- ゲームパッドのとき、最初のボタンを選ぶ。
+	-- 入室直後に選ぶと、ゲームパッドをつないだままテストプレイを始めたときに Studio が落ちる。
+	-- そのため、入室から SELECT_AFTER_START 秒たち、キャラクターが出てから選ぶ。待つ間に画面を閉じたら選ばない
+	local selectToken = 0
+	local function selectFirstButton()
+		selectToken += 1
+		local token = selectToken
+		task.spawn(function()
+			if not game:IsLoaded() then
+				game.Loaded:Wait()
+			end
+			local player = Players.LocalPlayer
+			local character = player.Character or player.CharacterAdded:Wait()
+			character:WaitForChild("Humanoid", HUMANOID_TIMEOUT)
+			local rest = SELECT_AFTER_START - time()
+			if rest > 0 then
+				task.wait(rest)
+			end
+			if token ~= selectToken or not gui.screen.Enabled or Ui.inputKind() ~= "Gamepad" then
+				return
+			end
+			if not GuiService.SelectedObject then
+				GuiService.SelectedObject = firstButton()
+			end
+		end)
+	end
+
 	local wasVisible = false
 	local function refresh()
 		local state = PartyClient.get()
@@ -172,8 +204,9 @@ function SelectionController.start()
 			end
 		end
 		if visible and not wasVisible and Ui.inputKind() == "Gamepad" then
-			GuiService.SelectedObject = firstButton()
+			selectFirstButton()
 		elseif not visible then
+			selectToken += 1
 			local selected = GuiService.SelectedObject
 			if selected and selected:IsDescendantOf(gui.screen) then
 				GuiService.SelectedObject = nil
@@ -191,7 +224,7 @@ function SelectionController.start()
 	end)
 	Ui.onInputKindChanged(function(kind)
 		if kind == "Gamepad" and gui.screen.Enabled and not GuiService.SelectedObject then
-			GuiService.SelectedObject = firstButton()
+			selectFirstButton()
 		end
 	end)
 	refresh()
