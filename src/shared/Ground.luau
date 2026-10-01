@@ -7,6 +7,8 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 
+local Mejirushi = require("./Mejirushi")
+
 local Ground = {}
 
 -- 上から下へ当てる光線の開始の高さと長さ（スタッド）
@@ -14,7 +16,6 @@ local RAY_TOP = 1000
 local RAY_LENGTH = 2000
 -- キャラクターに当たって除外し直す回数の上限
 local MAX_RETRIES = 8
-local MEJIRUSHI_TAG = "Mejirushi"
 
 local function characterOf(part: BasePart): Model?
 	local model = part:FindFirstAncestorOfClass("Model")
@@ -30,7 +31,7 @@ end
 -- (x, z) の真下の地面の高さを返す。見つからなければ警告を出して nil を返す。
 -- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）
 function Ground.heightAt(x: number, z: number, fromY: number?): number?
-	local excluded: { Instance } = CollectionService:GetTagged(MEJIRUSHI_TAG)
+	local excluded: { Instance } = CollectionService:GetTagged(Mejirushi.TAG)
 	for _, player in Players:GetPlayers() do
 		if player.Character then
 			table.insert(excluded, player.Character)

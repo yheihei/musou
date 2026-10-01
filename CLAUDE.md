@@ -31,6 +31,7 @@
 - ゲームロジックはサーバー権威。クライアントは入力と表示だけを担当する
 - RemoteEvent は `default.project.json` の ReplicatedStorage.Remotes に宣言する
 - Studio で直接編集した内容は Git に残らない。必ず `src/` を編集する
+- マップ（ロビー・区画・地形・建物・目印）はプレースで管理し、Git に残らない。`default.project.json` の Workspace に足さない。目印の形式は ADR 0006
 
 ## Git
 

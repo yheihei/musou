@@ -119,7 +119,8 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  PartyService / ProgressService / SelectionService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / PartyService / ProgressService / SelectionService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+      KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
       SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
@@ -130,8 +131,12 @@ src/
 assets/
   weapons/  武器の仮のモデル（Rojo の JSON モデル）。ReplicatedStorage.Weapons に置く
 .lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
-default.project.json  Rojo のインスタンスツリー定義（Remotes・ServerStorage.DebugCommand・地形もここ）
+default.project.json  Rojo のインスタンスツリー定義（Remotes・ServerStorage.DebugCommand もここ）
 ```
+
+マップ（ロビー・区画・地形・建物・目印）は Rojo の管理外で、プレースに保存する。Git には残らない。
+ロビーは `Workspace.Lobby`、区画は `Workspace.Stages` の下に置き、目印の形式は [ADR 0006](docs/adr/0006-positions-as-markers-composition-in-code.md) に従う。
+`default.project.json` の Workspace にはパーツを足さない。
 
 ## 設計メモ
 
