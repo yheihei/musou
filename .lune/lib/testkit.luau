@@ -129,6 +129,12 @@ function testkit.readJson(_path: string): any
 	error("testkit.readJson は lune run test から実行したときだけ使える")
 end
 
+-- リポジトリの直下からの相対パスでファイルを読み、中身をそのまま返す。無ければ nil。
+-- 画像の大きさの確かめなどに使う。ファイルの読み込みは .lune/test.luau が差し込む
+function testkit.readFile(_path: string): string?
+	error("testkit.readFile は lune run test から実行したときだけ使える")
+end
+
 function testkit.test(name: string, fn: () -> ())
 	-- fn は値を返さないので、エラーの値を受け取れるよう any を返す関数として扱う
 	local ok, err = pcall(fn :: () -> any)

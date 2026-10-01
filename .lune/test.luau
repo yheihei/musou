@@ -13,6 +13,13 @@ testkit.readJson = function(path: string): any
 	return serde.decode("json", fs.readFile(path))
 end
 
+testkit.readFile = function(path: string): string?
+	if not fs.isFile(path) then
+		return nil
+	end
+	return fs.readFile(path)
+end
+
 local ROOT = "src/shared"
 
 local function collect(dir: string, found: { string })
