@@ -7,6 +7,9 @@
       "Shared": {
         "$path": "src/shared"
       },
+      "Weapons": {
+        "$path": "assets/weapons"
+      },
       "Remotes": {
         "$className": "Folder",
         "Action": {

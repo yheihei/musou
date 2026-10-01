@@ -1,0 +1,685 @@
+{
+  "ClassName": "Model",
+  "attributes": {
+    "Rojo_Target_PrimaryPart": "Oodenta.Handle"
+  },
+  "Children": [
+    {
+      "Name": "Handle",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.22, 0.28, 1.1],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.0941, 0.0941, 0.1176],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "Children": [
+        {
+          "Name": "Grip",
+          "ClassName": "Attachment",
+          "Properties": {
+            "CFrame": {
+              "CFrame": {
+                "position": [0, 0, -0.2],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ],
+      "attributes": {
+        "Rojo_Id": "Oodenta.Handle"
+      }
+    },
+    {
+      "Name": "HishiL1",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [-0.115, 0, -0.32],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiL1"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiL1"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [-0.115, 0, -0.32],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "HishiL2",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [-0.115, 0, 0],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiL2"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiL2"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [-0.115, 0, 0],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "HishiL3",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [-0.115, 0, 0.32],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiL3"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiL3"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [-0.115, 0, 0.32],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "HishiR1",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [0.115, 0, -0.32],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiR1"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiR1"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0.115, 0, -0.32],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "HishiR2",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [0.115, 0, 0],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiR2"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiR2"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0.115, 0, 0],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "HishiR3",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.02, 0.13, 0.13],
+        "CFrame": {
+          "CFrame": {
+            "position": [0.115, 0, 0.32],
+            "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+          }
+        },
+        "Color": [0.8824, 0.8824, 0.902],
+        "Material": "Fabric",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.HishiR3"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.HishiR3"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0.115, 0, 0.32],
+                "orientation": [[1, 0, 0], [0, 0.7071, -0.7071], [0, 0.7071, 0.7071]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Kashira",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.25, 0.31, 0.12],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0.61],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8039, 0.6471, 0.2431],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Kashira"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Kashira"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, 0.61],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Tsuba",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.08, 0.62, 0.62],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, -0.59],
+            "orientation": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
+          }
+        },
+        "Color": [0.1098, 0.1098, 0.1255],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth",
+        "Shape": "Cylinder"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Tsuba"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Tsuba"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, -0.59],
+                "orientation": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Habaki",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.11, 0.3, 0.12],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, -0.69],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8039, 0.6471, 0.2431],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Habaki"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Habaki"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, -0.69],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Blade1",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.07, 0.24, 0.98],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, -1.24],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.7765, 0.8, 0.8392],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Blade1"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Blade1"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, -1.24],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Blade2",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.07, 0.24, 0.98],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.0299, -2.2191],
+            "orientation": [[1, 0, 0], [0, 0.9981, -0.061], [0, 0.061, 0.9981]]
+          }
+        },
+        "Color": [0.7765, 0.8, 0.8392],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Blade2"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Blade2"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.0299, -2.2191],
+                "orientation": [[1, 0, 0], [0, 0.9981, -0.061], [0, 0.061, 0.9981]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Blade3",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.07, 0.24, 0.98],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.1195, -3.1945],
+            "orientation": [[1, 0, 0], [0, 0.9925, -0.1219], [0, 0.1219, 0.9925]]
+          }
+        },
+        "Color": [0.7765, 0.8, 0.8392],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Blade3"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Blade3"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.1195, -3.1945],
+                "orientation": [[1, 0, 0], [0, 0.9925, -0.1219], [0, 0.1219, 0.9925]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Kissaki",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.07, 0.24, 0.36],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.2012, -3.8595],
+            "orientation": [[-1, 0, 0], [0, -0.9925, -0.1219], [0, -0.1219, 0.9925]]
+          }
+        },
+        "Color": [0.7765, 0.8, 0.8392],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Oodenta.Kissaki"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Oodenta.Handle",
+            "Rojo_Target_Part1": "Oodenta.Kissaki"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.2012, -3.8595],
+                "orientation": [[-1, 0, 0], [0, -0.9925, -0.1219], [0, -0.1219, 0.9925]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

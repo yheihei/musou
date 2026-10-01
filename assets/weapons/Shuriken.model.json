@@ -1,0 +1,490 @@
+{
+  "ClassName": "Model",
+  "attributes": {
+    "Rojo_Target_PrimaryPart": "Shuriken.Handle"
+  },
+  "Children": [
+    {
+      "Name": "Handle",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.12, 0.72, 0.72],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth",
+        "Shape": "Cylinder"
+      },
+      "Children": [
+        {
+          "Name": "Grip",
+          "ClassName": "Attachment",
+          "Properties": {
+            "CFrame": {
+              "CFrame": {
+                "position": [0, 0, 0.72],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ],
+      "attributes": {
+        "Rojo_Id": "Shuriken.Handle"
+      }
+    },
+    {
+      "Name": "Hole",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.14, 0.28, 0.28],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.1098, 0.1098, 0.1255],
+        "Material": "SmoothPlastic",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth",
+        "Shape": "Cylinder"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.Hole"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.Hole"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "FrontA",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.16, -0.59],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.FrontA"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.FrontA"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.16, -0.59],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "FrontB",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.16, -0.59],
+            "orientation": [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.FrontB"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.FrontB"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.16, -0.59],
+                "orientation": [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BackA",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.16, 0.59],
+            "orientation": [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.BackA"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.BackA"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.16, 0.59],
+                "orientation": [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BackB",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.16, 0.59],
+            "orientation": [[1, 0, 0], [0, -1, 0], [0, 0, -1]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.BackB"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.BackB"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.16, 0.59],
+                "orientation": [[1, 0, 0], [0, -1, 0], [0, 0, -1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "TopA",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.59, 0.16],
+            "orientation": [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.TopA"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.TopA"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.59, 0.16],
+                "orientation": [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "TopB",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0.59, -0.16],
+            "orientation": [[-1, 0, 0], [0, 0, -1], [0, -1, 0]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.TopB"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.TopB"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0.59, -0.16],
+                "orientation": [[-1, 0, 0], [0, 0, -1], [0, -1, 0]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BottomA",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.59, 0.16],
+            "orientation": [[-1, 0, 0], [0, 0, 1], [0, 1, 0]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.BottomA"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.BottomA"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.59, 0.16],
+                "orientation": [[-1, 0, 0], [0, 0, 1], [0, 1, 0]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "BottomB",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.32, 0.82],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.59, -0.16],
+            "orientation": [[1, 0, 0], [0, 0, 1], [0, -1, 0]]
+          }
+        },
+        "Color": [0.3765, 0.3922, 0.4314],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Shuriken.BottomB"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Shuriken.Handle",
+            "Rojo_Target_Part1": "Shuriken.BottomB"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.59, -0.16],
+                "orientation": [[1, 0, 0], [0, 0, 1], [0, -1, 0]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

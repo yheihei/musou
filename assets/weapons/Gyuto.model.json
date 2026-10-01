@@ -1,0 +1,343 @@
+{
+  "ClassName": "Model",
+  "attributes": {
+    "Rojo_Target_PrimaryPart": "Gyuto.Handle"
+  },
+  "Children": [
+    {
+      "Name": "Handle",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.2, 0.32, 1],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.2824, 0.1804, 0.1176],
+        "Material": "Wood",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "Children": [
+        {
+          "Name": "Grip",
+          "ClassName": "Attachment",
+          "Properties": {
+            "CFrame": {
+              "CFrame": {
+                "position": [0, 0, -0.1],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ],
+      "attributes": {
+        "Rojo_Id": "Gyuto.Handle"
+      }
+    },
+    {
+      "Name": "Rivet1",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.22, 0.09, 0.09],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, -0.22],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8039, 0.6471, 0.2431],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth",
+        "Shape": "Cylinder"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Rivet1"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Rivet1"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, -0.22],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Rivet2",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.22, 0.09, 0.09],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, 0.22],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8039, 0.6471, 0.2431],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth",
+        "Shape": "Cylinder"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Rivet2"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Rivet2"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, 0.22],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Bolster",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.16, 0.36, 0.12],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, 0, -0.56],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8039, 0.6471, 0.2431],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Bolster"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Bolster"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, 0, -0.56],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Blade",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.1, 0.9, 2],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.29, -1.62],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.3451, 0.3647, 0.4],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Blade"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Blade"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.29, -1.62],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Edge",
+      "ClassName": "Part",
+      "Properties": {
+        "Size": [0.11, 0.14, 2],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.67, -1.62],
+            "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.8549, 0.8706, 0.8941],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Edge"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Edge"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.67, -1.62],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "Name": "Tip",
+      "ClassName": "WedgePart",
+      "Properties": {
+        "Size": [0.1, 0.9, 0.75],
+        "CFrame": {
+          "CFrame": {
+            "position": [0, -0.29, -2.995],
+            "orientation": [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+          }
+        },
+        "Color": [0.3451, 0.3647, 0.4],
+        "Material": "Metal",
+        "Anchored": false,
+        "CanCollide": false,
+        "CanQuery": false,
+        "CanTouch": false,
+        "Massless": true,
+        "TopSurface": "Smooth",
+        "BottomSurface": "Smooth"
+      },
+      "attributes": {
+        "Rojo_Id": "Gyuto.Tip"
+      },
+      "Children": [
+        {
+          "Name": "Weld",
+          "ClassName": "Weld",
+          "attributes": {
+            "Rojo_Target_Part0": "Gyuto.Handle",
+            "Rojo_Target_Part1": "Gyuto.Tip"
+          },
+          "Properties": {
+            "C0": {
+              "CFrame": {
+                "position": [0, -0.29, -2.995],
+                "orientation": [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+              }
+            },
+            "C1": {
+              "CFrame": {
+                "position": [0, 0, 0],
+                "orientation": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
