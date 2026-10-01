@@ -24,6 +24,34 @@ local definitions: { [string]: { [Hyojo]: number } } = {
 		Yorokobi = 97817610100666,
 		Kumon = 112857274841376,
 	},
+	Torika = {
+		Tsujo = 82026969171918,
+		Ikari = 118437542947732,
+		Odoroki = 119070938502325,
+		Yorokobi = 87897845512891,
+		Kumon = 115212740890933,
+	},
+	Sekishusai = {
+		Tsujo = 107125516000592,
+		Ikari = 100158050095444,
+		Odoroki = 107691271205626,
+		Yorokobi = 114367648551421,
+		Kumon = 100927867442411,
+	},
+	KanaOni = {
+		Tsujo = 81602607214033,
+		Ikari = 86227335673744,
+		Odoroki = 84442008101799,
+		Yorokobi = 81486463291878,
+		Kumon = 78794366940724,
+	},
+	Hayate = {
+		Tsujo = 109200682444912,
+		Ikari = 110115348955101,
+		Odoroki = 76308810832846,
+		Yorokobi = 98856510080429,
+		Kumon = 74121253873201,
+	},
 }
 
 KaoGraphic.definitions = definitions

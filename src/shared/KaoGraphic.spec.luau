@@ -31,10 +31,23 @@ test(
 	end
 )
 
-test("刃の5表情を引ける", function()
-	for _, hyojo in RemoteSchema.hyojo do
-		local id = KaoGraphic.get("Jin", hyojo) :: number
-		expect(KaoGraphic.imageOf("Jin", hyojo)).toBe(`rbxassetid://{id}`)
+test("M1 の操作キャラクター4人と味方軍の首領ハヤテの5表情を引ける", function()
+	for _, characterId in { "Jin", "Torika", "Sekishusai", "KanaOni", "Hayate" } do
+		for _, hyojo in RemoteSchema.hyojo do
+			local id = KaoGraphic.get(characterId, hyojo) :: number
+			expect(KaoGraphic.imageOf(characterId, hyojo)).toBe(`rbxassetid://{id}`)
+		end
+	end
+end)
+
+test("アセット ID は表情どうし、キャラクターどうしで重ならない", function()
+	local seen: { [number]: string } = {}
+	for characterId, images in KaoGraphic.definitions do
+		for _, hyojo in RemoteSchema.hyojo do
+			local id = images[hyojo]
+			expect(seen[id]).toBe(nil)
+			seen[id] = `{characterId}.{hyojo}`
+		end
 	end
 end)
 

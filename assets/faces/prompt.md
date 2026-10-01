@@ -1,7 +1,7 @@
 # 顔グラフィックの作り方
 
 会話窓（#34）と戦闘中の台詞（#35）に添える顔グラフィックを、NINJAMCP のキャラクター画像から Codex で作る手順。
-刃の5表情（`jin/`）でこの手順を固めた。ほかのキャラクター（#24・#25）も同じ手順と規格で作る。
+刃の5表情（`jin/`）でこの手順を固めた。酉花・石舟斎・金鬼・ハヤテ（#24）も同じ手順と規格で作った。NPC（#25）も同じように作る。
 
 ## 規格
 
@@ -131,3 +131,64 @@ Every image must keep exactly the same framing, size, position, outfit, colors, 
 
 After each image is generated, copy the generated PNG into the current working directory with the file name above (look in ~/.codex/generated_images for the newest files if needed). Reply with the list of saved paths.
 ```
+
+## キャラクターごとの特徴の行
+
+通常のプロンプトの「Keep the character's identity exactly」の行と、表情の書き分けの違いを、キャラクターごとに残す。
+元画像は NINJAMCP の画像（括弧内は ID）。
+
+### 酉花（#012）
+
+```text
+- short dusty rose (reddish pink) bob hair with spiky ends and bangs over the forehead
+- black headband with the knot tails sticking out on the left side of the head (left side of the image)
+- gray forehead plate shaped like two downward-pointing triangles, each with one black diamond stud
+- pinkish violet eyes, two tiny dark beauty marks under the eyes, soft pink blush on the cheeks
+- the face is NOT masked: the mouth is visible
+- black short-sleeved ninja top with gold stripes on the shoulders, a gold diagonal line along the crossed collar, and a small gold cross mark on the chest
+- the sword hilt with the black-and-white wrapped grip and gold end sticking up behind the shoulder on the right side of the image
+```
+
+口元が見えるので、残りの表情では口の形も変える（怒りは歯を食いしばって叫ぶ、驚きは丸く開ける、喜びは大きく開けて笑う、苦悶は波線で食いしばる）。
+
+### 石舟斎（#038）
+
+```text
+- spiky black hair gathered into a tall spiky topknot, with an orange hair tie
+- a white streak in the front bangs, falling over the right side of the image
+- sharp orange-amber eyes with dark brows
+- a small black goatee on the chin; the face is NOT masked, the mouth is visible
+- black kimono coat (haori) with a stiff white stand-up collar, gray crest marks on the shoulder and red flame patterns on the sleeves
+- black inner kimono crossed at the chest
+```
+
+通常の表情は、元画像に合わせて自信のある小さな笑みにした。喜びは元画像の大きく開けた笑い。
+
+### 金鬼（#005）
+
+```text
+- a red oni (demon) mask covers the whole face: two ivory horns on the forehead, thick angry brows carved on the mask, a big nose, a wide mouth with gray-white fangs and teeth
+- the eyes seen through the mask: round pale yellow eyes with small glowing red pupils
+- dark teal ninja hood over the head
+- the mask is tied with a red-brown cloth band whose knot tails stick out on the left side of the head (left side of the image)
+- shaggy light brown fur collar over both shoulders
+- net undershirt at the neck, dark teal ninja outfit, a tan rope tied at the chest
+```
+
+鬼の面は形を変えず、面の穴から見える目と、その上の彫りの眉と、漫符だけで表情を出す。
+怒りは湯気、喜びはきらめきを足した。
+
+### ハヤテ（#014）
+
+```text
+- messy dark gray spiky hair swept to the side
+- golden yellow eyes with sharp brows
+- a thin scar on the cheek under the eye on the right side of the image
+- dark navy mask covering the nose and mouth (the lower face stays hidden)
+- navy blue ninja outfit with the net undershirt at the collar and a small gray four-pointed star mark on the chest
+- the sword hilt with the black-and-white wrapped grip and gold end sticking up behind the shoulder on the right side of the image
+- his brown hawk partner "Narukami" (brown feathers, gray chest, yellow beak and eyes) perched on his shoulder on the left side of the image, small enough that the whole hawk fits inside the image and does not cover his face
+```
+
+相棒の鷹ナルカミを肩に乗せ、表情に合わせて鷹の目と翼も少し変える（怒りは翼を広げてにらむ、驚きは驚く、喜びは落ち着く、苦悶は心配そうにする）。
+
