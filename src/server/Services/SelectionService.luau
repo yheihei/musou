@@ -7,6 +7,8 @@
 -- - リーダーが代わったときと、リーダーの開放済みが変わったときに確かめ直し、開放していないステージの選択は外す
 -- - キャラクターはステージを選んだ後に、ストーリーのクランの操作キャラクターから、他のメンバーと重ならずに選べる
 -- - ステージが変わったら、新しいステージで選べなくなったキャラクターの選択を外す
+-- - 秘計は1枚ずつ選ぶか外し、持ち込みの上限まで、他のメンバーと重ならずに選べる（先に選んだ人のもの）。
+--   秘計の枚数は出撃の条件にしない
 -- - 抜けた人の選択は外し、ほかの人が選べるようにする
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,6 +27,8 @@ local SelectionService = {}
 local selectedStage: string? = nil
 -- メンバーの UserId から引く、選んだキャラクター
 local characters: { [number]: string } = {}
+-- メンバーの UserId から引く、選んだ順の秘計
+local hikei: { [number]: { string } } = {}
 -- 最後に確かめたときのリーダー
 local lastLeader: Player? = nil
 local rejectedRemote: RemoteEvent
@@ -100,6 +104,31 @@ function SelectionService.selectCharacter(player: Player, characterId: string): 
 	return nil
 end
 
+-- 選んだ順の秘計
+function SelectionService.getHikei(player: Player): { string }
+	return table.clone(hikei[player.UserId] or {})
+end
+
+-- 秘計を1枚選ぶ（selected が true）か外す（false）。受け付けたら nil、受け付けなければ拒否の理由を返す
+function SelectionService.selectHikei(player: Player, hikeiId: string, selected: boolean): SelectionRules.Reject?
+	local takenByOthers = {}
+	for userId, ids in hikei do
+		if userId ~= player.UserId then
+			table.move(ids, 1, #ids, #takenByOthers + 1, takenByOthers)
+		end
+	end
+	local mine = hikei[player.UserId] or {}
+	local reject, next = SelectionRules.applyHikei(requesterOf(player), hikeiId, selected, mine, takenByOthers)
+	if reject then
+		return reject
+	end
+	if table.concat(next, ",") ~= table.concat(mine, ",") then
+		hikei[player.UserId] = if #next > 0 then next else nil
+		PartyService.refresh()
+	end
+	return nil
+end
+
 -- 今のリーダーが開放していないステージの選択を外し、全員に送り直す
 local function recheckStage()
 	if not SelectionRules.keepsStage(selectedStage, leaderUnlocked()) then
@@ -110,9 +139,11 @@ end
 
 -- 抜けた人の選択を外す
 local function releaseLeftMembers()
-	for userId in characters do
-		if not PartyService.isMember(userId) then
-			characters[userId] = nil
+	for _, selections in { characters, hikei } :: { { [number]: any } } do
+		for userId in selections do
+			if not PartyService.isMember(userId) then
+				selections[userId] = nil
+			end
 		end
 	end
 end
@@ -151,6 +182,16 @@ local function onSelectCharacter(player: Player, characterId: unknown)
 	end
 end
 
+local function onSelectHikei(player: Player, hikeiId: unknown, selected: unknown)
+	if not RemoteSchema.validate.SelectHikei(hikeiId, selected) then
+		return
+	end
+	local reason = SelectionService.selectHikei(player, hikeiId :: string, selected :: boolean)
+	if reason then
+		reject(player, reason)
+	end
+end
+
 local function registerDebugCommands()
 	DebugCommand.register(
 		"SelectStage",
@@ -184,6 +225,26 @@ local function registerDebugCommands()
 			return `{player.Name} が {characterId} を選んだ`
 		end
 	)
+	DebugCommand.register(
+		"SelectHikei",
+		"<プレイヤー名> <秘計 ID> [true|false]",
+		"Remotes.SelectHikei と同じ処理で秘計を選ぶ（false で外す、既定は true）",
+		function(name, hikeiId, value)
+			local player = DebugCommand.findPlayer(name)
+			local selected = not (value == false or value == "false")
+			if not RemoteSchema.validate.SelectHikei(hikeiId, selected) then
+				error(`秘計 ID の形が正しくない（{tostring(hikeiId)}）`, 0)
+			end
+			local verb = if selected then "選択" else "取り外し"
+			local reason = SelectionService.selectHikei(player, hikeiId, selected)
+			if reason then
+				return `{player.Name} の {hikeiId} の{verb}を拒否した（{reason}）`
+			end
+			local list = SelectionService.getHikei(player)
+			local chosen = if #list > 0 then table.concat(list, "、") else "なし"
+			return `{player.Name} の {hikeiId} の{verb}を受け付けた（選んだ秘計: {chosen}）`
+		end
+	)
 end
 
 function SelectionService.start()
@@ -193,6 +254,8 @@ function SelectionService.start()
 	selectStage.OnServerEvent:Connect(onSelectStage)
 	local selectCharacter = remotes:WaitForChild("SelectCharacter") :: RemoteEvent
 	selectCharacter.OnServerEvent:Connect(onSelectCharacter)
+	local selectHikei = remotes:WaitForChild("SelectHikei") :: RemoteEvent
+	selectHikei.OnServerEvent:Connect(onSelectHikei)
 
 	PartyService.setExtraProvider(function(): Party.Extra
 		return {
@@ -200,6 +263,9 @@ function SelectionService.start()
 			unlockedStages = leaderUnlocked(),
 			characterOf = function(userId: number): string?
 				return characters[userId]
+			end,
+			hikeiOf = function(userId: number): { string }
+				return table.clone(hikei[userId] or {})
 			end,
 		}
 	end)

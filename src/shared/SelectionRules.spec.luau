@@ -136,3 +136,57 @@ test(
 		end
 	end
 )
+
+test("秘計は選んだ順に上限まで選べる", function()
+	local reject, mine = SelectionRules.applyHikei(MEMBER, "Kishinka", true, {}, {})
+	expect(reject).toBe(nil)
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, mine, {})
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Daikatsu", true, mine, {})
+	expect(reject).toBe(nil)
+	expect(mine).toEqual({ "Kishinka", "Fukuhei", "Daikatsu" })
+end)
+
+test("上限を超える秘計は選べず、選んだ秘計はそのまま", function()
+	local mine = { "Kishinka", "Fukuhei", "Daikatsu" }
+	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {})
+	expect(reject).toBe("HikeiLimit")
+	expect(after).toEqual({ "Kishinka", "Fukuhei", "Daikatsu" })
+end)
+
+test("他のメンバーが選んだ秘計は選べない", function()
+	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, { "Fukuhei" }, { "Rakuseki" })
+	expect(reject).toBe("HikeiTaken")
+	expect(after).toEqual({ "Fukuhei" })
+end)
+
+test("外した秘計は詰めて並べ、外した後は選び直せる", function()
+	local reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", false, { "Kishinka", "Fukuhei", "Daikatsu" }, {})
+	expect(reject).toBe(nil)
+	expect(mine).toEqual({ "Kishinka", "Daikatsu" })
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {})
+	expect(reject).toBe(nil)
+	expect(mine).toEqual({ "Kishinka", "Daikatsu", "Rakuseki" })
+end)
+
+test(
+	"選んでいる秘計をもう一度選んでも、選んでいない秘計を外しても変わらない",
+	function()
+		local _, again = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, { "Fukuhei" }, {})
+		expect(again).toEqual({ "Fukuhei" })
+		local _, removed = SelectionRules.applyHikei(MEMBER, "Kishinka", false, { "Fukuhei" }, {})
+		expect(removed).toEqual({ "Fukuhei" })
+	end
+)
+
+test("存在しない秘計と、ロビー以外と待機中の人の秘計の選択は拒否する", function()
+	expect((SelectionRules.applyHikei(MEMBER, "Musou", true, {}, {}))).toBe("UnknownHikei")
+	expect((SelectionRules.applyHikei(at(MEMBER, { phase = "Battle" }), "Fukuhei", true, {}, {}))).toBe("NotLobby")
+	expect((SelectionRules.applyHikei(at(MEMBER, { waiting = true }), "Fukuhei", false, {}, {}))).toBe("Waiting")
+end)
+
+test("秘計の選択は引数の秘計を書き換えない", function()
+	local mine = { "Fukuhei" }
+	SelectionRules.applyHikei(MEMBER, "Kishinka", true, mine, {})
+	SelectionRules.applyHikei(MEMBER, "Fukuhei", false, mine, {})
+	expect(mine).toEqual({ "Fukuhei" })
+end)

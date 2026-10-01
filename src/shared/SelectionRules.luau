@@ -6,8 +6,11 @@
 -- - ステージはリーダーだけが、リーダーの開放済みのステージから選べる
 -- - キャラクターはステージを選んだ後に、そのストーリーのクランの操作キャラクターから選べる。
 --   そのステージの首領と NPC、パーティーの他のメンバーが選んだキャラクターは選べない
+-- - 秘計は1枚ずつ選ぶか外す。持ち込みの上限まで、パーティーの他のメンバーと重ならずに選べる。
+--   選んだ順が戦闘中のボタン（1〜3、十字キーの左・上・右）の順になる
 
 local Characters = require("./Characters")
+local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
 local Stages = require("./Stages")
 
@@ -106,6 +109,43 @@ end
 -- ステージが変わったとき、選んでいるキャラクターを残すか。新しいステージで選べなければ外す
 function SelectionRules.keepsCharacter(characterId: string, stage: Stages.Stage): boolean
 	return checkCharacterInStage(characterId, stage) == nil
+end
+
+-- 秘計を1枚選ぶ（selected が true）か外す（false）。mine は本人が選んだ順の秘計、
+-- takenByOthers はパーティーの他のメンバーが選んだ秘計。
+-- 受け付けたら nil と選んだ後の秘計を、受け付けなければ理由と mine をそのまま返す。引数は書き換えない
+function SelectionRules.applyHikei(
+	requester: Requester,
+	hikeiId: string,
+	selected: boolean,
+	mine: { string },
+	takenByOthers: { string }
+): (Reject?, { string })
+	local reject = checkRequester(requester)
+	if reject then
+		return reject, mine
+	end
+	if not Hikei.get(hikeiId) then
+		return "UnknownHikei", mine
+	end
+	local index = table.find(mine, hikeiId)
+	if not selected then
+		local next = table.clone(mine)
+		if index then
+			table.remove(next, index)
+		end
+		return nil, next
+	end
+	if index then
+		return nil, table.clone(mine)
+	end
+	local next = table.clone(mine)
+	table.insert(next, hikeiId)
+	reject = Hikei.checkMochikomi(next, takenByOthers)
+	if reject then
+		return reject, mine
+	end
+	return nil, next
 end
 
 return SelectionRules
