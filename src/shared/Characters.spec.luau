@@ -89,3 +89,14 @@ test("4つのクランに画面に出す名前がある", function()
 		expect(#(Characters.clanNames[clan] or "") > 0).toBe(true)
 	end
 end)
+
+test("操作キャラクターの武器と奥義には画面に出す名前がある", function()
+	for _, character in Characters.definitions do
+		if character.playable then
+			expect(#(Buki.names[character.buki :: string] or "") > 0).toBe(true)
+			expect(#(Characters.ougiNames[character.ougi :: string] or "") > 0).toBe(true)
+		end
+	end
+	expect(Buki.names.Oodenta).toBe("大典太")
+	expect(Characters.ougiNames.MutoDori).toBe("無刀取り")
+end)

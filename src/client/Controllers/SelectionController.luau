@@ -1,6 +1,6 @@
 --!strict
 -- 出撃前の画面。ロビーのフェーズで、待機中でない人に、画面の右側へ選択の欄を縦に並べて出す。
--- 上からステージ・秘計の欄（スクロール）、下にメンバーの準備状況と出撃ボタンの帯を置く。
+-- 上からステージ・キャラクター・秘計の欄（スクロール）、下にメンバーの準備状況と出撃ボタンの帯を置く。
 -- 選択は Remotes で送り、受け付けるかはサーバーが決める。画面は届いた PartyState（PartyClient）だけを映し、
 -- 先回りして変えない。拒否の理由は SelectionRejected で届き、パネルの下に出す。
 -- 欄は src/client/Selection の下にある。
@@ -19,6 +19,7 @@ local Ui = require(script.Parent.Parent.Ui)
 local SelectionFolder = script.Parent.Parent:WaitForChild("Selection")
 local SectionKit = require(SelectionFolder:WaitForChild("SectionKit"))
 local StageSection = require(SelectionFolder:WaitForChild("StageSection"))
+local CharacterSection = require(SelectionFolder:WaitForChild("CharacterSection"))
 local HikeiSection = require(SelectionFolder:WaitForChild("HikeiSection"))
 local ShutsugekiBar = require(SelectionFolder:WaitForChild("ShutsugekiBar"))
 
@@ -139,6 +140,7 @@ function SelectionController.start()
 	bar.frame.Parent = gui.footer
 	local sections: { SectionKit.Section } = {
 		StageSection.build(context),
+		CharacterSection.build(context),
 		HikeiSection.build(context),
 		bar,
 	}

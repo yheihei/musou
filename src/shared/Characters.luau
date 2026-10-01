@@ -34,6 +34,14 @@ Characters.clanNames = {
 	Saika = "雑賀",
 } :: { [ClanId]: string }
 
+-- 奥義（忍術）の画面に出す名前。キャラクター定義の ougi の ID で引く
+Characters.ougiNames = {
+	Katon = "火遁",
+	PoisonShuriken = "毒手裏剣",
+	MutoDori = "無刀取り",
+	Kinton = "金遁",
+} :: { [string]: string }
+
 -- キャラクターを選ぶ前のプレイヤーが使うキャラクター
 Characters.DEFAULT_ID = "Jin"
 

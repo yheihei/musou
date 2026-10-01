@@ -19,6 +19,13 @@ Buki.GRIP = "Grip"
 -- 武器のモデルの ID。NINJAMCP の武器の英名にする
 Buki.ids = { "Shuriken", "Oodenta", "Gyuto" }
 
+-- 武器の画面に出す名前
+Buki.names = {
+	Shuriken = "手裏剣",
+	Oodenta = "大典太",
+	Gyuto = "牛刀",
+} :: { [string]: string }
+
 -- 武器の武器種。同じ武器種の武器を持つキャラクターは技を共有する
 Buki.bukishuOf = {
 	Shuriken = "Shuriken",
