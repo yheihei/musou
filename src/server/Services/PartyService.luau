@@ -2,6 +2,7 @@
 -- パーティーとリーダーの管理。入退室をパーティーに反映し、変化のたびに全員へ、
 -- 入室した人には入室直後に PartyState を送る。計算は ReplicatedStorage.Shared.Party が持つ。
 -- フェーズはステージの進行の処理が setPhase で変える。
+-- 選択中のステージやキャラクターなど、ほかのサービスが持つ状態は setExtraProvider で PartyState に載せる。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,12 +17,19 @@ local PartyService = {}
 local party = Party.new()
 local partyStateRemote: RemoteEvent
 local changed = Instance.new("BindableEvent")
+-- PartyState に載せる、ほかのサービスが持つ状態を返す関数
+local extraProvider: (() -> Party.Extra)? = nil
 
 -- パーティーが変わったとき（入退室とフェーズの変化）に発火する
 PartyService.changed = changed.Event
 
+-- PartyState に載せる状態（ステージ・開放済みのステージ・キャラクター・秘計）を返す関数を登録する
+function PartyService.setExtraProvider(provider: () -> Party.Extra)
+	extraProvider = provider
+end
+
 function PartyService.getState(): RemoteSchema.PartyState
-	return Party.toState(party)
+	return Party.toState(party, if extraProvider then extraProvider() else nil)
 end
 
 function PartyService.getPhase(): Party.Phase
@@ -40,8 +48,13 @@ function PartyService.isWaiting(player: Player): boolean
 	return member ~= nil and member.waiting
 end
 
-local function broadcast()
+-- 全員に今の PartyState を送り直す。ほかのサービスが PartyState に載せる状態を変えたときに呼ぶ
+function PartyService.refresh()
 	partyStateRemote:FireAllClients(PartyService.getState())
+end
+
+local function broadcast()
+	PartyService.refresh()
 	changed:Fire()
 end
 

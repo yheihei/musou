@@ -119,8 +119,9 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  PartyService / ProgressService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  PartyService / ProgressService / SelectionService / PlayerService / ActionService / DamageService / EnemyService / CombatService
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
+      SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
