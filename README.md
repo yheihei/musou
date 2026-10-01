@@ -125,6 +125,8 @@ src/
       CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定と仮エフェクト
   client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生
+assets/
+  weapons/  武器の仮のモデル（Rojo の JSON モデル）。ReplicatedStorage.Weapons に置く
 .lune/      Lune のスクリプト（test.luau がテストの実行、lib/testkit.luau が test と expect）
 default.project.json  Rojo のインスタンスツリー定義（Remotes・ServerStorage.DebugCommand・地形もここ）
 ```
@@ -136,5 +138,6 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
+- 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない
 - モーションの ID は `src/shared/Motions.luau` の一覧に置く。待機と移動は Roblox 公式の Ninja パックで、仮の見た目の HumanoidDescription に入れて当てる
 - 行動のモーションは、クライアントの MotionController が自分のキャラクターの Attribute（`Action`・`ActionStep`・`ActionDuration`・`ActionStartedAt`）を見て、行動の長さに合わせた速さで再生する。判定の時刻と移動量は `Config.luau` のままで、モーションには左右されない

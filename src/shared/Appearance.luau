@@ -1,11 +1,14 @@
 --!strict
--- キャラクターの仮の見た目。標準の R15 体型をキャラクターの色で塗り、頭上に名札を出す。
+-- キャラクターの仮の見た目。標準の R15 体型をキャラクターの色で塗り、頭上に名札を出し、右手に武器を持たせる。
 -- 待機と移動のモーションは Motions.luau の Ninja パックにする。
 -- 操作キャラクターにも、NPC の上忍・首領・役者にも同じ関数を使う。M2 で本番の見た目に差し替える。
--- 色は Colors.luau から引く。Roblox の API を使うので、Lune のテストからは読まない。
+-- 色は Colors.luau から、武器のモデルは ReplicatedStorage.Weapons（Buki.luau）から引く。
+-- Roblox の API を使うので、Lune のテストからは読まない。
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Buki = require("./Buki")
 local Characters = require("./Characters")
 local Colors = require("./Colors")
 local Motions = require("./Motions")
@@ -19,6 +22,11 @@ local LEG_SHADE = 0.45
 local FALLBACK_COLOR = Color3.fromRGB(128, 128, 128)
 
 local NAME_TAG = "NameTag"
+-- キャラクターに付けた武器のモデルの名前
+local BUKI_NAME = "Buki"
+-- 武器を握る向き。右手の握りの Attachment（RightGripAttachment）は前が指先、上が手の前なので、
+-- X 軸まわりに 90 度回して、武器の刃先（Grip の前）を拳の前へ、峰（Grip の上）を腕の上へ向ける
+local BUKI_MOUNT = CFrame.Angles(math.rad(90), 0, 0)
 
 -- キャラクター ID から、服も装飾も無く、待機と移動が Ninja パックの HumanoidDescription を作る
 function Appearance.describe(characterId: string): HumanoidDescription
@@ -79,16 +87,60 @@ function Appearance.attachNameTag(model: Model, characterId: string)
 	tag.Parent = head
 end
 
+-- キャラクターの武器のモデルを右手に溶接する。付け直すときは古い武器を外す。武器の無いキャラクターには付けない
+function Appearance.attachBuki(model: Model, characterId: string)
+	local old = model:FindFirstChild(BUKI_NAME)
+	if old then
+		old:Destroy()
+	end
+	local character = Characters.get(characterId)
+	local bukiId = character and character.buki
+	local hand = model:FindFirstChild("RightHand") :: BasePart?
+	local handGrip = hand and hand:FindFirstChild("RightGripAttachment") :: Attachment?
+	if not bukiId or not hand or not handGrip then
+		return
+	end
+	local folder = ReplicatedStorage:FindFirstChild(Buki.FOLDER)
+	local template = folder and folder:FindFirstChild(bukiId)
+	if not template or not template:IsA("Model") then
+		warn(`Appearance: 武器のモデル {bukiId} が ReplicatedStorage.{Buki.FOLDER} に無い`)
+		return
+	end
+	local buki = template:Clone()
+	local handle = buki:FindFirstChild(Buki.HANDLE) :: BasePart?
+	local grip = handle and handle:FindFirstChild(Buki.GRIP) :: Attachment?
+	if not handle or not grip then
+		warn(`Appearance: 武器のモデル {bukiId} に {Buki.HANDLE} と {Buki.GRIP} が無い`)
+		buki:Destroy()
+		return
+	end
+	buki.Name = BUKI_NAME
+	buki.PrimaryPart = handle
+	buki:SetAttribute("BukiId", bukiId)
+	-- 先に握る位置へ動かしてから溶接する
+	local mount = handGrip.CFrame * BUKI_MOUNT
+	buki:PivotTo(hand.CFrame * mount * grip.CFrame:Inverse() * handle.CFrame:ToObjectSpace(buki:GetPivot()))
+	local weld = Instance.new("Weld")
+	weld.Name = "BukiWeld"
+	weld.Part0 = hand
+	weld.Part1 = handle
+	weld.C0 = mount
+	weld.C1 = grip.CFrame
+	weld.Parent = handle
+	buki.Parent = model
+end
+
 -- NPC（上忍・首領・役者）のモデルを作る。置き場所は呼び出し側が決める
 function Appearance.createModel(characterId: string): Model
 	local model = Players:CreateHumanoidModelFromDescription(Appearance.describe(characterId), Enum.HumanoidRigType.R15)
 	model.Name = characterId
 	model:SetAttribute("CharacterId", characterId)
 	Appearance.attachNameTag(model, characterId)
+	Appearance.attachBuki(model, characterId)
 	return model
 end
 
--- 出現した操作キャラクターに見た目を当てる。アバターの服と装飾は外れる。
+-- 出現した操作キャラクターに見た目を当て、武器を持たせる。アバターの服と装飾は外れる。
 -- ApplyDescription は待つことがあるので、呼び出し側は別スレッドで呼ぶ
 function Appearance.applyToCharacter(model: Model, characterId: string)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
@@ -106,6 +158,7 @@ function Appearance.applyToCharacter(model: Model, characterId: string)
 	end
 	model:SetAttribute("CharacterId", characterId)
 	Appearance.attachNameTag(model, characterId)
+	Appearance.attachBuki(model, characterId)
 end
 
 return Appearance

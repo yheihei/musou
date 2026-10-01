@@ -1,4 +1,5 @@
 --!strict
+local Buki = require("./Buki")
 local Characters = require("./Characters")
 local Config = require("./Config")
 local testkit = require("@testkit")
@@ -18,13 +19,32 @@ test("クランは4つのクランのどれか", function()
 	end
 end)
 
-test("操作キャラクターは武器種と奥義を持つ", function()
+test("操作キャラクターは武器種と武器と奥義を持つ", function()
 	for _, character in Characters.definitions do
 		if character.playable then
 			expect(character.bukishu ~= nil).toBe(true)
+			expect(character.buki ~= nil).toBe(true)
 			expect(character.ougi ~= nil).toBe(true)
 		end
 	end
+end)
+
+test("武器はモデルのある武器で、武器種はキャラクターの武器種と同じ", function()
+	for _, character in Characters.definitions do
+		local buki = character.buki
+		if buki then
+			expect(Buki.isBuki(buki)).toBe(true)
+			expect(Buki.bukishuOf[buki]).toBe(character.bukishu)
+		end
+	end
+end)
+
+test("M1 の4人の武器は刃と酉花が手裏剣、石舟斎が大典太、金鬼が牛刀", function()
+	local bukiOf = {}
+	for _, id in { "Jin", "Torika", "Sekishusai", "KanaOni" } do
+		bukiOf[id] = (Characters.get(id) :: Characters.Character).buki
+	end
+	expect(bukiOf).toEqual({ Jin = "Shuriken", Torika = "Shuriken", Sekishusai = "Oodenta", KanaOni = "Gyuto" })
 end)
 
 test("M1 の操作キャラクター4人は伊賀に属する", function()

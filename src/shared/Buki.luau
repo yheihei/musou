@@ -6,7 +6,8 @@
 -- - 見た目専用で、当たらず重さも持たない。攻撃判定はスクリプトと Config.luau が持つ
 -- - どのモデルも、握りの部品 Handle と、その中の Attachment の Grip を持つ。Grip の前（-Z）が刃先、上（+Y）が峰
 --   （手裏剣は前が先端の1つで、上と前で張る面に刃が並ぶ）
--- - Handle 以外の部品は Weld で Handle に溶接してあり、モデルの PrimaryPart は Handle
+-- - Handle 以外の部品は Weld で Handle に溶接してある
+-- - モデルの PrimaryPart は Handle にしてあるが、Rojo のライブ同期では入らないことがある。使う側は Handle を名前で引く
 
 local Buki = {}
 
@@ -17,6 +18,13 @@ Buki.GRIP = "Grip"
 
 -- 武器のモデルの ID。NINJAMCP の武器の英名にする
 Buki.ids = { "Shuriken", "Oodenta", "Gyuto" }
+
+-- 武器の武器種。同じ武器種の武器を持つキャラクターは技を共有する
+Buki.bukishuOf = {
+	Shuriken = "Shuriken",
+	Oodenta = "Katana",
+	Gyuto = "Katana",
+} :: { [string]: string }
 
 function Buki.isBuki(id: string): boolean
 	return table.find(Buki.ids, id) ~= nil

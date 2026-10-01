@@ -1,5 +1,6 @@
 --!strict
--- キャラクターの定義表。ID は NINJAMCP の英名、奥義の ID は NINJAMCP の忍術の英名を使う。
+-- キャラクターの定義表。ID は NINJAMCP の英名、奥義の ID は NINJAMCP の忍術の英名、
+-- 武器の ID は NINJAMCP の武器の英名（武器のモデルの名前。Buki.luau）を使う。
 -- 能力値は Config.luau にキャラクター ID ごとに置く。
 -- NPC の上忍と首領は、ステージの人選が決まったら足す。
 
@@ -12,8 +13,9 @@ export type Character = {
 	clan: ClanId,
 	-- 操作キャラクターかどうか。false は NPC としてだけ登場する
 	playable: boolean,
-	-- 武器種と奥義は操作キャラクターには必ず持たせる
+	-- 武器種・武器・奥義は操作キャラクターには必ず持たせる
 	bukishu: Bukishu?,
+	buki: string?,
 	ougi: string?,
 }
 
@@ -31,6 +33,7 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = true,
 		bukishu = "Shuriken",
+		buki = "Shuriken",
 		ougi = "Katon",
 	},
 	Torika = {
@@ -39,6 +42,7 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = true,
 		bukishu = "Shuriken",
+		buki = "Shuriken",
 		ougi = "PoisonShuriken",
 	},
 	Sekishusai = {
@@ -47,6 +51,7 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = true,
 		bukishu = "Katana",
+		buki = "Oodenta",
 		ougi = "MutoDori",
 	},
 	KanaOni = {
@@ -55,6 +60,7 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = true,
 		bukishu = "Katana",
+		buki = "Gyuto",
 		ougi = "Kinton",
 	},
 	Hayate = {
