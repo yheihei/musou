@@ -22,6 +22,8 @@ export type Affects = "Own" | "Opponent"
 export type Definition = {
 	id: string,
 	displayName: string,
+	-- 選択画面に出す効果の説明。{秒} は Config.luau の効果時間に置き換える（describe）
+	description: string,
 	-- 強化の秘計か。大喝で打ち消せる
 	kyoka: boolean,
 	target: TargetKind,
@@ -62,6 +64,7 @@ local definitions: { [string]: Definition } = {
 	Fukuhei = {
 		id = "Fukuhei",
 		displayName = "伏兵",
+		description = "指定した地点に味方の部隊を潜ませ、近づいた敵の部隊を奇襲して士気を下げる",
 		kyoka = false,
 		target = "Underfoot",
 		affects = "Own",
@@ -69,6 +72,7 @@ local definitions: { [string]: Definition } = {
 	Rakuseki = {
 		id = "Rakuseki",
 		displayName = "落石",
+		description = "決められた地点の道を岩で塞ぎ、敵の兵站線を{秒}秒切る",
 		kyoka = false,
 		target = "RakusekiChiten",
 		affects = "Opponent",
@@ -76,6 +80,7 @@ local definitions: { [string]: Definition } = {
 	Daikakei = {
 		id = "Daikakei",
 		displayName = "大火計",
+		description = "決められた地域にいる敵へ、まとめて大ダメージを与える",
 		kyoka = false,
 		target = "DaikakeiChiiki",
 		affects = "Opponent",
@@ -83,6 +88,7 @@ local definitions: { [string]: Definition } = {
 	Hyoroko = {
 		id = "Hyoroko",
 		displayName = "兵糧庫",
+		description = "中にいる味方の拠点を改築する。兵站線が切れても孤立しない",
 		kyoka = false,
 		target = "OwnKyoten",
 		affects = "Own",
@@ -90,6 +96,7 @@ local definitions: { [string]: Definition } = {
 	Bakuhawana = {
 		id = "Bakuhawana",
 		displayName = "爆破罠",
+		description = "中にいる味方の拠点に仕掛ける。耐久が3分の1まで減ると爆発し、拠点内の敵を吹き飛ばす",
 		kyoka = false,
 		target = "OwnKyoten",
 		affects = "Own",
@@ -97,6 +104,7 @@ local definitions: { [string]: Definition } = {
 	Chohatsu = {
 		id = "Chohatsu",
 		displayName = "挑発",
+		description = "近くの敵の上忍を、{秒}秒自分のところへ誘い出す",
 		kyoka = false,
 		target = "Nearby",
 		affects = "Opponent",
@@ -104,6 +112,7 @@ local definitions: { [string]: Definition } = {
 	Kishinka = {
 		id = "Kishinka",
 		displayName = "鬼神化",
+		description = "{秒}秒、自分の攻撃と防御が上がり、のけぞらなくなる",
 		kyoka = true,
 		target = "Self",
 		affects = "Own",
@@ -111,6 +120,7 @@ local definitions: { [string]: Definition } = {
 	Daikatsu = {
 		id = "Daikatsu",
 		displayName = "大喝",
+		description = "敵の強化の秘計を打ち消し、周りの敵を{秒}秒動揺させる",
 		kyoka = false,
 		target = "Nearby",
 		affects = "Opponent",
@@ -121,6 +131,20 @@ Hikei.definitions = definitions
 
 function Hikei.get(id: string): Definition?
 	return definitions[id]
+end
+
+-- 選択画面に出す効果の説明。{秒} を Config.luau の効果時間に置き換える。定義に無い秘計は空
+function Hikei.describe(id: string): string
+	local definition = definitions[id]
+	if not definition then
+		return ""
+	end
+	local duration = Config.Hikei.Duration[id]
+	local text = definition.description
+	if duration then
+		text = string.gsub(text, "{秒}", tostring(duration))
+	end
+	return text
 end
 
 -- 選べる秘計の ID を設計の表の順に返す。M1 は全種類を最初から選べる

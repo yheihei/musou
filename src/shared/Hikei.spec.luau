@@ -227,3 +227,23 @@ test("打ち消す対象を絞ると、その対象の効果だけを打ち消�
 	expect(dispelled[1].target).toBe("Jonin2")
 	expect(Hikei.isActive(effects, "Jonin1", "Kishinka", 1)).toBe(true)
 end)
+
+test("効果の説明があり、{秒} は Config.luau の効果時間に置き換わる", function()
+	for _, id in M1_HIKEI do
+		local text = Hikei.describe(id)
+		expect(#text > 0).toBe(true)
+		expect(string.find(text, "{", 1, true)).toBe(nil)
+	end
+	expect(Hikei.describe("Kishinka")).toBe(
+		`{Config.Hikei.Duration.Kishinka}秒、自分の攻撃と防御が上がり、のけぞらなくなる`
+	)
+	expect(Hikei.describe("Nowhere")).toBe("")
+end)
+
+test("{秒} を使う説明の秘計には効果時間がある", function()
+	for id, definition in Hikei.definitions do
+		if string.find(definition.description, "{秒}", 1, true) then
+			expect(Config.Hikei.Duration[id] ~= nil).toBe(true)
+		end
+	end
+end)

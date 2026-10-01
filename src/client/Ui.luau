@@ -96,6 +96,22 @@ local function getSelectionFrame(): Frame
 	return selectionFrame :: Frame
 end
 
+-- 共通の見た目の文字。背景なし・左寄せ・本文の大きさで作り、props で上書きする
+function Ui.text(props: { [string]: any }): TextLabel
+	local label = Ui.create("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Ui.Font.Body,
+		TextSize = Ui.TextSize.Body,
+		TextColor3 = Ui.Color.Text,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+	})
+	for key, value in props do
+		(label :: any)[key] = value
+	end
+	return label :: TextLabel
+end
+
 -- 共通の見た目のボタン。props で位置や文言を上書きする
 function Ui.button(props: { [string]: any }): TextButton
 	local button = Ui.create("TextButton", {
