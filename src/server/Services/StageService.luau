@@ -4,7 +4,8 @@
 --
 -- - 出撃（Remotes.Shutsugeki）はリーダーだけが、ロビーのフェーズで、ステージと出撃する全員のキャラクターを選んだ後にできる。
 --   受け付けなければ SelectionRejected で本人に理由を返す
--- - 出撃すると、待機中でない全員を区画の出撃地点へ移す（周りを読み込ませてから出現し直す）
+-- - 出撃すると、待機中でない全員を区画の出撃地点へ移す（周りを読み込ませてから出現し直す）。
+--   選んだキャラクターを Player の Attribute の CharacterId に書いてから出現し直すので、能力値と見た目が切り替わる
 -- - イベントシーンのフェーズは、当面すぐ次へ進める
 -- - finish で勝敗と理由を決め、出撃して残っているメンバーに StageResult を送る
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、選択を外して全員をロビーへ戻す
@@ -115,8 +116,10 @@ local function moveToShutsugekiChiten(members: { Player }, chiten: { KukakuServi
 	local pending = #members
 	for index, member in members do
 		local number = Mejirushi.shutsugekiNumberOf(index, numbers) :: number
+		-- キャラクターを選んでいない人（窓口でステージを指定した出撃）は、今のキャラクターのまま出る
+		local characterId = SelectionService.getCharacter(member)
 		task.spawn(function()
-			PlayerService.spawnAt(member, cframes[number])
+			PlayerService.spawnAt(member, cframes[number], characterId)
 			pending -= 1
 		end)
 	end

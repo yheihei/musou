@@ -2,6 +2,8 @@
 -- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージ（本数と次の1本までの量）は
 -- Player の Attribute に持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
 -- 使うキャラクター（CharacterId）が変わったら出現し直す。
+-- 出撃では spawnAt が CharacterId を書いてから出撃地点に出現し直す（出現し直しは1回）。
+-- ロビーへ戻っても CharacterId は書き換えないので、見た目は最後に出撃したキャラクターのまま残る。
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
 
 local Players = game:GetService("Players")
@@ -19,6 +21,10 @@ local PlayerService = {}
 
 -- 出撃などで出現し直す前に、出現位置の周りを読み込ませるのを待つ秒数の上限
 local STREAM_TIMEOUT = 5
+
+-- 今の姿（spawnAt で出現し直している間は、これから出現する姿）のキャラクター ID。
+-- CharacterId の変化の通知は遅れて届くことがあるので、これと同じなら出現し直さない
+local appliedCharacterIds: { [Player]: string } = {}
 
 -- 使うキャラクターの ID。Attribute が無いか操作キャラクターでなければ既定のキャラクター
 function PlayerService.getCharacterId(player: Player): string
@@ -66,8 +72,9 @@ function PlayerService.consumeOugiStock(player: Player): boolean
 end
 
 -- 出現し直して、cframe の位置に cframe の向き（水平の成分）で立たせる。高さは地面に合わせる。
+-- characterId を渡すと、使うキャラクターをそれに変えてから出現し直す。
 -- StreamingEnabled なので、先に出現位置の周りをクライアントへ読み込ませる。出現し直すまで待つ
-function PlayerService.spawnAt(player: Player, cframe: CFrame)
+function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: string?)
 	local position = cframe.Position
 	local streamed, streamError = pcall(function()
 		player:RequestStreamAroundAsync(position, STREAM_TIMEOUT)
@@ -77,6 +84,10 @@ function PlayerService.spawnAt(player: Player, cframe: CFrame)
 	end
 	if not player.Parent then
 		return
+	end
+	if characterId then
+		appliedCharacterIds[player] = characterId
+		player:SetAttribute("CharacterId", characterId)
 	end
 	local loaded, loadError = pcall(function()
 		player:LoadCharacter()
@@ -114,7 +125,9 @@ local function onCharacterAdded(player: Player, character: Model)
 	humanoid.JumpHeight = Config.Jump.Height
 	humanoid.MaxHealth = stats.MaxHealth
 	humanoid.Health = stats.MaxHealth
-	task.spawn(Appearance.applyToCharacter, character, PlayerService.getCharacterId(player))
+	local characterId = PlayerService.getCharacterId(player)
+	appliedCharacterIds[player] = characterId
+	task.spawn(Appearance.applyToCharacter, character, characterId)
 end
 
 local function onPlayerAdded(player: Player)
@@ -130,11 +143,13 @@ local function onPlayerAdded(player: Player)
 	if player.Character then
 		onCharacterAdded(player, player.Character)
 	end
-	-- 使うキャラクターが変わったら、能力値と見た目を当て直すために出現し直す
+	-- 使うキャラクターが変わったら、能力値と見た目を当て直すために出現し直す。
+	-- 今の姿がすでにそのキャラクターのとき（spawnAt が出現し直すときを含む）は何もしない
 	player:GetAttributeChangedSignal("CharacterId"):Connect(function()
-		if player.Character then
-			player:LoadCharacter()
+		if not player.Character or appliedCharacterIds[player] == PlayerService.getCharacterId(player) then
+			return
 		end
+		player:LoadCharacter()
 	end)
 end
 
@@ -202,6 +217,9 @@ function PlayerService.start()
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)
 	end
+	Players.PlayerRemoving:Connect(function(player)
+		appliedCharacterIds[player] = nil
+	end)
 	registerDebugCommands()
 end
 
