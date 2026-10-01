@@ -19,6 +19,8 @@ export type EventScenes = {
 
 export type Stage = {
 	id: string,
+	-- 選択画面に出す名前
+	displayName: string,
 	-- どのクランのストーリーか
 	clan: ClanId,
 	-- ストーリーの中の順番（1から）。試験用ステージは 0
@@ -46,6 +48,8 @@ local Stages = {}
 local definitions: { [string]: Stage } = {
 	Iga1 = {
 		id = "Iga1",
+		-- 台本の下書き（docs/story/iga-1.md）の題。確定版（#14）で変わったら直す
+		displayName = "風魔襲来",
 		clan = "Iga",
 		order = 1,
 		next = nil,
@@ -61,6 +65,7 @@ local definitions: { [string]: Stage } = {
 	-- 試験用ステージ。拠点5つの小さな戦場で、配置は Haichi.luau にある。窓口の Shutsugeki で出撃する
 	Test = {
 		id = "Test",
+		displayName = "試験用ステージ",
 		clan = "Iga",
 		order = 0,
 		next = nil,

@@ -120,3 +120,9 @@ test("ストーリーのステージを順番に引け、試験用ステージ�
 	local first = Stages.firstOf("Iga")
 	expect(first and first.id).toBe("Iga1")
 end)
+
+test("ステージには選択画面に出す名前がある", function()
+	for _, stage in Stages.definitions do
+		expect(#stage.displayName > 0).toBe(true)
+	end
+end)

@@ -61,6 +61,7 @@ local IGA1 = Stages.get("Iga1") :: Stages.Stage
 -- 甲賀のストーリーの架空のステージ。酉花が NPC として登場する
 local KOGA_TEST: Stages.Stage = {
 	id = "KogaTest",
+	displayName = "甲賀の試し",
 	clan = "Koga",
 	order = 1,
 	next = nil,

@@ -1,5 +1,6 @@
 --!strict
 -- 出撃前の画面。ロビーのフェーズで、待機中でない人に、画面の右側へ選択の欄を縦に並べて出す。
+-- 上からステージ・秘計の欄（スクロール）、下にメンバーの準備状況と出撃ボタンの帯を置く。
 -- 選択は Remotes で送り、受け付けるかはサーバーが決める。画面は届いた PartyState（PartyClient）だけを映し、
 -- 先回りして変えない。拒否の理由は SelectionRejected で届き、パネルの下に出す。
 -- 欄は src/client/Selection の下にある。
@@ -17,7 +18,9 @@ local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
 local SelectionFolder = script.Parent.Parent:WaitForChild("Selection")
 local SectionKit = require(SelectionFolder:WaitForChild("SectionKit"))
+local StageSection = require(SelectionFolder:WaitForChild("StageSection"))
 local HikeiSection = require(SelectionFolder:WaitForChild("HikeiSection"))
+local ShutsugekiBar = require(SelectionFolder:WaitForChild("ShutsugekiBar"))
 
 local SelectionController = {}
 
@@ -35,6 +38,7 @@ local MESSAGE_TIME = 4
 type Gui = {
 	screen: ScreenGui,
 	body: ScrollingFrame,
+	footer: Frame,
 	message: TextLabel,
 }
 
@@ -42,7 +46,7 @@ local function buildGui(): Gui
 	local body = Ui.create("ScrollingFrame", {
 		Name = "Body",
 		Position = UDim2.fromOffset(0, HEADER_HEIGHT),
-		Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + MESSAGE_HEIGHT)),
+		Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + ShutsugekiBar.HEIGHT + MESSAGE_HEIGHT)),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
@@ -59,6 +63,13 @@ local function buildGui(): Gui
 			PaddingLeft = UDim.new(0, 12),
 			PaddingRight = UDim.new(0, 16),
 		}),
+	})
+	local footer = Ui.create("Frame", {
+		Name = "Footer",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, -MESSAGE_HEIGHT),
+		Size = UDim2.new(1, 0, 0, ShutsugekiBar.HEIGHT),
+		BackgroundTransparency = 1,
 	})
 	local message = Ui.text({
 		Name = "Message",
@@ -90,31 +101,17 @@ local function buildGui(): Gui
 			Text = "出撃の準備",
 		}),
 		body,
+		footer,
 		message,
 	})
 	local screen = Ui.screenGui("Selection", Ui.Layer.Selection, { panel })
 	screen.Enabled = false
-	return { screen = screen, body = body :: ScrollingFrame, message = message }
+	return { screen = screen, body = body :: ScrollingFrame, footer = footer :: Frame, message = message }
 end
 
 function SelectionController.start()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local gui = buildGui()
-
-	local context: SectionKit.Context = {
-		send = function(remoteName: string, ...: any)
-			local remote = remotes:FindFirstChild(remoteName)
-			if remote and remote:IsA("RemoteEvent") then
-				remote:FireServer(...)
-			end
-		end,
-	}
-	local sections: { SectionKit.Section } = {
-		HikeiSection.build(context),
-	}
-	for _, section in sections do
-		section.frame.Parent = gui.body
-	end
 
 	-- 拒否の理由を出す。続けて届いたら新しい方を出し、古い方の消す予定は取り消す
 	local messageToken = 0
@@ -127,6 +124,28 @@ function SelectionController.start()
 				gui.message.Text = ""
 			end
 		end)
+	end
+
+	local context: SectionKit.Context = {
+		send = function(remoteName: string, ...: any)
+			local remote = remotes:FindFirstChild(remoteName)
+			if remote and remote:IsA("RemoteEvent") then
+				remote:FireServer(...)
+			end
+		end,
+		notify = showMessage,
+	}
+	local bar = ShutsugekiBar.build(context)
+	bar.frame.Parent = gui.footer
+	local sections: { SectionKit.Section } = {
+		StageSection.build(context),
+		HikeiSection.build(context),
+		bar,
+	}
+	for _, section in sections do
+		if section ~= bar then
+			section.frame.Parent = gui.body
+		end
 	end
 
 	local function firstButton(): GuiObject?

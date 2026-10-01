@@ -8,6 +8,7 @@ local test, expect = testkit.test, testkit.expect
 local function stage(id: string, clan: any, order: number, next: string?): Stages.Stage
 	return {
 		id = id,
+		displayName = id,
 		clan = clan,
 		order = order,
 		next = next,

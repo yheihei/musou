@@ -11,6 +11,8 @@ local Ui = require(script.Parent.Parent.Ui)
 export type Context = {
 	-- Remotes の名前と引数で、選択をサーバーへ送る
 	send: (remoteName: string, ...any) -> (),
+	-- パネルの下に文を出す（サーバーへ送る前に分かる理由を出すとき）
+	notify: (text: string) -> (),
 }
 
 export type Section = {

@@ -26,6 +26,14 @@ local Characters = {}
 
 Characters.clanIds = { "Iga", "Koga", "Fuma", "Saika" } :: { ClanId }
 
+-- クランの画面に出す名前
+Characters.clanNames = {
+	Iga = "伊賀",
+	Koga = "甲賀",
+	Fuma = "風魔",
+	Saika = "雑賀",
+} :: { [ClanId]: string }
+
 -- キャラクターを選ぶ前のプレイヤーが使うキャラクター
 Characters.DEFAULT_ID = "Jin"
 

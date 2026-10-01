@@ -83,3 +83,9 @@ test("奥義の技は、キャラクター定義の奥義の ID で置く", func
 	end
 	expect(Config.Ougi.Timelines[(Characters.get("Jin") :: Characters.Character).ougi :: string] ~= nil).toBe(true)
 end)
+
+test("4つのクランに画面に出す名前がある", function()
+	for _, clan in Characters.clanIds do
+		expect(#(Characters.clanNames[clan] or "") > 0).toBe(true)
+	end
+end)
