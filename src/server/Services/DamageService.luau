@@ -2,11 +2,13 @@
 -- プレイヤーの被ダメージの窓口。敵・秘計など、プレイヤーにダメージを与える処理はすべて damage を通す。
 -- 無敵・ガード・防御の軽減・反応・奥義ゲージの増加は ReplicatedStorage.Shared.Damage が決める。
 -- ここは体力を減らし、奥義ゲージを足し、のけぞり・ダウン・ガードの硬直を ActionService で始める。
+-- 体力が減ったときは被弾の効果音（Hurt）を鳴らす。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Damage = require(ReplicatedStorage.Shared.Damage)
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ActionService = require(script.Parent.ActionService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -55,6 +57,7 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 
 	if outcome.amount > 0 then
 		humanoid.Health = math.max(humanoid.Health - outcome.amount, 0)
+		SoundPlayer.playAt("Hurt", root)
 	end
 	if outcome.gauge > 0 then
 		PlayerService.addOugiGauge(player, outcome.gauge)

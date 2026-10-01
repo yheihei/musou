@@ -186,6 +186,13 @@ export type PartySection = {
 	MaxMembers: number,
 }
 
+export type SoundSection = {
+	Volume: { [string]: number },
+	RollOffMinDistance: number,
+	RollOffMaxDistance: number,
+	HitInterval: number,
+}
+
 export type Config = {
 	Party: PartySection,
 	Stats: StatsSection,
@@ -203,6 +210,7 @@ export type Config = {
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
 	Hikei: HikeiSection,
+	Sound: SoundSection,
 }
 
 local Config: Config = {
@@ -973,6 +981,23 @@ local Config: Config = {
 			Kishinka = 60,
 			Daikatsu = 30, -- 動揺させる時間
 		},
+	},
+
+	-- 効果音。素材は Sounds.luau の登録表にあり、SoundPlayer.luau が鳴らす
+	Sound = {
+		-- 効果音ごとの音量（Sound.Volume）。登録表の名前ごとに置く
+		Volume = {
+			Swing = 0.5,
+			Hit = 0.6,
+			ChargeKogeki = 0.6,
+			Ougi = 0.8,
+			Hurt = 0.7,
+			Confirm = 0.5,
+			Cancel = 0.5,
+		},
+		RollOffMinDistance = 10, -- 戦闘の効果音が小さくなり始める距離（スタッド）
+		RollOffMaxDistance = 150, -- 戦闘の効果音が聞こえなくなる距離（スタッド）
+		HitInterval = 0.06, -- 1人の攻撃の命中の音を続けて鳴らす最短の間隔（秒）。まとめて当てたときに重ならないように
 	},
 }
 

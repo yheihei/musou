@@ -10,6 +10,8 @@
 -- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。敵はまだ防御を持たない
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
 --   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
+-- - 効果音は、技を出したときに技の音（通常攻撃とジャンプ攻撃は Swing、チャージ攻撃は ChargeKogeki、
+--   奥義は Ougi）を、当てたときに Hit を鳴らす。命中の音は1人の攻撃につき Config.Sound.HitInterval 秒に1回まで
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +22,8 @@ local Characters = require(ReplicatedStorage.Shared.Characters)
 local Combo = require(ReplicatedStorage.Shared.Combo)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+local Sounds = require(ReplicatedStorage.Shared.Sounds)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ActionService = require(script.Parent.ActionService)
@@ -38,15 +42,18 @@ export type OugiEntry = {
 	perform: ((player: Player, t: number, timeline: ActionState.Timeline) -> ())?,
 }
 
--- 技の見せ方。仮エフェクトの描き方と、当てたときに奥義ゲージを溜めるか
+-- 技の見せ方。仮エフェクトの描き方、当てたときに奥義ゲージを溜めるか、出したときに鳴らす効果音
 type Style = {
 	draw: Draw,
 	gauge: boolean,
+	sound: string?,
 }
 
 local CombatService = {}
 
 local combos: { [Player]: Combo.State } = {}
+-- 命中の音を最後に鳴らした時刻
+local lastHitSound: { [Player]: number } = {}
 -- 今の空中でジャンプ攻撃を出したか。着地で消す
 local jumpAttacked: { [Player]: boolean } = {}
 -- 奥義の ID（キャラクター定義の ougi）から引く中身
@@ -58,8 +65,8 @@ local function colored(color: Color3): Draw
 	end
 end
 
-local SLASH: Style = { draw = colored(Color3.fromRGB(255, 230, 150)), gauge = true }
-local CHARGE_KOGEKI: Style = { draw = colored(Color3.fromRGB(120, 200, 255)), gauge = true }
+local SLASH: Style = { draw = colored(Color3.fromRGB(255, 230, 150)), gauge = true, sound = "Swing" }
+local CHARGE_KOGEKI: Style = { draw = colored(Color3.fromRGB(120, 200, 255)), gauge = true, sound = "ChargeKogeki" }
 
 local function getRoot(player: Player): BasePart?
 	local character = player.Character
@@ -100,10 +107,21 @@ local function knockbackVelocity(origin: Vector3, target: Model, reaction: Confi
 	return direction * force + Vector3.new(0, force * 0.3, 0)
 end
 
+-- 命中の音を鳴らす。まとめて当てたときに重ならないよう、1人の攻撃につき間隔を空ける
+local function playHitSound(player: Player, model: Model)
+	local now = os.clock()
+	if now - (lastHitSound[player] or -math.huge) < Config.Sound.HitInterval then
+		return
+	end
+	lastHitSound[player] = now
+	SoundPlayer.playAt("Hit", model:GetPivot().Position)
+end
+
 local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, gauge: boolean)
 	local velocity = knockbackVelocity(origin, model, hit.Reaction, hit.Knockback)
 	if EnemyService.damage(model, damage, player, velocity) then
 		Vfx.hit(model)
+		playHitSound(player, model)
 		if gauge then
 			PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
 		end
@@ -126,9 +144,12 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 	end
 end
 
--- 時刻 t に始めた行動の前進と判定を出す。判定の時刻までに別の行動に変わっていたら出さない
+-- 時刻 t に始めた行動の前進と判定を出し、技の効果音を鳴らす。判定の時刻までに別の行動に変わっていたら出さない
 local function perform(player: Player, t: number, timeline: ActionState.Timeline, style: Style)
 	local root = getRoot(player)
+	if root and style.sound then
+		SoundPlayer.playAt(style.sound, root)
+	end
 	if root and timeline.Advance > 0 then
 		Push.move(root, root.CFrame.LookVector, timeline.Advance, timeline.Startup + timeline.Active)
 	end
@@ -234,7 +255,7 @@ local function registerActions()
 			local id = ougiOf(player)
 			local entry = if id then ougiEntries[id] else nil
 			if entry then
-				perform(player, t, timeline, { draw = entry.draw, gauge = false })
+				perform(player, t, timeline, { draw = entry.draw, gauge = false, sound = "Ougi" })
 				if entry.perform then
 					entry.perform(player, t, timeline)
 				end
@@ -249,6 +270,23 @@ function CombatService.start()
 	-- 刃の火遁。前方の扇に炎を吐く
 	CombatService.registerOugi("Katon", { draw = Vfx.flame })
 
+	DebugCommand.register(
+		"PlaySound",
+		"<効果音の名前> <プレイヤー名>",
+		"効果音をプレイヤーの位置で鳴らす（登録表は ReplicatedStorage.Shared.Sounds）",
+		function(name, playerName)
+			local player = DebugCommand.findPlayer(playerName)
+			if type(name) ~= "string" or not Sounds.get(name) then
+				error(`効果音は {table.concat(Sounds.names(), "、")} のどれか（{tostring(name)}）`, 0)
+			end
+			local root = getRoot(player)
+			if not root then
+				return `{player.Name} のキャラクターがいない`
+			end
+			SoundPlayer.playAt(name, root)
+			return `{player.Name} の位置で {name} を鳴らした`
+		end
+	)
 	DebugCommand.register(
 		"ShowHitbox",
 		"<true|false> [残す秒数]",
@@ -298,6 +336,7 @@ function CombatService.start()
 	Players.PlayerRemoving:Connect(function(player)
 		combos[player] = nil
 		jumpAttacked[player] = nil
+		lastHitSound[player] = nil
 	end)
 end
 

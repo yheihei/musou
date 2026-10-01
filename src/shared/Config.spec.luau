@@ -701,6 +701,20 @@ local SNAPSHOT = {
 			Daikatsu = 30,
 		},
 	},
+	Sound = {
+		Volume = {
+			Swing = 0.5,
+			Hit = 0.6,
+			ChargeKogeki = 0.6,
+			Ougi = 0.8,
+			Hurt = 0.7,
+			Confirm = 0.5,
+			Cancel = 0.5,
+		},
+		RollOffMinDistance = 10,
+		RollOffMaxDistance = 150,
+		HitInterval = 0.06,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }

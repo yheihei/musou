@@ -1,6 +1,10 @@
 --!strict
 -- クライアント側エントリーポイント
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+
 local Controllers = script:WaitForChild("Controllers")
 
 local PartyClient = require(script:WaitForChild("PartyClient"))
@@ -17,3 +21,5 @@ HUDController.start()
 NoticeController.start()
 PushController.start()
 MotionController.start()
+-- 効果音を先に読み込み、最初に鳴らすときの遅れを無くす
+task.spawn(SoundPlayer.preload)
