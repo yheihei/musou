@@ -119,8 +119,9 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  KukakuService / PartyService / ProgressService / SelectionService / StageService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / PlayerService / ActionService / DamageService / EnemyService / CombatService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
+      HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
       SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、勝敗の結果）
@@ -146,6 +147,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
+- ステージの配置は、構成（拠点の種類と軍、つながり、部隊）を `src/shared/Haichi.luau` に、位置をプレースの目印に置く（ADR 0006）。試験用ステージ `Test` は目印の位置もコードに持ち、テストプレイ中に目印を作る。窓口の `Shutsugeki <プレイヤー名> Test` で出撃し、`DumpHaichi Test` で読み込んだ配置を見る
 - ステージの進行は StageService が持つ。フェーズはロビー → 開始のイベントシーン → 戦闘 → 終了のイベントシーン → リザルト → ロビーの順に進み、遷移は `src/shared/StagePhase.luau` が決める。ほかのサービスは `StageService.started`・`finished`・`phaseChanged` を受けて、始める処理と片付けをする
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節

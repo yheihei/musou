@@ -129,3 +129,12 @@ test("読んだ値の定義表に無いステージと新しい版はそのま�
 	expect(data.unlocked).toEqual({ "Fuma9", "Iga1", "Koga1" })
 	expect(data.cleared).toEqual({ "Fuma9" })
 end)
+
+test("試験用ステージは最初から開放せず、クリアしても記録しない", function()
+	local data = Progress.new()
+	expect(Progress.isUnlocked(data, "Test")).toBe(false)
+	local next, newly = Progress.recordClear(data, "Test")
+	expect(next).toBe(data)
+	expect(newly).toEqual({})
+	expect(Progress.isCleared(next, "Test")).toBe(false)
+end)

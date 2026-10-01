@@ -43,3 +43,9 @@ test("メンバーの順番に番号の順で地点を割り当て、足りな�
 	expect(Mejirushi.shutsugekiNumberOf(3, { 2, 4 })).toBe(2)
 	expect(Mejirushi.shutsugekiNumberOf(1, {})).toBe(nil)
 end)
+
+test("経由点の名前を番号の順に並べ、番号でない名前は分ける", function()
+	local numbered, unknown = Mejirushi.sortKeiyuten({ "10", "2", "1", "Part", "0" })
+	expect(numbered).toEqual({ "1", "2", "10" })
+	expect(unknown).toEqual({ "0", "Part" })
+end)

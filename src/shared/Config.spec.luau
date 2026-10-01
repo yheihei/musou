@@ -692,6 +692,17 @@ local SNAPSHOT = {
 			Tekigun = 1,
 		},
 	},
+	Butai = {
+		Heisu = {
+			Test = {
+				Mikata1 = 30,
+				Mikata2 = 40,
+				Teki1 = 30,
+				Teki2 = 30,
+				Teki3 = 40,
+			},
+		},
+	},
 	Hikei = {
 		Duration = {
 			Fukuhei = 120,

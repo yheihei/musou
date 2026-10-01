@@ -9,6 +9,8 @@
 -- | 区画 | Workspace.Stages の下のフォルダ | 区画名（Iga1、Test など） |
 -- | 区画の範囲 | <区画>.Mejirushi.Bounds | Bounds |
 -- | 出撃地点 | <区画>.Mejirushi.ShutsugekiChiten | 1〜パーティーの上限人数 |
+-- | 拠点と本陣 | <区画>.Mejirushi.Kyoten | 拠点 ID |
+-- | つながりの道筋 | <区画>.Mejirushi.Tsunagari の下のフォルダ（Attribute の KyotenA・KyotenB） | 経由点 1、2… |
 --
 -- - 目印のパーツにはタグ Mejirushi を付け、Anchored を true、CanCollide・CanTouch・CanQuery を false にする
 -- - プレースには編集しやすいよう半透明で保存し、サーバーが起動時に透明にする
@@ -29,9 +31,15 @@ Mejirushi.STAGES = "Stages"
 -- 区画のフォルダの下の、目印をまとめるフォルダ
 Mejirushi.FOLDER = "Mejirushi"
 
--- 目印のフォルダの下の、区画の範囲と出撃地点
+-- 目印のフォルダの下の、区画の範囲・出撃地点・拠点・つながりの道筋
 Mejirushi.BOUNDS = "Bounds"
 Mejirushi.SHUTSUGEKI_CHITEN = "ShutsugekiChiten"
+Mejirushi.KYOTEN = "Kyoten"
+Mejirushi.TSUNAGARI = "Tsunagari"
+
+-- つながりの道筋のフォルダと落石地点に付ける、両端の拠点 ID の Attribute
+Mejirushi.KYOTEN_A = "KyotenA"
+Mejirushi.KYOTEN_B = "KyotenB"
 
 export type ShutsugekiCheck = {
 	-- 使える出撃地点の番号（1から上限人数まで、番号の順）
@@ -70,6 +78,24 @@ function Mejirushi.checkShutsugekiChiten(names: { string }, count: number): Shut
 	end
 	table.sort(unknown)
 	return { numbers = numbers, missing = missing, duplicated = duplicated, unknown = unknown }
+end
+
+-- 経由点のパーツの名前（1、2…）を番号の順に並べる。番号として読めない名前は2つ目に名前の順で返す
+function Mejirushi.sortKeiyuten(names: { string }): ({ string }, { string })
+	local numbered = {}
+	local unknown = {}
+	for _, name in names do
+		if string.match(name, "^[1-9]%d*$") then
+			table.insert(numbered, name)
+		else
+			table.insert(unknown, name)
+		end
+	end
+	table.sort(numbered, function(a, b)
+		return (tonumber(a) :: number) < (tonumber(b) :: number)
+	end)
+	table.sort(unknown)
+	return numbered, unknown
 end
 
 -- 出撃するメンバーの順番（1から）に使う出撃地点の番号。available は使える番号（番号の順）。

@@ -3,6 +3,7 @@
 -- 武器の ID は NINJAMCP の武器の英名（武器のモデルの名前。Buki.luau）を使う。
 -- 能力値は Config.luau にキャラクター ID ごとに置く。
 -- NPC の上忍と首領は、ステージの人選が決まったら足す。
+-- 試験用ステージ（Test）にだけ出る本作の試験用の NPC は、ID を Shiken で始め、shiken を true にする。
 
 export type ClanId = "Iga" | "Koga" | "Fuma" | "Saika"
 export type Bukishu = "Shuriken" | "Katana"
@@ -17,6 +18,8 @@ export type Character = {
 	bukishu: Bukishu?,
 	buki: string?,
 	ougi: string?,
+	-- 試験用ステージにだけ出る試験用の NPC か
+	shiken: boolean?,
 }
 
 local Characters = {}
@@ -68,6 +71,35 @@ local definitions: { [string]: Character } = {
 		displayName = "ハヤテ",
 		clan = "Iga",
 		playable = false,
+	},
+	-- 試験用ステージの敵軍の首領と上忍、味方軍の上忍
+	ShikenShuryo = {
+		id = "ShikenShuryo",
+		displayName = "試験の首領",
+		clan = "Fuma",
+		playable = false,
+		shiken = true,
+	},
+	ShikenJonin1 = {
+		id = "ShikenJonin1",
+		displayName = "試験の上忍1",
+		clan = "Fuma",
+		playable = false,
+		shiken = true,
+	},
+	ShikenJonin2 = {
+		id = "ShikenJonin2",
+		displayName = "試験の上忍2",
+		clan = "Fuma",
+		playable = false,
+		shiken = true,
+	},
+	ShikenJonin3 = {
+		id = "ShikenJonin3",
+		displayName = "試験の上忍3",
+		clan = "Iga",
+		playable = false,
+		shiken = true,
 	},
 }
 

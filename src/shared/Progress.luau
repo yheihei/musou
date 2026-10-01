@@ -7,6 +7,7 @@
 -- - 保存データは版番号を持つ。合成は開放済みとクリア済みの和集合にし、どちらの記録も失わない
 --   （読み込みに失敗したまま保存しても、保存済みの記録と合わせて残す）
 -- - 定義表に無いステージ ID も消さずに持つ（ステージを外した後に戻しても記録が残るように）
+-- - 試験用ステージは開放もクリアも記録しない
 -- - ステージの定義表は引数で差し替えられる（テスト用）。省くと Stages.definitions を使う
 
 local Stages = require("./Stages")
@@ -55,7 +56,7 @@ end
 function Progress.firstStages(catalog: Catalog?): { string }
 	local ids = {}
 	for id, stage in catalogOf(catalog) do
-		if stage.order == 1 then
+		if stage.order == 1 and not stage.shiken then
 			table.insert(ids, id)
 		end
 	end
@@ -85,11 +86,11 @@ function Progress.merge(a: Data, b: Data): Data
 end
 
 -- stageId のクリアを記録した進行と、新しく開放したステージ ID を返す。
--- 定義表に無いステージは記録しない。引数は書き換えない
+-- 定義表に無いステージと試験用ステージは記録しない。引数は書き換えない
 function Progress.recordClear(data: Data, stageId: string, catalog: Catalog?): (Data, { string })
 	local stages = catalogOf(catalog)
 	local stage = stages[stageId]
-	if not stage then
+	if not stage or stage.shiken then
 		return data, {}
 	end
 	local opened = { stageId }

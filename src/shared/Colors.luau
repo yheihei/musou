@@ -27,6 +27,11 @@ Colors.Character = {
 	Sekishusai = Color3.fromRGB(43, 138, 150),
 	KanaOni = Color3.fromRGB(190, 100, 45),
 	Hayate = Color3.fromRGB(52, 140, 90),
+	-- 試験用の NPC。敵軍は風魔に近い紫、味方軍は伊賀に近い青
+	ShikenShuryo = Color3.fromRGB(90, 40, 100),
+	ShikenJonin1 = Color3.fromRGB(130, 70, 140),
+	ShikenJonin2 = Color3.fromRGB(150, 95, 165),
+	ShikenJonin3 = Color3.fromRGB(70, 110, 180),
 } :: { [string]: Color3 }
 
 return Colors

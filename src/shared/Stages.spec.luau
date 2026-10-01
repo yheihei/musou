@@ -23,11 +23,11 @@ test("次のステージは実在し、同じクランの次の順番になっ�
 	end
 end)
 
-test("順番は1から欠けず、最後のステージだけが次を持たない", function()
+test("ストーリーの順番は1から欠けず、最後のステージだけが次を持たない", function()
 	for _, clan in Characters.clanIds do
 		local orders = {}
 		for _, stage in Stages.definitions do
-			if stage.clan == clan then
+			if stage.clan == clan and not stage.shiken then
 				expect(orders[stage.order]).toBe(nil)
 				orders[stage.order] = stage
 			end
@@ -94,4 +94,29 @@ test("最初のステージと次のステージを引ける", function()
 	expect(Stages.firstOf("Koga")).toBe(nil)
 	expect(Stages.nextOf("Iga1")).toBe(nil)
 	expect(Stages.nextOf("NoSuchStage")).toBe(nil)
+end)
+
+test("試験用ステージはストーリーに属さず、順番は 0 で次を持たない", function()
+	local count = 0
+	for _, stage in Stages.definitions do
+		if stage.shiken then
+			count += 1
+			expect(stage.order).toBe(0)
+			expect(stage.next).toBe(nil)
+		else
+			expect(stage.order >= 1).toBe(true)
+		end
+	end
+	expect(count > 0).toBe(true)
+end)
+
+test("ストーリーのステージを順番に引け、試験用ステージは入らない", function()
+	local ids = {}
+	for _, stage in Stages.storyOf("Iga") do
+		table.insert(ids, stage.id)
+	end
+	expect(ids).toEqual({ "Iga1" })
+	expect(Stages.storyOf("Koga")).toEqual({})
+	local first = Stages.firstOf("Iga")
+	expect(first and first.id).toBe("Iga1")
 end)

@@ -178,6 +178,11 @@ export type KosenSection = {
 	},
 }
 
+export type ButaiSection = {
+	-- 部隊の開始時の兵数。ステージ ID と部隊 ID（Haichi.luau の構成）で引く
+	Heisu: { [string]: { [string]: number } },
+}
+
 export type HikeiSection = {
 	Duration: { [string]: number },
 }
@@ -209,6 +214,7 @@ export type Config = {
 	Jonin: EnemySection,
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
+	Butai: ButaiSection,
 	Hikei: HikeiSection,
 	Sound: SoundSection,
 }
@@ -968,6 +974,20 @@ local Config: Config = {
 		GunStrength = {
 			Mikatagun = 0.9,
 			Tekigun = 1,
+		},
+	},
+
+	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にある
+	Butai = {
+		Heisu = {
+			-- 試験用ステージ。率いる上忍のいる部隊は 30、本陣の守備は 40
+			Test = {
+				Mikata1 = 30,
+				Mikata2 = 40,
+				Teki1 = 30,
+				Teki2 = 30,
+				Teki3 = 40,
+			},
 		},
 	},
 

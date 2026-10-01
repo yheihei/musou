@@ -2,6 +2,7 @@
 -- ストーリーとステージの定義表。ステージ選択・キャラクター選択・進行の保存が共通で引く。
 -- ストーリーはクランごとに1本なので、クラン ID で表す。首領はこの表にだけ持つ。
 -- イベントシーンの ID は、各シーンを作る issue で登録する。
+-- 試験用ステージ（shiken）はストーリーに属さず、順番を 0 にする。選択画面と進行（開放とクリア）には出さない。
 
 local Characters = require("./Characters")
 
@@ -20,7 +21,7 @@ export type Stage = {
 	id: string,
 	-- どのクランのストーリーか
 	clan: ClanId,
-	-- ストーリーの中の順番（1から）
+	-- ストーリーの中の順番（1から）。試験用ステージは 0
 	order: number,
 	-- 次のステージ ID。ストーリーの最後は nil
 	next: string?,
@@ -36,6 +37,8 @@ export type Stage = {
 	-- 区画名（Workspace.Stages の下のフォルダ名）
 	kukaku: string,
 	eventScenes: EventScenes,
+	-- 試験用ステージか。ストーリーに属さず、選択画面と進行に出さない
+	shiken: boolean?,
 }
 
 local Stages = {}
@@ -55,6 +58,22 @@ local definitions: { [string]: Stage } = {
 		kukaku = "Iga1",
 		eventScenes = {},
 	},
+	-- 試験用ステージ。拠点5つの小さな戦場で、配置は Haichi.luau にある。窓口の Shutsugeki で出撃する
+	Test = {
+		id = "Test",
+		clan = "Iga",
+		order = 0,
+		next = nil,
+		tekigun = "Fuma",
+		shuryo = {
+			mikatagun = "Hayate",
+			tekigun = "ShikenShuryo",
+		},
+		npcs = { "ShikenJonin1", "ShikenJonin2", "ShikenJonin3" },
+		kukaku = "Test",
+		eventScenes = {},
+		shiken = true,
+	},
 }
 
 Stages.definitions = definitions
@@ -66,11 +85,25 @@ end
 -- クランのストーリーの最初のステージ
 function Stages.firstOf(clan: ClanId): Stage?
 	for _, stage in definitions do
-		if stage.clan == clan and stage.order == 1 then
+		if stage.clan == clan and stage.order == 1 and not stage.shiken then
 			return stage
 		end
 	end
 	return nil
+end
+
+-- クランのストーリーのステージを順番に返す。試験用ステージは入れない
+function Stages.storyOf(clan: ClanId): { Stage }
+	local result = {}
+	for _, stage in definitions do
+		if stage.clan == clan and not stage.shiken then
+			table.insert(result, stage)
+		end
+	end
+	table.sort(result, function(a, b)
+		return a.order < b.order
+	end)
+	return result
 end
 
 -- 次のステージ。ストーリーの最後のステージと存在しない ID では nil

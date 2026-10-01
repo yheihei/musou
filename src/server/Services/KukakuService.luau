@@ -17,9 +17,12 @@ local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
 local KukakuService = {}
 
+-- 目印を見せるか。窓口の ShowMejirushi で切り替える
+local showMejirushi = false
+
 local function hide(instance: Instance)
 	if instance:IsA("BasePart") then
-		instance.Transparency = 1
+		instance.Transparency = if showMejirushi then 0.5 else 1
 	end
 end
 
@@ -166,6 +169,20 @@ local function describe(name: string): { [string]: any }
 end
 
 local function registerDebugCommands()
+	DebugCommand.register(
+		"ShowMejirushi",
+		"<true|false>",
+		"目印（タグ Mejirushi のパーツ）を半透明で見せるか、透明に戻すかを切り替える",
+		function(value)
+			showMejirushi = value == true or value == "true"
+			local count = 0
+			for _, instance in CollectionService:GetTagged(Mejirushi.TAG) do
+				hide(instance)
+				count += 1
+			end
+			return `目印 {count} 個を{if showMejirushi then "見せた" else "透明にした"}`
+		end
+	)
 	DebugCommand.register(
 		"DumpKukaku",
 		"[区画名]",
