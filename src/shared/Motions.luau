@@ -1,11 +1,14 @@
 --!strict
 -- モーションの一覧。待機と移動は Roblox 公式の Ninja アニメーションパッケージを使い、
 -- 攻撃・ガード・被弾・奥義のモーションは武器種ごとに、下忍のモーションは下忍の項目に置く。
--- 行動に合わせた再生は別に作る。ID が 0 の項目はまだモーションが無く、再生しない。Roblox の API は使わない。
+-- ID が 0 の項目はまだモーションが無く、再生しない。Roblox の API は使わない。
 --
 -- - 待機と移動は、仮の見た目の HumanoidDescription に入れて当てる（Appearance.luau）。
 --   アバターの読み込みを止めているので、アバターのモーションの設定には左右されない
+-- - 行動のモーションは、クライアントの MotionController が行動の Attribute を見て、行動の長さに合わせた速さで再生する
 -- - 攻撃判定のタイミングと移動量は Config.luau に置く。モーションを差し替えても判定は変わらない
+
+local Characters = require("./Characters")
 
 -- 待機と移動。HumanoidDescription の *Animation に入れるカタログのアセット ID
 export type Locomotion = {
@@ -116,6 +119,79 @@ function Motions.actionOf(bukishu: string, action: string, step: number?): numbe
 		return value[step or 1] or 0
 	end
 	return if type(value) == "number" then value else 0
+end
+
+-- 行動のモーションを重ねる優先度（Enum.AnimationPriority の名前）。
+-- 待機と移動（Animate の Idle・Movement）より上にし、被弾の反応は攻撃より上にする
+export type Priority = "Action" | "Action2"
+
+-- 被弾の反応の行動
+local REACTIONS = { Flinch = true, Down = true, GetUp = true, GuardHit = true }
+-- 行動が続く間くり返すモーション。ガードは離すまで続く
+local LOOPED = { Guard = true }
+
+-- キャラクターの行動で再生するモーションの ID。奥義（Ougi）はキャラクターの奥義の項目から、
+-- ほかはキャラクターの武器種の項目から step で引く。無ければ 0
+function Motions.forAction(characterId: string, action: string, step: number?): number
+	local character = Characters.get(characterId)
+	if not character then
+		return 0
+	end
+	if action == "Ougi" then
+		return if character.ougi then Motions.Ougi[character.ougi] or 0 else 0
+	end
+	if not character.bukishu then
+		return 0
+	end
+	return Motions.actionOf(character.bukishu, action, step)
+end
+
+-- キャラクターが行動で使うモーションの ID を、重なりなく小さい順に返す（読み込みの先回りに使う）
+function Motions.idsOf(characterId: string): { number }
+	local character = Characters.get(characterId)
+	local found: { [number]: boolean } = {}
+	local function add(id: number?)
+		if id and id > 0 then
+			found[id] = true
+		end
+	end
+	if character and character.bukishu then
+		for _, value in (Motions.Bukishu[character.bukishu] or {}) :: any do
+			if type(value) == "table" then
+				for _, id in value do
+					add(id)
+				end
+			else
+				add(value)
+			end
+		end
+	end
+	if character and character.ougi then
+		add(Motions.Ougi[character.ougi])
+	end
+	local ids = {}
+	for id in found do
+		table.insert(ids, id)
+	end
+	table.sort(ids)
+	return ids
+end
+
+function Motions.priorityOf(action: string): Priority
+	return if REACTIONS[action] then "Action2" else "Action"
+end
+
+function Motions.isLooped(action: string): boolean
+	return LOOPED[action] == true
+end
+
+-- 長さ length（秒）のモーションを、長さ duration（秒）の行動に合わせる再生の速さ。
+-- 長さの分からないモーションと、終わりの決まっていない行動（ガード）は 1
+function Motions.playbackSpeed(length: number, duration: number?): number
+	if length <= 0 or duration == nil or duration <= 0 or duration == math.huge then
+		return 1
+	end
+	return length / duration
 end
 
 return Motions

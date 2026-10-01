@@ -5,7 +5,8 @@
 -- 敵のサービスが被ダメージの窓口を呼び、CombatService が敵を攻撃できるよう、ここは敵のサービスを require しない。
 --
 -- - 行動と引数は Actions.validate で確かめ、不正な値は捨てる
--- - 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionStartedAt を書く
+-- - 行動を始めるたびに、キャラクターの Attribute の Action・ActionStep・ActionDuration・ActionStartedAt を書く。
+--   クライアントのモーションの再生は、最後に書く ActionStartedAt の変化を見て残りを読む
 -- - 攻撃の最中はジャンプを、奥義・ガード・被弾の反応の最中は歩き・ジャンプ・向きの変更を止める
 -- - 空中の通常攻撃はジャンプ攻撃（JumpAttack）にし、空中のチャージ攻撃は捨てる
 -- - ガードは押している間続き、離すと終わる。攻撃の最中に押したガードはキャンセル受付から始まる。
@@ -129,14 +130,16 @@ function ActionService.isAirborne(player: Player): boolean
 	return humanoid ~= nil and AIR_STATES[humanoid:GetState()] == true
 end
 
--- 今の行動をキャラクターの Attribute に書く。待機に戻ったときは action を nil にする
-local function publish(player: Player, action: string?, step: number?, t: number)
+-- 今の行動をキャラクターの Attribute に書く。待機に戻ったときは action を nil にする。
+-- duration は行動の長さ（秒）で、終わりの決まっていない行動（ガード）は nil。ActionStartedAt は最後に書く
+local function publish(player: Player, action: string?, step: number?, t: number, duration: number?)
 	local character = player.Character
 	if not character then
 		return
 	end
 	character:SetAttribute("Action", action)
 	character:SetAttribute("ActionStep", step)
+	character:SetAttribute("ActionDuration", duration)
 	character:SetAttribute("ActionStartedAt", t)
 end
 
@@ -175,7 +178,8 @@ local function onStarted(player: Player, action: string, t: number, timeline: Ac
 	if action == Actions.KinkyuKaihi then
 		step = beginKinkyuKaihi(player, t, timeline)
 	end
-	publish(player, action, step, t)
+	local duration = ActionState.duration(timeline)
+	publish(player, action, step, t, if duration < math.huge then duration else nil)
 	applyLock(player, action)
 	started:Fire(player, action, t)
 end
