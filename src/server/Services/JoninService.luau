@@ -4,7 +4,8 @@
 -- 個体（モデル）と、攻撃による被ダメージと撃破は #91 で作る。
 --
 -- - 出撃（StageService.started）で作り、決着とロビーのフェーズへの戻りで片付ける。配置の構成が無いステージでは作らない
--- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。部隊が消えたら、その場に残る
+-- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。
+--   戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）
 -- - 上忍と首領ごとに ReplicatedStorage.Jonin の下へキャラクター ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・体力（Health・MaxHealth）・軍（Gun）・
@@ -33,7 +34,7 @@ local joninList: { Jonin.Jonin } = {}
 local folder: Folder
 
 local defeatedEvent = Instance.new("BindableEvent")
--- 上忍か首領が倒れたときに、その Jonin.Jonin で発火する
+-- 上忍か首領が倒れたときに、そのキャラクター ID で発火する
 JoninService.defeated = defeatedEvent.Event
 
 local function find(id: string): Jonin.Jonin?
@@ -89,7 +90,7 @@ function JoninService.setHealth(id: string, value: number): boolean
 	end
 	publish(jonin)
 	if defeated then
-		defeatedEvent:Fire(jonin)
+		defeatedEvent:Fire(jonin.id)
 	end
 	return true
 end
@@ -128,12 +129,21 @@ local function onStarted(info: StageService.StartInfo)
 	end
 end
 
--- 倒れていない上忍を、率いる部隊の位置へ合わせる。部隊が消えていたら、その場に残す
+-- 倒れていない上忍を、率いる部隊の位置へ合わせる。戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
 local function follow()
+	local battle = StageService.getPhase() == "Battle"
 	for _, jonin in joninList do
 		local id = jonin.butai
-		local butai = if id and not Jonin.isDefeated(jonin) then ButaiService.get(id) else nil
-		if butai and (butai.position.x ~= jonin.position.x or butai.position.z ~= jonin.position.z) then
+		if not id or Jonin.isDefeated(jonin) then
+			continue
+		end
+		local butai = ButaiService.get(id)
+		if not butai then
+			if battle then
+				jonin.butai = nil
+				publish(jonin)
+			end
+		elseif butai.position.x ~= jonin.position.x or butai.position.z ~= jonin.position.z then
 			jonin.position = { x = butai.position.x, z = butai.position.z }
 			publish(jonin)
 		end
@@ -196,7 +206,11 @@ function JoninService.start()
 	task.spawn(function()
 		while true do
 			task.wait(Config.Butai.MoveInterval)
-			follow()
+			-- 1回の失敗で追従が止まらないよう、失敗は警告にして次の間隔で続ける
+			local ok, err = pcall(follow)
+			if not ok then
+				warn(`JoninService: 上忍を部隊に合わせられなかった: {err}`)
+			end
 		end
 	end)
 end

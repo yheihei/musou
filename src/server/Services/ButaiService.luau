@@ -77,11 +77,11 @@ local aiteOf: { [string]: string } = {}
 local waiting: { [string]: boolean } = {}
 
 local kosenStartedEvent = Instance.new("BindableEvent")
--- 交戦を始めたときに、2つの部隊（Butai.Butai）で発火する
+-- 交戦を始めたときに、2つの部隊 ID で発火する
 ButaiService.kosenStarted = kosenStartedEvent.Event
 local kosenSettledEvent = Instance.new("BindableEvent")
--- 交戦が決着したときに、2つの部隊（Butai.Butai）と勝者（Kosen.Winner の A・B・Draw）で発火する。
--- 兵数 0 の部隊は発火の後に消す
+-- 交戦が決着したときに、2つの部隊 ID と勝者（Kosen.Winner の A・B・Draw）で発火する。
+-- 兵数 0 の部隊は同じ間隔のうちに消すので、受け取った時点で ButaiService.get が nil を返すことがある
 ButaiService.kosenSettled = kosenSettledEvent.Event
 
 local function find(id: string): (Butai.Butai?, number?)
@@ -136,7 +136,6 @@ local function updateMarker(butai: Butai.Butai)
 	if not marker then
 		local created = Instance.new("Part")
 		created.Name = butai.id
-		created.Shape = Enum.PartType.Cylinder
 		created.Anchored = true
 		created.CanCollide = false
 		created.CanTouch = false
@@ -144,7 +143,7 @@ local function updateMarker(butai: Butai.Butai)
 		created.CastShadow = false
 		created.Material = Enum.Material.Neon
 		created.Transparency = 0.3
-		created.Size = Vector3.new(MARKER_HEIGHT, MARKER_WIDTH, MARKER_WIDTH)
+		created.Size = Vector3.new(MARKER_WIDTH, MARKER_HEIGHT, MARKER_WIDTH)
 		created.Color = Colors.Gun[butai.gun]
 		local billboard = Instance.new("BillboardGui")
 		billboard.Name = "Label"
@@ -166,9 +165,8 @@ local function updateMarker(butai: Butai.Butai)
 	end
 	local part = marker :: Part
 	local y = Ground.heightAt(butai.position.x, butai.position.z) or 0
-	-- 円柱は X 軸が長さの向きなので、Z 軸まわりに 90 度回して立てる
+	-- 回さずに立てる（BillboardGui の StudsOffsetWorldSpace をパーツの向きに左右されないようにする）
 	part.CFrame = CFrame.new(butai.position.x, y + MARKER_HEIGHT / 2, butai.position.z)
-		* CFrame.Angles(0, 0, math.pi / 2)
 	local label = part:FindFirstChild("Label")
 	local text = label and label:FindFirstChild("Text")
 	if text and text:IsA("TextLabel") then
@@ -368,10 +366,15 @@ local function onStarted(info: StageService.StartInfo)
 			)
 			continue
 		end
+		local heisu = Haichi.heisuOf(info.stageId, entry.id)
+		if not heisu or heisu <= 0 then
+			warn(`ButaiService: 部隊 {entry.id} の兵数が Config.Butai.Heisu に無いので出さない`)
+			continue
+		end
 		ButaiService.add({
 			id = entry.id,
 			gun = entry.gun,
-			heisu = Haichi.heisuOf(info.stageId, entry.id) or 0,
+			heisu = heisu,
 			position = position,
 			jonin = entry.jonin,
 			kyoten = entry.kyoten,
@@ -390,10 +393,10 @@ local function sideOf(butai: Butai.Butai, fraction: number): Kosen.Side
 	}
 end
 
--- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせる
+-- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせ、一覧を回し終えてから知らせる
 local function fightAll(dt: number)
-	for index = #kosenList, 1, -1 do
-		local state = kosenList[index]
+	local settled: { { a: string, b: string, winner: Kosen.Winner? } } = {}
+	for _, state in table.clone(kosenList) do
 		local a, b = find(state.a), find(state.b)
 		if not a or not b then
 			continue
@@ -404,13 +407,19 @@ local function fightAll(dt: number)
 		state.fractionA = result.a.fraction
 		state.fractionB = result.b.fraction
 		if result.settled then
-			table.remove(kosenList, index)
+			local index = table.find(kosenList, state)
+			if index then
+				table.remove(kosenList, index)
+			end
 			aiteOf[a.id] = nil
 			aiteOf[b.id] = nil
-			kosenSettledEvent:Fire(a, b, result.winner)
+			table.insert(settled, { a = a.id, b = b.id, winner = result.winner })
 		end
 		publish(a)
 		publish(b)
+	end
+	for _, item in settled do
+		kosenSettledEvent:Fire(item.a, item.b, item.winner)
 	end
 end
 
@@ -447,7 +456,7 @@ local function matchAll()
 			table.insert(kosenList, { a = a.id, b = b.id, fractionA = 0, fractionB = 0, startedAt = os.clock() })
 			publish(a)
 			publish(b)
-			kosenStartedEvent:Fire(a, b)
+			kosenStartedEvent:Fire(a.id, b.id)
 		end
 	end
 end
@@ -610,7 +619,11 @@ function ButaiService.start()
 		while true do
 			task.wait(Config.Butai.MoveInterval)
 			local now = os.clock()
-			tick(now - last)
+			-- 1回の失敗で部隊が止まらないよう、失敗は警告にして次の間隔で続ける
+			local ok, err = pcall(tick, now - last)
+			if not ok then
+				warn(`ButaiService: 部隊を進められなかった: {err}`)
+			end
 			last = now
 		end
 	end)
