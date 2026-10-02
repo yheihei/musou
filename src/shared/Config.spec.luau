@@ -697,6 +697,9 @@ local SNAPSHOT = {
 		},
 	},
 	Butai = {
+		Speed = 12,
+		MoveInterval = 0.5,
+		InitialShiki = 50,
 		Heisu = {
 			Test = {
 				Mikata1 = 30,

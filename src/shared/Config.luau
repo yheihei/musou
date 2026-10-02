@@ -181,6 +181,9 @@ export type KosenSection = {
 export type ButaiSection = {
 	-- 部隊の開始時の兵数。ステージ ID と部隊 ID（Haichi.luau の構成）で引く
 	Heisu: { [string]: { [string]: number } },
+	Speed: number,
+	MoveInterval: number,
+	InitialShiki: number,
 }
 
 export type HikeiSection = {
@@ -998,8 +1001,11 @@ local Config: Config = {
 		},
 	},
 
-	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にある
+	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にあり、移動の計算は Butai.luau にある
 	Butai = {
+		Speed = 12, -- 部隊が目的地へ進む速さ（スタッド/秒）。下忍の歩く速さに合わせる
+		MoveInterval = 0.5, -- 部隊の位置を進める間隔（秒）
+		InitialShiki = 50, -- 部隊の開始時の士気。交戦の士気の補正は差で効く（Kosen 節）
 		Heisu = {
 			-- 試験用ステージ。率いる上忍のいる部隊は 30、本陣の守備は 40
 			Test = {
