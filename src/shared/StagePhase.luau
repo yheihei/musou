@@ -13,7 +13,8 @@ export type Event =
 	"Shutsugeki" -- 出撃（ロビー → 開始のイベントシーン）
 	| "SceneEnd" -- イベントシーンの終わり（開始のイベントシーン → 戦闘、終了のイベントシーン → リザルト）
 	| "Finish" -- 勝敗の決着（戦闘 → 終了のイベントシーン）
-	| "ReturnToLobby" -- リザルトからロビーへ戻る
+	| "ReturnToLobby" -- リザルトからロビーへ戻る（選択を外す）
+	| "Retry" -- リザルトから、同じステージへ挑み直すためにロビーへ戻る（選択を残す）
 	| "Abort" -- 出撃したメンバーが全員抜けた（ロビー以外 → ロビー）
 
 local StagePhase = {}
@@ -22,14 +23,14 @@ local StagePhase = {}
 StagePhase.DEADLINE_ATTRIBUTE = "BattleDeadline"
 
 StagePhase.phases = { "Lobby", "StartScene", "Battle", "EndScene", "Result" } :: { Phase }
-StagePhase.events = { "Shutsugeki", "SceneEnd", "Finish", "ReturnToLobby", "Abort" } :: { Event }
+StagePhase.events = { "Shutsugeki", "SceneEnd", "Finish", "ReturnToLobby", "Retry", "Abort" } :: { Event }
 
 local TRANSITIONS: { [Phase]: { [Event]: Phase } } = {
 	Lobby = { Shutsugeki = "StartScene" },
 	StartScene = { SceneEnd = "Battle", Abort = "Lobby" },
 	Battle = { Finish = "EndScene", Abort = "Lobby" },
 	EndScene = { SceneEnd = "Result", Abort = "Lobby" },
-	Result = { ReturnToLobby = "Lobby", Abort = "Lobby" },
+	Result = { ReturnToLobby = "Lobby", Retry = "Lobby", Abort = "Lobby" },
 }
 
 local PARTY_PHASES: { [Phase]: RemoteSchema.Phase } = {

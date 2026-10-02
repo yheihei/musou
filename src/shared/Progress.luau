@@ -8,6 +8,7 @@
 --   （読み込みに失敗したまま保存しても、保存済みの記録と合わせて残す）
 -- - 定義表に無いステージ ID も消さずに持つ（ステージを外した後に戻しても記録が残るように）
 -- - 試験用ステージは開放もクリアも記録しない
+-- - クリアを記録するのは、勝ったときに出撃して残っている人だけ（clearTargets）。抜けた人と待機中の人は入れない
 -- - ステージの定義表は引数で差し替えられる（テスト用）。省くと Stages.definitions を使う
 
 local Stages = require("./Stages")
@@ -22,6 +23,17 @@ export type Data = {
 }
 
 export type Catalog = { [string]: Stages.Stage }
+
+-- 決着したときのパーティーのメンバー
+export type Participant = {
+	userId: number,
+	-- 出撃したか（出撃中に入った待機中の人は false）
+	sortied: boolean,
+	-- 出撃した後に抜けたか
+	left: boolean,
+	-- 出撃中に入ってロビーで待っているか
+	waiting: boolean,
+}
 
 local Progress = {}
 
@@ -117,6 +129,21 @@ local function stringsOf(value: unknown): { string }
 		end
 	end
 	return result
+end
+
+-- 勝ったときにクリアを記録する人の UserId（participants の順）。出撃して残っている人だけで、抜けた人と待機中の人は入れない。
+-- 負けたときは誰にも記録しないので空
+function Progress.clearTargets(participants: { Participant }, victory: boolean): { number }
+	local targets = {}
+	if not victory then
+		return targets
+	end
+	for _, participant in participants do
+		if participant.sortied and not participant.left and not participant.waiting then
+			table.insert(targets, participant.userId)
+		end
+	end
+	return targets
 end
 
 -- DataStore から読んだ値を進行にする。表でなければ nil を返す（新規として扱う）。

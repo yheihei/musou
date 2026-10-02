@@ -79,3 +79,13 @@ test("イベントシーンのフェーズでなければ何も流さない", fu
 		expect(StagePhase.sceneIdFor(scenes, phase, true)).toBe(nil)
 	end
 end)
+
+test("リトライはリザルトでだけ受け付け、ロビーへ戻る", function()
+	for _, phase in StagePhase.phases do
+		local next = StagePhase.next(phase, "Retry")
+		expect(next ~= nil).toBe(phase == "Result")
+		if next then
+			expect(next).toBe("Lobby")
+		end
+	end
+end)

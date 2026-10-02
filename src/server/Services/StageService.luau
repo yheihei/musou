@@ -16,7 +16,11 @@
 -- - 倒れた出撃メンバーは、出撃したステージの区画の出撃地点から再出撃する（暫定。兵站線に沿った再出撃は #103 で置き換える）。
 --   ロビーのフェーズの人と待機中の人はロビーに出現する
 -- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
+-- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
+--   新しく開放したステージを StageResult のメンバーごとに書く
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、選択を外して全員をロビーへ戻す
+-- - リザルトのフェーズでリーダーが Remotes.Retry を送ると、ステージと選択を残して全員をロビーへ戻す。
+--   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらステージを判定し直す）
 -- - 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す
 -- - 片付けは各サービスが started・finished・phaseChanged を受けて行う
 
@@ -26,6 +30,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local EventScenes = require(ReplicatedStorage.Shared.EventScenes)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
+local Progress = require(ReplicatedStorage.Shared.Progress)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local SelectionRules = require(ReplicatedStorage.Shared.SelectionRules)
 local SkipVote = require(ReplicatedStorage.Shared.SkipVote)
@@ -344,8 +349,38 @@ function StageService.shutsugeki(player: Player, stageOverride: string?, startSc
 	return nil
 end
 
--- 勝敗を決めて終了のイベントシーンへ進める。StageResult は決着の時点で作り、終了のイベントシーンの後に
--- 出撃して残っているメンバーへ送る。戦闘のフェーズでなければ false
+-- 出撃したメンバーの、決着したときの様子（抜けたか、入り直して待っているか）
+local function participantsOf(current: Session): { Progress.Participant }
+	local result: { Progress.Participant } = {}
+	for _, member in current.members do
+		local present = member.Parent ~= nil and PartyService.isMember(member.UserId)
+		table.insert(result, {
+			userId = member.UserId,
+			sortied = true,
+			left = not present,
+			waiting = present and PartyService.isWaiting(member),
+		})
+	end
+	return result
+end
+
+-- 勝ったときに、出撃して残っている全員にクリアを記録する。プレイヤーごとに新しく開放したステージを返す
+local function recordClear(current: Session, victory: boolean): { [Player]: { string } }
+	local targets = Progress.clearTargets(participantsOf(current), victory)
+	local players = {}
+	for _, member in current.members do
+		if member.Parent and table.find(targets, member.UserId) then
+			table.insert(players, member)
+		end
+	end
+	if #players == 0 then
+		return {}
+	end
+	return ProgressService.recordClear(players, current.stageId)
+end
+
+-- 勝敗を決めて終了のイベントシーンへ進める。勝ったら出撃して残っている全員にクリアを記録する。
+-- StageResult は決着の時点で作り、終了のイベントシーンの後に出撃して残っているメンバーへ送る。戦闘のフェーズでなければ false
 function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason): boolean
 	local current = session
 	if phase ~= "Battle" or not current then
@@ -353,6 +388,7 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	end
 	local elapsed = if current.battleStartedAt then os.clock() - current.battleStartedAt else 0
 	current.elapsed = elapsed
+	local newlyUnlocked = recordClear(current, victory)
 	local members = StageService.getMembers()
 	local result: RemoteSchema.StageResult = {
 		victory = victory,
@@ -365,7 +401,7 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 			userId = member.UserId,
 			name = member.Name,
 			gekihasu = member:GetAttribute("Gekihasu") :: number? or 0,
-			newlyUnlocked = {},
+			newlyUnlocked = newlyUnlocked[member] or {},
 		})
 	end
 	current.result = result
@@ -385,6 +421,22 @@ function StageService.returnToLobby(player: Player): boolean
 	session = nil
 	SelectionService.clear()
 	transition("ReturnToLobby")
+	for _, member in members do
+		task.spawn(PlayerService.spawnInLobby, member)
+	end
+	return true
+end
+
+-- リザルトから同じステージへ挑み直すためにロビーへ戻る。リーダーがリザルトのフェーズで送ったときだけ受け付ける。
+-- ステージと選択（キャラクター・秘計）は残し、今のリーダーで確かめ直す。待機中だった人は選択の無いまま合流する
+function StageService.retry(player: Player): boolean
+	if phase ~= "Result" or PartyService.getLeader() ~= player then
+		return false
+	end
+	local members = StageService.getMembers()
+	session = nil
+	transition("Retry")
+	SelectionService.revalidate()
 	for _, member in members do
 		task.spawn(PlayerService.spawnInLobby, member)
 	end
@@ -422,6 +474,10 @@ end
 
 local function onReturnToLobby(player: Player)
 	StageService.returnToLobby(player)
+end
+
+local function onRetry(player: Player)
+	StageService.retry(player)
 end
 
 -- SkipEventScene は引数を持たない。届いた引数は読まない
@@ -482,6 +538,18 @@ local function registerDebugCommands()
 				return `{player.Name} の ReturnToLobby を受け付けなかった（リーダーがリザルトのフェーズで送ったときだけ受け付ける。フェーズ {phase}）`
 			end
 			return "ロビーへ戻した"
+		end
+	)
+	DebugCommand.register(
+		"Retry",
+		"<プレイヤー名>",
+		"Remotes.Retry と同じ処理で、リザルトから同じステージへ挑み直すためにロビーへ戻る（ステージと選択を残す）",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			if not StageService.retry(player) then
+				return `{player.Name} の Retry を受け付けなかった（リーダーがリザルトのフェーズで送ったときだけ受け付ける。フェーズ {phase}）`
+			end
+			return `ロビーへ戻した（ステージ {tostring(SelectionService.getStage())} と選択を残した）`
 		end
 	)
 	DebugCommand.register(
@@ -581,6 +649,8 @@ function StageService.start()
 	shutsugekiRemote.OnServerEvent:Connect(onShutsugeki)
 	local returnRemote = remotes:WaitForChild("ReturnToLobby") :: RemoteEvent
 	returnRemote.OnServerEvent:Connect(onReturnToLobby)
+	local retryRemote = remotes:WaitForChild("Retry") :: RemoteEvent
+	retryRemote.OnServerEvent:Connect(onRetry)
 	local skipRemote = remotes:WaitForChild("SkipEventScene") :: RemoteEvent
 	skipRemote.OnServerEvent:Connect(onSkipEventScene)
 	PartyService.changed:Connect(onPartyChanged)

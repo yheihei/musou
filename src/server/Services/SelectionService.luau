@@ -11,6 +11,7 @@
 --   秘計の枚数は出撃の条件にしない
 -- - 抜けた人の選択は外し、ほかの人が選べるようにする
 -- - リザルトからロビーへ戻ったら、StageService が clear で選択を全部外す
+-- - リザルトからリトライでロビーへ戻ったら、選択は残し、StageService が revalidate で確かめ直す
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -155,6 +156,18 @@ local function releaseLeftMembers()
 			end
 		end
 	end
+end
+
+-- リトライでロビーへ戻ったときに、残した選択を確かめ直して全員に送り直す。
+-- 抜けた人の選択を外し、今のリーダーが開放していないステージの選択と、そのステージで選べないキャラクターの選択を外す
+function SelectionService.revalidate()
+	releaseLeftMembers()
+	lastLeader = PartyService.getLeader()
+	if not SelectionRules.keepsStage(selectedStage, leaderUnlocked()) then
+		selectedStage = nil
+	end
+	releaseInvalidCharacters()
+	PartyService.refresh()
 end
 
 -- 入退室とフェーズの変化のたびに呼ぶ。抜けた人の選択は PartyState に載らないので、送り直すのはリーダーが代わったときだけ

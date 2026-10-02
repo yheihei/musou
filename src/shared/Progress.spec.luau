@@ -139,3 +139,28 @@ test("試験用ステージは最初から開放せず、クリアしても記�
 	expect(newly).toEqual({})
 	expect(Progress.isCleared(next, "Test")).toBe(false)
 end)
+
+local function participant(userId: number, sortied: boolean, left: boolean, waiting: boolean): Progress.Participant
+	return { userId = userId, sortied = sortied, left = left, waiting = waiting }
+end
+
+test("勝ったときは、出撃して残っている人だけにクリアを記録する", function()
+	local participants = {
+		participant(1, true, false, false),
+		participant(2, true, true, false), -- 出撃した後に抜けた
+		participant(3, false, false, true), -- 出撃中に入って待っている
+		participant(4, true, false, false),
+	}
+	expect(Progress.clearTargets(participants, true)).toEqual({ 1, 4 })
+end)
+
+test("負けたときは誰にもクリアを記録しない", function()
+	local participants = { participant(1, true, false, false), participant(2, true, false, false) }
+	expect(Progress.clearTargets(participants, false)).toEqual({})
+end)
+
+test("抜けて入り直し、待っている人には記録しない", function()
+	-- 同じ人が出撃した後に抜け、入り直して待機中になった
+	local participants = { participant(5, true, false, true) }
+	expect(Progress.clearTargets(participants, true)).toEqual({})
+end)

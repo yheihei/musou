@@ -161,6 +161,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、出撃メンバーなら区画の出撃地点から、ほかの人はロビーから出る
 - イベントシーンは、サーバーが出撃メンバーに `PlayEventScene` で流し、長さが過ぎるか全員がスキップを押すと次のフェーズへ進める。シーンの ID と長さは `src/shared/EventScenes.luau`、スキップの集計は `src/shared/SkipVote.luau` にある。窓口の `StartEventScene Shiken` で、試験用のシーンを流して出撃する
+- 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送ると選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
 - 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない
