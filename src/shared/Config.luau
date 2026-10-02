@@ -24,6 +24,7 @@ export type StatsSection = {
 	Characters: { [string]: StatValues },
 	Jonin: StatValues,
 	Shuryo: StatValues,
+	MikatagunScale: number,
 	DefenseHalf: number,
 	MinDamage: number,
 }
@@ -179,6 +180,8 @@ export type KosenSection = {
 		Mikatagun: number,
 		Tekigun: number,
 	},
+	JoninPower: number,
+	JoninShikiThreshold: number,
 }
 
 export type ButaiSection = {
@@ -289,6 +292,7 @@ local Config: Config = {
 		-- 上忍と首領（NPC）の基本の能力値。キャラクターごとの値はまだ無く、役目で決める
 		Jonin = { MaxHealth = 600, Attack = 14, Defense = 12, WalkSpeed = 14, AttackSpeed = 1 },
 		Shuryo = { MaxHealth = 1200, Attack = 16, Defense = 16, WalkSpeed = 14, AttackSpeed = 1 },
+		MikatagunScale = 0.9, -- 味方軍の上忍と首領の体力・攻撃・防御に掛ける倍率。味方軍は敵軍よりやや弱くする
 		DefenseHalf = 100, -- 防御がこの値のとき、受けるダメージが半分になる
 		MinDamage = 1, -- 与ダメージの下限
 	},
@@ -1029,6 +1033,9 @@ local Config: Config = {
 			Mikatagun = 0.9,
 			Tekigun = 1,
 		},
+		-- 両軍の上忍がいる部隊どうしの交戦では、上忍同士も戦う
+		JoninPower = 0.6, -- 上忍同士の戦いで、1秒あたりに与えるダメージの技の倍率（攻撃を相手の防御で軽減し、士気の差の倍率を掛ける）
+		JoninShikiThreshold = 20, -- 味方軍の上忍が敵の上忍を削れる、部隊の士気の差の下限。敵軍の上忍に条件は無い
 	},
 
 	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にあり、移動の計算は Butai.luau にある

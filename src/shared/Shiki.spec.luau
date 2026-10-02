@@ -29,6 +29,8 @@ local KOSEN_PARAMS: Kosen.Params = {
 	LossRate = 0.1,
 	MaxStep = 0.5,
 	GunStrength = { Mikatagun = 1, Tekigun = 1 },
+	JoninPower = 0.5,
+	JoninShikiThreshold = 20,
 }
 
 local function dekigoto(kind: Shiki.Kind, gun: "Mikatagun" | "Tekigun", x: number, z: number, at: number)

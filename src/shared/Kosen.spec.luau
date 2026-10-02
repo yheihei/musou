@@ -15,6 +15,8 @@ local PARAMS: Kosen.Params = {
 	LossRate = 0.1,
 	MaxStep = 0.5,
 	GunStrength = { Mikatagun = 0.9, Tekigun = 1 },
+	JoninPower = 0.5,
+	JoninShikiThreshold = 20,
 }
 
 local function side(heisu: number, shiki: number?): Kosen.Side
@@ -210,3 +212,66 @@ test("距離が同じ組は部隊 ID の順に決める", function()
 	expect(result.pairs).toEqual({ { a = "M1", b = "T1" } })
 	expect(result.waiting).toEqual({ T2 = true })
 end)
+
+local function jonin(gun: "Mikatagun" | "Tekigun", shiki: number, scale: number?): Kosen.JoninSide
+	local k = scale or 1
+	return { gun = gun, health = 600 * k, attack = 14 * k, defense = 12 * k, shiki = shiki }
+end
+
+-- 決着するまで 0.5 秒ずつ戦わせ、勝者と両方の体力を返す
+local function fightJonin(a: Kosen.JoninSide, b: Kosen.JoninSide): (Kosen.Winner?, number, number)
+	local sideA, sideB = table.clone(a), table.clone(b)
+	for _ = 1, 2000 do
+		local result = Kosen.joninStep(sideA, sideB, 0.5, PARAMS)
+		sideA.health, sideB.health = result.a, result.b
+		if result.winner then
+			return result.winner, result.a, result.b
+		end
+	end
+	return nil, sideA.health, sideB.health
+end
+
+test("士気の差がしきい値未満なら、味方軍の上忍は敵の上忍を削れない", function()
+	local mikata = jonin("Mikatagun", 65, 0.9)
+	local teki = jonin("Tekigun", 50)
+	local result = Kosen.joninStep(mikata, teki, 10, PARAMS)
+	expect(result.b).toBe(600)
+	expect(result.a < mikata.health).toBe(true)
+	expect(Kosen.joninDamage(mikata, teki, PARAMS)).toBe(0)
+	local winner = fightJonin(mikata, teki)
+	expect(winner).toBe("B")
+end)
+
+test("士気の差がしきい値以上なら、味方軍の上忍が敵の上忍を倒せる", function()
+	local mikata = jonin("Mikatagun", 80, 0.9)
+	local teki = jonin("Tekigun", 50)
+	expect(Kosen.joninDamage(mikata, teki, PARAMS) > 0).toBe(true)
+	local winner, healthA, healthB = fightJonin(mikata, teki)
+	expect(winner).toBe("A")
+	expect(healthA > 0).toBe(true)
+	expect(healthB).toBe(0)
+end)
+
+test("同じ能力値と士気なら、敵軍の上忍が勝つ", function()
+	local winner, healthA, healthB = fightJonin(jonin("Mikatagun", 50), jonin("Tekigun", 50))
+	expect(winner).toBe("B")
+	expect(healthA).toBe(0)
+	expect(healthB).toBe(600)
+	-- 敵軍の上忍は士気で負けていても味方を削る
+	local behind = jonin("Tekigun", 20)
+	expect(Kosen.joninDamage(behind, jonin("Mikatagun", 80), PARAMS) > 0).toBe(true)
+end)
+
+test(
+	"上忍同士の戦いは、経過時間が 0 なら体力が変わらず、引数の表も書き換えない",
+	function()
+		local a, b = jonin("Mikatagun", 90), jonin("Tekigun", 50)
+		local still = Kosen.joninStep(a, b, 0, PARAMS)
+		expect(still.a).toBe(600)
+		expect(still.b).toBe(600)
+		expect(still.winner).toBe(nil)
+		Kosen.joninStep(a, b, 30, PARAMS)
+		expect(a.health).toBe(600)
+		expect(b.health).toBe(600)
+	end
+)

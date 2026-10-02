@@ -2,10 +2,12 @@
 -- 名前を持つ上忍と首領のデータ。上忍は部隊を率いて部隊とともに動き、首領は本陣にとどまる。
 -- 開始時の顔ぶれは、配置の構成（Haichi.luau の部隊の上忍）とステージの定義（Stages.luau の両軍の首領）から決める。
 -- 能力値は Config.luau の Stats 節（上忍は Jonin、首領は Shuryo）に、補正を Stats.compute で足して求める。
+-- 味方軍の上忍と首領は、体力・攻撃・防御に Stats 節の MikatagunScale を掛けて敵軍よりやや弱くする。
 -- 体力が 0 になると倒れる。率いていた部隊は残し、士気だけを下げる（Butai.loseJonin）。
 -- 位置は水平の (x, z) で持つ。Roblox の API は使わない。
 
 local Characters = require("./Characters")
+local Config = require("./Config")
 local Gun = require("./Gun")
 local Haichi = require("./Haichi")
 local Stages = require("./Stages")
@@ -66,10 +68,23 @@ function Jonin.entriesOf(haichi: Haichi.Haichi, stage: Stages.Stage): { Entry }
 	return entries
 end
 
+-- 軍ごとの能力値の補正。味方軍は体力・攻撃・防御に MikatagunScale を掛ける
+function Jonin.modifiersOf(gun: Gun.Gun): { Stats.Modifier }
+	if gun ~= "Mikatagun" then
+		return {}
+	end
+	local scale = Config.Stats.MikatagunScale
+	return {
+		{ stat = "MaxHealth", multiply = scale },
+		{ stat = "Attack", multiply = scale },
+		{ stat = "Defense", multiply = scale },
+	}
+end
+
 -- 開始時の上忍か首領を作る。体力は最大の体力から始める
 function Jonin.new(entry: Entry, position: Point): Jonin
 	local character = Characters.get(entry.id)
-	local stats = Stats.compute(Stats.npcBaseOf(entry.shuryo), {})
+	local stats = Stats.compute(Stats.npcBaseOf(entry.shuryo), Jonin.modifiersOf(entry.gun))
 	return {
 		id = entry.id,
 		displayName = if character then character.displayName else entry.id,

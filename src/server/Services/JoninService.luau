@@ -7,6 +7,8 @@
 -- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。
 --   戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）
+-- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
+--   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
 -- - 上忍と首領ごとに ReplicatedStorage.Jonin の下へキャラクター ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・体力（Health・MaxHealth）・軍（Gun）・
 --   率いる部隊（Butai）・首領か（Shuryo）・名前（DisplayName）をクライアントへ複製する
@@ -14,9 +16,11 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Butai = require(ReplicatedStorage.Shared.Butai)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
+local Kosen = require(ReplicatedStorage.Shared.Kosen)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
@@ -150,6 +154,46 @@ local function follow()
 	end
 end
 
+local function joninSide(jonin: Jonin.Jonin, butai: Butai.Butai): Kosen.JoninSide
+	return {
+		gun = jonin.gun,
+		health = jonin.health,
+		attack = jonin.stats.Attack,
+		defense = jonin.stats.Defense,
+		shiki = butai.shiki,
+	}
+end
+
+-- 交戦中の部隊どうしが両方とも上忍に率いられていれば、上忍同士を dt 秒戦わせる。戦闘のフェーズの外では戦わせない
+local function fightJonin(dt: number)
+	if StageService.getPhase() ~= "Battle" or dt <= 0 then
+		return
+	end
+	local fought: { [string]: boolean } = {}
+	for _, jonin in table.clone(joninList) do
+		local butaiId = jonin.butai
+		if not butaiId or fought[jonin.id] or Jonin.isDefeated(jonin) then
+			continue
+		end
+		local butai = ButaiService.get(butaiId)
+		local aiteId = ButaiService.aiteOf(butaiId)
+		local aite = if aiteId then ButaiService.get(aiteId) else nil
+		local other = if aite and aite.jonin then find(aite.jonin) else nil
+		if not butai or not aite or not other or other.butai ~= aite.id or Jonin.isDefeated(other) then
+			continue
+		end
+		fought[jonin.id] = true
+		fought[other.id] = true
+		local result = Kosen.joninStep(joninSide(jonin, butai), joninSide(other, aite), dt)
+		if result.a ~= jonin.health then
+			JoninService.setHealth(jonin.id, result.a)
+		end
+		if result.b ~= other.health then
+			JoninService.setHealth(other.id, result.b)
+		end
+	end
+end
+
 local function round(value: number): number
 	return math.round(value * 10) / 10
 end
@@ -165,8 +209,8 @@ local function registerDebugCommands()
 				shuryo = jonin.shuryo,
 				butai = jonin.butai,
 				kyoten = jonin.kyoten,
-				health = jonin.health,
-				maxHealth = jonin.stats.MaxHealth,
+				health = round(jonin.health),
+				maxHealth = round(jonin.stats.MaxHealth),
 				position = { round(jonin.position.x), round(jonin.position.z) },
 			})
 		end
@@ -204,13 +248,20 @@ function JoninService.start()
 	registerDebugCommands()
 
 	task.spawn(function()
+		local last = os.clock()
 		while true do
 			task.wait(Config.Butai.MoveInterval)
-			-- 1回の失敗で追従が止まらないよう、失敗は警告にして次の間隔で続ける
+			local now = os.clock()
+			-- 1回の失敗で追従と戦いが止まらないよう、失敗は警告にして次の間隔で続ける
 			local ok, err = pcall(follow)
 			if not ok then
 				warn(`JoninService: 上忍を部隊に合わせられなかった: {err}`)
 			end
+			local fightOk, fightErr = pcall(fightJonin, now - last)
+			if not fightOk then
+				warn(`JoninService: 上忍同士を戦わせられなかった: {fightErr}`)
+			end
+			last = now
 		end
 	end)
 end

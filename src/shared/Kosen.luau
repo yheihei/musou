@@ -13,9 +13,15 @@
 --
 -- 戦場でどの部隊どうしが交戦するかは match が決める。交戦していない敵味方の部隊が近づくと、近い組から交戦を始める。
 -- 同時の相手は1部隊で、交戦中の敵の部隊に近づいた部隊はその手前で待つ。
+--
+-- 両軍の上忍がいる部隊どうしの交戦では、上忍同士も戦う（joninStep）。
+-- 1秒あたりの与ダメージは、JoninPower を技の倍率にした Stats.damage に士気の補正を掛けたもの。
+-- 味方軍の上忍は、率いる部隊の士気が相手より JoninShikiThreshold 以上高いときだけ敵の上忍を削れる。
+-- 敵軍の上忍に士気の条件は無い。
 
 local Config = require("./Config")
 local Gun = require("./Gun")
+local Stats = require("./Stats")
 
 export type Params = Config.KosenSection
 
@@ -68,6 +74,25 @@ export type Match = {
 	pairs: { Pair },
 	-- 交戦中の敵の部隊の手前で待つ部隊
 	waiting: { [string]: boolean },
+}
+
+-- 上忍同士の戦いの片側
+export type JoninSide = {
+	gun: Gun.Gun,
+	-- 今の体力
+	health: number,
+	attack: number,
+	defense: number,
+	-- 率いる部隊の士気
+	shiki: number,
+}
+
+export type JoninResult = {
+	-- 計算後の体力（0 以上）
+	a: number,
+	b: number,
+	-- どちらかの体力が 0 になったときの勝者。両方同時に 0 になったら Draw
+	winner: Winner?,
 }
 
 local Kosen = {}
@@ -144,6 +169,33 @@ function Kosen.step(a: Side, b: Side, dt: number, params: Params?): Result
 		settled = winner ~= nil,
 		winner = winner,
 	}
+end
+
+-- 上忍 side が opponent に与える 1 秒あたりのダメージ。味方軍の上忍は、率いる部隊の士気が相手より
+-- JoninShikiThreshold 以上高くなければ 0。敵軍の上忍に士気の条件は無い
+function Kosen.joninDamage(side: JoninSide, opponent: JoninSide, params: Params?): number
+	local p = params or Config.Kosen
+	if side.gun == "Mikatagun" and side.shiki - opponent.shiki < p.JoninShikiThreshold then
+		return 0
+	end
+	return Stats.damage(p.JoninPower, side.attack, opponent.defense) * Kosen.shikiHosei(side.shiki, opponent.shiki, p)
+end
+
+-- 両軍の上忍がいる部隊どうしの交戦で、上忍 a と b が dt 秒戦った後の体力を返す。引数の表は書き換えない
+function Kosen.joninStep(a: JoninSide, b: JoninSide, dt: number, params: Params?): JoninResult
+	local p = params or Config.Kosen
+	local elapsed = math.max(dt, 0)
+	local healthA = math.max(a.health - Kosen.joninDamage(b, a, p) * elapsed, 0)
+	local healthB = math.max(b.health - Kosen.joninDamage(a, b, p) * elapsed, 0)
+	local winner: Winner? = nil
+	if healthA == 0 and healthB == 0 then
+		winner = "Draw"
+	elseif healthB == 0 then
+		winner = "A"
+	elseif healthA == 0 then
+		winner = "B"
+	end
+	return { a = healthA, b = healthB, winner = winner }
 end
 
 -- 交戦を始められる敵味方の組の候補

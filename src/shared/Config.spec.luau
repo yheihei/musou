@@ -23,6 +23,7 @@ local SNAPSHOT = {
 		},
 		Jonin = { MaxHealth = 600, Attack = 14, Defense = 12, WalkSpeed = 14, AttackSpeed = 1 },
 		Shuryo = { MaxHealth = 1200, Attack = 16, Defense = 16, WalkSpeed = 14, AttackSpeed = 1 },
+		MikatagunScale = 0.9,
 		DefenseHalf = 100,
 		MinDamage = 1,
 	},
@@ -698,6 +699,8 @@ local SNAPSHOT = {
 			Mikatagun = 0.9,
 			Tekigun = 1,
 		},
+		JoninPower = 0.6,
+		JoninShikiThreshold = 20,
 	},
 	Butai = {
 		Speed = 12,

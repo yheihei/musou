@@ -60,3 +60,23 @@ test("体力は 0 から最大までに収め、0 になったときだけ倒れ
 	expect(Jonin.isDefeated(jonin)).toBe(true)
 	expect(Jonin.setHealth(jonin, 0)).toBe(false)
 end)
+
+test("味方軍の上忍と首領は、体力・攻撃・防御に味方軍の倍率を掛ける", function()
+	local scale = Config.Stats.MikatagunScale
+	local mikata = Jonin.new(
+		{ id = "ShikenJonin3", gun = "Mikatagun", butai = "Mikata1", shuryo = false, kyoten = "Nishi" },
+		{ x = 0, z = 0 }
+	)
+	expect(mikata.stats.MaxHealth).toBeNear(Config.Stats.Jonin.MaxHealth * scale)
+	expect(mikata.health).toBe(mikata.stats.MaxHealth)
+	expect(mikata.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * scale)
+	expect(mikata.stats.Defense).toBeNear(Config.Stats.Jonin.Defense * scale)
+	expect(mikata.stats.WalkSpeed).toBe(Config.Stats.Jonin.WalkSpeed)
+
+	local hayate = Jonin.new(
+		{ id = "Hayate", gun = "Mikatagun", butai = nil, shuryo = true, kyoten = "MikataHonjin" },
+		{ x = 0, z = 0 }
+	)
+	expect(hayate.stats.MaxHealth).toBeNear(Config.Stats.Shuryo.MaxHealth * scale)
+	expect(#Jonin.modifiersOf("Tekigun")).toBe(0)
+end)
