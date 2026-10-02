@@ -15,6 +15,7 @@
 --   （計算は ReplicatedStorage.Shared.KinkyuKaihi）
 -- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする。
 --   受けておいた先行入力も捨て、ガードを押したままでもガードに戻さない（始まっていた行動は最後まで進める）
+-- - 秘計の枚の番号は、onHikei で登録した関数（HikeiService）に渡す。行動の状態遷移には入れない
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -59,6 +60,8 @@ local guardHeld: { [Player]: boolean } = {}
 -- 緊急回避で動く水平の向きと、続けて出した回数
 local kaihiDirections: { [Player]: Vector3 } = {}
 local kaihiChains: { [Player]: KinkyuKaihi.Chain } = {}
+-- 秘計の枚の番号を受け取る関数（HikeiService が onHikei で登録する）
+local hikeiHandler: ((Player, number) -> ())? = nil
 
 -- 被弾の反応の行動。入力からは始めず、interrupt と続き（Next）で始める
 local REACTIONS: { [string]: ActionState.Timeline } = {
@@ -96,6 +99,11 @@ local AIR_STATES: { [Enum.HumanoidStateType]: boolean } = {
 -- 行動の時刻。クライアントと同じ時計で Attribute に書く
 function ActionService.now(): number
 	return workspace:GetServerTimeNow()
+end
+
+-- 秘計の枚の番号を受け取る関数を登録する。Remotes.Action の秘計は、確かめた番号をこの関数に渡す
+function ActionService.onHikei(handler: (Player, number) -> ())
+	hikeiHandler = handler
 end
 
 -- 行動の中身を登録する。同じ行動は1回だけ
@@ -277,8 +285,11 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	if PartyService.getPhase() == "EventScene" and not releasing then
 		return
 	end
-	-- 秘計は受け取るだけで、まだ何もしない（#93 で作る）
 	if action == Actions.Hikei then
+		local handler = hikeiHandler
+		if handler then
+			handler(player, argument :: number)
+		end
 		return
 	end
 	if releasing then

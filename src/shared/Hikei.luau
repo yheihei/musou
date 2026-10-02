@@ -1,6 +1,6 @@
 --!strict
--- 秘計の定義と使用のルール。持ち込みの検証、1戦1枚1回の使用記録、効果の時間管理を持つ。
--- 各秘計の中身（伏兵部隊や落石の岩など）は、サーバーの秘計の処理が作る。
+-- 秘計の定義と使用のルール。持ち込みの検証、発動の検証、1戦1枚1回の使用記録、効果の時間管理を持つ。
+-- 各秘計の中身（伏兵部隊や落石の岩など）は、サーバーの秘計の処理（HikeiService に登録）が作る。
 -- 時刻は引数で受け取り、効果時間は Config.luau の Hikei 節から引く。Roblox の API は使わない。
 
 local Config = require("./Config")
@@ -34,6 +34,10 @@ export type Definition = {
 export type UseFailure =
 	"NoSlot" -- その番号の枚を持ち込んでいない
 	| "Used" -- この戦いで使用済み
+	| "NotBattle" -- 戦闘のフェーズでない
+	| "Down" -- 発動者が倒れている
+	| "NotReady" -- その秘計の処理がまだ無い
+	| "NoTarget" -- 対象（近くの落石地点、中にいる味方の拠点など）が無い
 
 -- 秘計の効果。1つの対象に1つずつ持つ
 export type Effect = {
@@ -56,6 +60,12 @@ local Hikei = {}
 
 -- 持ち込みの上限枚数。秘計のボタン（1〜3、十字キーの左・上・右）の数に合わせた仕様値
 Hikei.MOCHIKOMI_MAX = 3
+
+-- プレイヤーの持ち込みと使用済みの秘計を複製する Player の Attribute。秘計 ID をカンマでつないだ文字列（encodeList）
+Hikei.MOCHIKOMI_ATTRIBUTE = "HikeiMochikomi"
+Hikei.USED_ATTRIBUTE = "HikeiUsed"
+
+Hikei.useFailures = { "NoSlot", "Used", "NotBattle", "Down", "NotReady", "NoTarget" } :: { UseFailure }
 
 -- 設計の表の順。選択画面もこの順に並べる
 local ORDER = { "Fukuhei", "Rakuseki", "Daikakei", "Hyoroko", "Bakuhawana", "Chohatsu", "Kishinka", "Daikatsu" }
@@ -199,6 +209,31 @@ function Hikei.checkUse(usage: Usage, user: string, mochikomi: { string }, slot:
 	return hikeiId, nil
 end
 
+export type ActivationCheck = {
+	-- 戦闘のフェーズか
+	battle: boolean,
+	-- 発動者が倒れていないか
+	alive: boolean,
+}
+
+-- slot 番目の枚を発動できるか。発動できるならその秘計の ID、できないなら nil と理由を返す。
+-- 戦闘のフェーズ、発動者が倒れていないか、枚の持ち込み、使用済みの順に確かめる。使用済みにはしない
+function Hikei.checkActivation(
+	check: ActivationCheck,
+	usage: Usage,
+	user: string,
+	mochikomi: { string },
+	slot: number
+): (string?, UseFailure?)
+	if not check.battle then
+		return nil, "NotBattle"
+	end
+	if not check.alive then
+		return nil, "Down"
+	end
+	return Hikei.checkUse(usage, user, mochikomi, slot)
+end
+
 -- 使用済みにする。すでに使用済みなら false
 function Hikei.markUsed(usage: Usage, user: string, hikeiId: string): boolean
 	if Hikei.isUsed(usage, user, hikeiId) then
@@ -207,6 +242,36 @@ function Hikei.markUsed(usage: Usage, user: string, hikeiId: string): boolean
 	usage[user] = usage[user] or {}
 	usage[user][hikeiId] = true
 	return true
+end
+
+-- 持ち込みのうち使用済みの秘計を、持ち込みの順に返す
+function Hikei.usedOf(usage: Usage, user: string, mochikomi: { string }): { string }
+	local result = {}
+	for _, hikeiId in mochikomi do
+		if Hikei.isUsed(usage, user, hikeiId) then
+			table.insert(result, hikeiId)
+		end
+	end
+	return result
+end
+
+-- 秘計 ID の一覧を Attribute に書く文字列にする（カンマでつなぐ）
+function Hikei.encodeList(ids: { string }): string
+	return table.concat(ids, ",")
+end
+
+-- Attribute の文字列を秘計 ID の一覧に戻す。文字列でない値と空の文字列は空の一覧、定義に無い ID は捨てる
+function Hikei.decodeList(value: unknown): { string }
+	local result = {}
+	if type(value) ~= "string" then
+		return result
+	end
+	for id in string.gmatch(value, "[^,]+") do
+		if definitions[id] then
+			table.insert(result, id)
+		end
+	end
+	return result
 end
 
 -- 範囲の目印（大火計地域）までの水平の距離。localX・localZ は目印から見た位置（CFrame:PointToObjectSpace の X と Z）、
@@ -258,6 +323,8 @@ export type EffectRequest = {
 	-- 対象の軍。落石地点のようにどちらにも属さない対象は nil
 	targetGun: Gun.Gun?,
 	now: number,
+	-- 効果時間（秒）。省くと Config.luau の効果時間（durationOf）
+	duration: number?,
 }
 
 -- 効果を足して返す。受ける側が秘計の定義と合わない対象（相手の軍への強化や、
@@ -279,7 +346,7 @@ function Hikei.addEffect(effects: { Effect }, request: EffectRequest): Effect?
 		gun = request.gun,
 		target = request.target,
 		startedAt = request.now,
-		expiresAt = request.now + Hikei.durationOf(request.hikei),
+		expiresAt = request.now + (request.duration or Hikei.durationOf(request.hikei)),
 	}
 	table.insert(effects, effect)
 	return effect

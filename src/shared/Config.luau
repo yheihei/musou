@@ -216,6 +216,7 @@ export type ShikiSection = {
 export type HikeiSection = {
 	Duration: { [string]: number },
 	TargetRange: { [string]: number },
+	TickInterval: number,
 }
 
 export type PartySection = {
@@ -1086,6 +1087,7 @@ local Config: Config = {
 			Rakuseki = 60, -- 落石地点まで
 			Daikakei = 60, -- 大火計地域の縁まで（中にいれば 0）
 		},
+		TickInterval = 0.5, -- 効果の期限切れを確かめる間隔（秒）
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

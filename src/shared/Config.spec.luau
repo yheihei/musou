@@ -740,6 +740,7 @@ local SNAPSHOT = {
 			Rakuseki = 60,
 			Daikakei = 60,
 		},
+		TickInterval = 0.5,
 	},
 	Serifu = {
 		CharInterval = 0.04,

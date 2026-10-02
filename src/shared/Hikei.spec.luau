@@ -117,6 +117,64 @@ test("使わずに失敗した枚は未使用のまま残る", function()
 	expect(Hikei.isUsed(usage, "1", "Rakuseki")).toBe(false)
 end)
 
+local BATTLE: Hikei.ActivationCheck = { battle = true, alive = true }
+
+test("発動は戦闘のフェーズ、生存、持ち込み、使用済みの順に確かめる", function()
+	local usage = Hikei.newUsage()
+	local mochikomi = { "Fukuhei", "Kishinka" }
+	expect(Hikei.checkActivation(BATTLE, usage, "1", mochikomi, 2)).toBe("Kishinka")
+
+	local _, outside = Hikei.checkActivation({ battle = false, alive = true }, usage, "1", mochikomi, 2)
+	expect(outside).toBe("NotBattle")
+	local _, down = Hikei.checkActivation({ battle = true, alive = false }, usage, "1", mochikomi, 2)
+	expect(down).toBe("Down")
+	-- 戦闘の外なら、倒れていても戦闘の外を理由にする
+	local _, both = Hikei.checkActivation({ battle = false, alive = false }, usage, "1", mochikomi, 9)
+	expect(both).toBe("NotBattle")
+
+	local _, noSlot = Hikei.checkActivation(BATTLE, usage, "1", mochikomi, 3)
+	expect(noSlot).toBe("NoSlot")
+	local _, huge = Hikei.checkActivation(BATTLE, usage, "1", mochikomi, 1e9)
+	expect(huge).toBe("NoSlot")
+
+	Hikei.markUsed(usage, "1", "Kishinka")
+	local _, used = Hikei.checkActivation(BATTLE, usage, "1", mochikomi, 2)
+	expect(used).toBe("Used")
+end)
+
+test("使用済みの秘計を持ち込みの順に返す", function()
+	local usage = Hikei.newUsage()
+	local mochikomi = { "Fukuhei", "Kishinka", "Daikatsu" }
+	expect(Hikei.usedOf(usage, "1", mochikomi)).toEqual({})
+	Hikei.markUsed(usage, "1", "Daikatsu")
+	Hikei.markUsed(usage, "1", "Fukuhei")
+	Hikei.markUsed(usage, "2", "Kishinka")
+	expect(Hikei.usedOf(usage, "1", mochikomi)).toEqual({ "Fukuhei", "Daikatsu" })
+end)
+
+test(
+	"Attribute の文字列と秘計 ID の一覧を行き来でき、定義に無い ID と文字列でない値は捨てる",
+	function()
+		local ids = { "Fukuhei", "Kishinka", "Daikatsu" }
+		expect(Hikei.encodeList(ids)).toBe("Fukuhei,Kishinka,Daikatsu")
+		expect(Hikei.decodeList(Hikei.encodeList(ids))).toEqual(ids)
+		expect(Hikei.encodeList({})).toBe("")
+		expect(Hikei.decodeList("")).toEqual({})
+		expect(Hikei.decodeList("Fukuhei,Musou,,Rakuseki")).toEqual({ "Fukuhei", "Rakuseki" })
+		expect(Hikei.decodeList(nil)).toEqual({})
+		expect(Hikei.decodeList(3)).toEqual({})
+	end
+)
+
+test("失敗の理由の一覧は重ならない", function()
+	local seen = {}
+	for _, failure in Hikei.useFailures do
+		expect(seen[failure]).toBe(nil)
+		seen[failure] = true
+	end
+	expect(#Hikei.useFailures).toBe(6)
+end)
+
 local function request(hikei: string, target: string, now: number): Hikei.EffectRequest
 	return { hikei = hikei, user = "1", gun = "Mikatagun", target = target, targetGun = nil, now = now }
 end
@@ -138,6 +196,15 @@ test("効果は効果時間のあいだだけ有効で、期限切れは取り�
 	expect(#effects).toBe(0)
 	-- 取り出した効果は2回目には出てこない
 	expect(Hikei.takeExpired(effects, 100 + duration + 1)).toEqual({})
+end)
+
+test("効果時間を渡すと、Config.luau の効果時間の代わりに使う", function()
+	local effects = Hikei.newEffects()
+	local custom = request("Hyoroko", "Kyoten1", 10)
+	custom.duration = 5
+	local effect = Hikei.addEffect(effects, custom) :: Hikei.Effect
+	expect(effect.expiresAt).toBe(15)
+	expect(#Hikei.takeExpired(effects, 15)).toBe(1)
 end)
 
 test("効果時間の無い秘計の効果は期限なしで残る", function()
