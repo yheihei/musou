@@ -6,6 +6,7 @@ local test, expect = testkit.test, testkit.expect
 
 -- Config.luau の値を調整してもテストが揺れないよう、計算の引数を固定する
 local PARAMS: Kosen.Params = {
+	StartDistance = 30,
 	Zensenhaba = 10,
 	ReserveWeight = 0.5,
 	ShikiEffect = 0.01,
@@ -142,4 +143,70 @@ end)
 test("引数を省くと Config.luau の値で計算する", function()
 	local result = Kosen.step(side(30), side(30), 5)
 	expect(result.a.loss).toBe(result.b.loss)
+end)
+
+local function unit(id: string, gun: "Mikatagun" | "Tekigun", x: number, z: number?): Kosen.Unit
+	return { id = id, gun = gun, position = { x = x, z = z or 0 } }
+end
+
+test("距離以内の敵味方の部隊は交戦を始め、離れているか同じ軍なら始めない", function()
+	local near = Kosen.match({ unit("M1", "Mikatagun", 0), unit("T1", "Tekigun", 20) }, {}, 30)
+	expect(near.pairs).toEqual({ { a = "M1", b = "T1" } })
+	expect(near.waiting).toEqual({})
+
+	local far = Kosen.match({ unit("M1", "Mikatagun", 0), unit("T1", "Tekigun", 31) }, {}, 30)
+	expect(far.pairs).toEqual({})
+
+	local same = Kosen.match({ unit("M1", "Mikatagun", 0), unit("M2", "Mikatagun", 5) }, {}, 30)
+	expect(same.pairs).toEqual({})
+	expect(same.waiting).toEqual({})
+end)
+
+test("相手は1部隊で、近い組から決め、あぶれた3つ目の部隊は手前で待つ", function()
+	local result = Kosen.match({
+		unit("M1", "Mikatagun", 0),
+		unit("T1", "Tekigun", 25),
+		unit("T2", "Tekigun", 20),
+	}, {}, 30)
+	expect(result.pairs).toEqual({ { a = "M1", b = "T2" } })
+	expect(result.waiting).toEqual({ T1 = true })
+end)
+
+test("交戦中の部隊は組にせず、近づいた敵の部隊はその手前で待つ", function()
+	local result = Kosen.match({
+		unit("M1", "Mikatagun", 0),
+		unit("T1", "Tekigun", 10),
+		unit("T2", "Tekigun", -20),
+	}, { M1 = true, T1 = true }, 30)
+	expect(result.pairs).toEqual({})
+	expect(result.waiting).toEqual({ T2 = true })
+end)
+
+test("交戦中の味方の近くにいるだけの部隊は待たない", function()
+	local result = Kosen.match({
+		unit("M1", "Mikatagun", 0),
+		unit("T1", "Tekigun", 10),
+		unit("M2", "Mikatagun", -50),
+	}, { M1 = true, T1 = true }, 30)
+	expect(result.waiting).toEqual({})
+end)
+
+test("離れた場所の2組は同時に交戦を始める", function()
+	local result = Kosen.match({
+		unit("M1", "Mikatagun", 0),
+		unit("T1", "Tekigun", 10),
+		unit("M2", "Mikatagun", 500),
+		unit("T2", "Tekigun", 520),
+	}, {}, 30)
+	expect(result.pairs).toEqual({ { a = "M1", b = "T1" }, { a = "M2", b = "T2" } })
+end)
+
+test("距離が同じ組は部隊 ID の順に決める", function()
+	local result = Kosen.match({
+		unit("T2", "Tekigun", 10),
+		unit("M1", "Mikatagun", 0),
+		unit("T1", "Tekigun", -10),
+	}, {}, 30)
+	expect(result.pairs).toEqual({ { a = "M1", b = "T1" } })
+	expect(result.waiting).toEqual({ T2 = true })
 end)

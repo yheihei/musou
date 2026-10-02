@@ -10,8 +10,12 @@
 -- 4. 兵数は整数で持ち、1人に満たない損害は端数として次の計算へ持ち越す
 --
 -- 前線幅・控えの重み・士気の効き方などは引数で受け取る。値は Config.luau の Kosen 節にある。
+--
+-- 戦場でどの部隊どうしが交戦するかは match が決める。交戦していない敵味方の部隊が近づくと、近い組から交戦を始める。
+-- 同時の相手は1部隊で、交戦中の敵の部隊に近づいた部隊はその手前で待つ。
 
 local Config = require("./Config")
+local Gun = require("./Gun")
 
 export type Params = Config.KosenSection
 
@@ -48,6 +52,22 @@ export type Result = {
 	settled: boolean,
 	-- 決着したときの勝者。両方同時に 0 になったら Draw
 	winner: Winner?,
+}
+
+-- 交戦の相手を決めるときの部隊。位置は水平の (x, z)
+export type Unit = {
+	id: string,
+	gun: Gun.Gun,
+	position: { x: number, z: number },
+}
+
+export type Pair = { a: string, b: string }
+
+export type Match = {
+	-- 新しく交戦を始める組（部隊 ID）
+	pairs: { Pair },
+	-- 交戦中の敵の部隊の手前で待つ部隊
+	waiting: { [string]: boolean },
 }
 
 local Kosen = {}
@@ -124,6 +144,67 @@ function Kosen.step(a: Side, b: Side, dt: number, params: Params?): Result
 		settled = winner ~= nil,
 		winner = winner,
 	}
+end
+
+-- 交戦を始められる敵味方の組の候補
+type Candidate = { a: Unit, b: Unit, distance: number }
+
+local function distanceOf(a: Unit, b: Unit): number
+	local dx, dz = b.position.x - a.position.x, b.position.z - a.position.z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+-- 交戦していない部隊（engaged に無い部隊）どうしで、距離 distance 以内の敵味方を近い組から順に交戦させる。
+-- 同時の相手は1部隊。組にならなかった部隊のうち、距離 distance 以内に敵の部隊がいるもの
+-- （その敵は交戦中）は、その手前で待たせる。距離が同じ組は部隊 ID の順に決める
+function Kosen.match(units: { Unit }, engaged: { [string]: boolean }, distance: number): Match
+	local candidates: { Candidate } = {}
+	for i = 1, #units do
+		for j = i + 1, #units do
+			local a, b = units[i], units[j]
+			if a.gun ~= b.gun and not engaged[a.id] and not engaged[b.id] then
+				local gap = distanceOf(a, b)
+				if gap <= distance then
+					-- 組の中の順も部隊 ID の順にそろえる
+					if b.id < a.id then
+						a, b = b, a
+					end
+					table.insert(candidates, { a = a, b = b, distance = gap })
+				end
+			end
+		end
+	end
+	table.sort(candidates, function(x, y)
+		if x.distance ~= y.distance then
+			return x.distance < y.distance
+		elseif x.a.id ~= y.a.id then
+			return x.a.id < y.a.id
+		end
+		return x.b.id < y.b.id
+	end)
+
+	local busy: { [string]: boolean } = table.clone(engaged)
+	local pairs: { Pair } = {}
+	for _, candidate in candidates do
+		if not busy[candidate.a.id] and not busy[candidate.b.id] then
+			busy[candidate.a.id] = true
+			busy[candidate.b.id] = true
+			table.insert(pairs, { a = candidate.a.id, b = candidate.b.id })
+		end
+	end
+
+	local waiting: { [string]: boolean } = {}
+	for _, unit in units do
+		if not busy[unit.id] then
+			for _, other in units do
+				if other.gun ~= unit.gun and busy[other.id] and distanceOf(unit, other) <= distance then
+					waiting[unit.id] = true
+					break
+				end
+			end
+		end
+	end
+	return { pairs = pairs, waiting = waiting }
 end
 
 return Kosen

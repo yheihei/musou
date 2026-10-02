@@ -165,6 +165,7 @@ export type SpawnerSection = {
 }
 
 export type KosenSection = {
+	StartDistance: number,
 	Zensenhaba: number,
 	ReserveWeight: number,
 	ShikiEffect: number,
@@ -987,6 +988,7 @@ local Config: Config = {
 
 	-- 交戦。部隊どうしの押し合いの損害を Kosen.luau で計算する
 	Kosen = {
+		StartDistance = 30, -- 敵味方の部隊がこの距離（スタッド）まで近づくと交戦を始める
 		Zensenhaba = 10, -- 一度に刃を交えられる兵数の上限
 		ReserveWeight = 0.3, -- 前線の後ろに控える兵1人が押す力に加わる割合
 		ShikiEffect = 0.01, -- 士気の差 1 あたりの押す力の増減の割合

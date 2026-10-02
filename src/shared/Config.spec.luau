@@ -684,6 +684,7 @@ local SNAPSHOT = {
 		CorpseLifetime = 2,
 	},
 	Kosen = {
+		StartDistance = 30,
 		Zensenhaba = 10,
 		ReserveWeight = 0.3,
 		ShikiEffect = 0.01,

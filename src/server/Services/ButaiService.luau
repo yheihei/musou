@@ -10,6 +10,10 @@
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・軍（Gun）・兵数（Heisu）・士気（Shiki）・
 --   率いる上忍（Jonin）をクライアントへ複製する
 -- - 窓口の ShowButai で、部隊の位置に軍の色の柱と、部隊 ID と兵数を出す（確認用）
+-- - 敵味方の部隊が Config.luau の Kosen 節の StartDistance まで近づくと交戦を始め、両部隊はその場で止まる。
+--   相手は1部隊ずつで、交戦中の敵の部隊に近づいた部隊はその手前で待つ（組み方は ReplicatedStorage.Shared.Kosen の match）。
+--   交戦中は部隊を進める間隔ごとに Kosen.step で押し合わせて兵数を減らし、兵数 0 の部隊は消す。
+--   決着したら残った部隊は目的地へ向けて動き出す。交戦の相手は Attribute の Kosen（相手の部隊 ID）で複製する
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -20,6 +24,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
+local Kosen = require(ReplicatedStorage.Shared.Kosen)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local HaichiService = require(script.Parent.HaichiService)
@@ -35,6 +40,16 @@ export type AddSpec = {
 	jonin: string?,
 	-- 今いる拠点
 	kyoten: string?,
+}
+
+-- 交戦中の組。端数は Kosen.step が次の計算へ持ち越す損害
+type KosenState = {
+	a: string,
+	b: string,
+	fractionA: number,
+	fractionB: number,
+	-- 交戦を始めた時刻（os.clock）
+	startedAt: number,
 }
 
 local ButaiService = {}
@@ -55,6 +70,19 @@ local markerFolder: Folder? = nil
 local showMarkers = false
 -- 窓口で足す部隊に振る番号
 local nextTsuika = 1
+-- 交戦中の組と、部隊 ID から引く交戦の相手
+local kosenList: { KosenState } = {}
+local aiteOf: { [string]: string } = {}
+-- 交戦中の敵の部隊の手前で待っている部隊
+local waiting: { [string]: boolean } = {}
+
+local kosenStartedEvent = Instance.new("BindableEvent")
+-- 交戦を始めたときに、2つの部隊（Butai.Butai）で発火する
+ButaiService.kosenStarted = kosenStartedEvent.Event
+local kosenSettledEvent = Instance.new("BindableEvent")
+-- 交戦が決着したときに、2つの部隊（Butai.Butai）と勝者（Kosen.Winner の A・B・Draw）で発火する。
+-- 兵数 0 の部隊は発火の後に消す
+ButaiService.kosenSettled = kosenSettledEvent.Event
 
 local function find(id: string): (Butai.Butai?, number?)
 	for index, butai in butaiList do
@@ -163,6 +191,7 @@ local function publish(butai: Butai.Butai)
 	instance:SetAttribute("Heisu", butai.heisu)
 	instance:SetAttribute("Shiki", butai.shiki)
 	instance:SetAttribute("Jonin", butai.jonin)
+	instance:SetAttribute("Kosen", aiteOf[butai.id])
 	if showMarkers then
 		updateMarker(butai)
 	end
@@ -212,15 +241,38 @@ function ButaiService.add(spec: AddSpec): Butai.Butai?
 	return butai
 end
 
--- 部隊を外す。いなければ false
+-- 部隊 ID の交戦をやめさせる。相手の部隊は交戦していない状態に戻す
+local function stopKosen(id: string)
+	for index = #kosenList, 1, -1 do
+		local state = kosenList[index]
+		if state.a == id or state.b == id then
+			table.remove(kosenList, index)
+			aiteOf[state.a] = nil
+			aiteOf[state.b] = nil
+			local other = find(if state.a == id then state.b else state.a)
+			if other then
+				publish(other)
+			end
+		end
+	end
+	waiting[id] = nil
+end
+
+-- 部隊を外す。交戦中なら相手の部隊を交戦していない状態に戻す。いなければ false
 function ButaiService.remove(id: string): boolean
 	local _, index = find(id)
 	if not index then
 		return false
 	end
 	table.remove(butaiList, index)
+	stopKosen(id)
 	unpublish(id)
 	return true
+end
+
+-- 交戦の相手の部隊 ID。交戦していなければ nil
+function ButaiService.aiteOf(id: string): string?
+	return aiteOf[id]
 end
 
 function ButaiService.get(id: string): Butai.Butai?
@@ -274,6 +326,9 @@ end
 -- 部隊をすべて片付ける
 local function clear()
 	table.clear(butaiList)
+	table.clear(kosenList)
+	table.clear(aiteOf)
+	table.clear(waiting)
 	folder:ClearAllChildren()
 	local container = markerFolder
 	if container then
@@ -313,13 +368,89 @@ local function onStarted(info: StageService.StartInfo)
 	end
 end
 
--- 戦闘のフェーズの間、目的地のある部隊を進める
-local function moveAll(dt: number)
+local function sideOf(butai: Butai.Butai, fraction: number): Kosen.Side
+	return {
+		heisu = butai.heisu,
+		fraction = fraction,
+		shiki = butai.shiki,
+		strength = Config.Kosen.GunStrength[butai.gun],
+		-- 支配エリアの倍率は #101 で足す
+		shihaiArea = 1,
+	}
+end
+
+-- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせる
+local function fightAll(dt: number)
+	for index = #kosenList, 1, -1 do
+		local state = kosenList[index]
+		local a, b = find(state.a), find(state.b)
+		if not a or not b then
+			continue
+		end
+		local result = Kosen.step(sideOf(a, state.fractionA), sideOf(b, state.fractionB), dt)
+		a.heisu = result.a.heisu
+		b.heisu = result.b.heisu
+		state.fractionA = result.a.fraction
+		state.fractionB = result.b.fraction
+		if result.settled then
+			table.remove(kosenList, index)
+			aiteOf[a.id] = nil
+			aiteOf[b.id] = nil
+			kosenSettledEvent:Fire(a, b, result.winner)
+		end
+		publish(a)
+		publish(b)
+	end
+end
+
+-- 兵数 0 の部隊を消す
+local function removeDefeated()
+	local defeated = {}
+	for _, butai in butaiList do
+		if butai.heisu <= 0 then
+			table.insert(defeated, butai.id)
+		end
+	end
+	for _, id in defeated do
+		ButaiService.remove(id)
+	end
+end
+
+-- 交戦していない部隊どうしで、近づいた敵味方に交戦を始めさせ、交戦中の敵の手前の部隊を待たせる
+local function matchAll()
+	local units: { Kosen.Unit } = {}
+	local engaged: { [string]: boolean } = {}
+	for _, butai in butaiList do
+		table.insert(units, { id = butai.id, gun = butai.gun, position = butai.position })
+		if aiteOf[butai.id] then
+			engaged[butai.id] = true
+		end
+	end
+	local match = Kosen.match(units, engaged, Config.Kosen.StartDistance)
+	waiting = match.waiting
+	for _, pair in match.pairs do
+		local a, b = find(pair.a), find(pair.b)
+		if a and b then
+			aiteOf[a.id] = b.id
+			aiteOf[b.id] = a.id
+			table.insert(kosenList, { a = a.id, b = b.id, fractionA = 0, fractionB = 0, startedAt = os.clock() })
+			publish(a)
+			publish(b)
+			kosenStartedEvent:Fire(a, b)
+		end
+	end
+end
+
+-- 戦闘のフェーズの間、交戦を進め、交戦していない部隊を目的地へ進める
+local function tick(dt: number)
 	if StageService.getPhase() ~= "Battle" then
 		return
 	end
+	fightAll(dt)
+	removeDefeated()
+	matchAll()
 	for _, butai in butaiList do
-		if Butai.step(butai, Config.Butai.Speed, dt) then
+		if not aiteOf[butai.id] and not waiting[butai.id] and Butai.step(butai, Config.Butai.Speed, dt) then
 			publish(butai)
 		end
 	end
@@ -342,6 +473,8 @@ local function describe(butai: Butai.Butai): { [string]: any }
 		mokutekiKyoten = butai.mokutekiKyoten,
 		mokutekichi = if mokutekichi then { round(mokutekichi.x), round(mokutekichi.z) } else nil,
 		keiyuten = #butai.keiyuten,
+		kosen = aiteOf[butai.id],
+		taiki = if waiting[butai.id] then true else nil,
 	}
 end
 
@@ -384,6 +517,31 @@ local function registerDebugCommands()
 				return `拠点 {tostring(kyotenId)} が出撃したステージの配置に無い`
 			end
 			return `部隊 {id} を {kyotenId} へ向かわせた`
+		end
+	)
+	DebugCommand.register(
+		"DumpKosen",
+		"",
+		"交戦中の組（両部隊の兵数と端数、経過秒数）と、手前で待っている部隊を JSON で返す",
+		function()
+			local now = os.clock()
+			local list = {}
+			for _, state in kosenList do
+				local a, b = find(state.a), find(state.b)
+				table.insert(list, {
+					a = state.a,
+					b = state.b,
+					heisu = { if a then a.heisu else 0, if b then b.heisu else 0 },
+					fraction = { round(state.fractionA), round(state.fractionB) },
+					elapsed = round(now - state.startedAt),
+				})
+			end
+			local taiki = {}
+			for id in waiting do
+				table.insert(taiki, id)
+			end
+			table.sort(taiki)
+			return HttpService:JSONEncode({ kosen = list, taiki = taiki })
 		end
 	)
 	DebugCommand.register("DumpButai", "", "部隊の一覧を JSON で返す", function()
@@ -441,7 +599,7 @@ function ButaiService.start()
 		while true do
 			task.wait(Config.Butai.MoveInterval)
 			local now = os.clock()
-			moveAll(now - last)
+			tick(now - last)
 			last = now
 		end
 	end)
