@@ -77,6 +77,64 @@ test("検証の理由は Remote の拒否の理由に含まれる", function()
 	end
 end)
 
+test(
+	"1枚も選んでいない人には、誰も選んでいない秘計を表の順に1枚ずつ順に配る",
+	function()
+		expect(Hikei.assignMochikomi({ {}, {}, {}, {} })).toEqual({
+			{ "Fukuhei", "Bakuhawana" },
+			{ "Rakuseki", "Chohatsu" },
+			{ "Daikakei", "Kishinka" },
+			{ "Hyoroko", "Daikatsu" },
+		})
+		expect(Hikei.assignMochikomi({ {} })).toEqual({ { "Fukuhei", "Rakuseki", "Daikakei" } })
+		expect(Hikei.assignMochikomi({ {}, {} })).toEqual({
+			{ "Fukuhei", "Daikakei", "Bakuhawana" },
+			{ "Rakuseki", "Hyoroko", "Chohatsu" },
+		})
+	end
+)
+
+test("選んだ人の持ち込みは選んだままで、配る秘計は選んだ秘計と重ならない", function()
+	local result = Hikei.assignMochikomi({
+		{ "Kishinka", "Fukuhei", "Daikatsu" },
+		{},
+		{ "Rakuseki" },
+		{},
+	})
+	expect(result[1]).toEqual({ "Kishinka", "Fukuhei", "Daikatsu" })
+	expect(result[3]).toEqual({ "Rakuseki" })
+	expect(result[2]).toEqual({ "Daikakei", "Bakuhawana" })
+	expect(result[4]).toEqual({ "Hyoroko", "Chohatsu" })
+	local seen: { [string]: boolean } = {}
+	for _, mochikomi in result do
+		expect(Hikei.checkMochikomi(mochikomi, {})).toBe(nil)
+		for _, id in mochikomi do
+			expect(seen[id]).toBe(nil)
+			seen[id] = true
+		end
+	end
+end)
+
+test("全員が選んでいれば何も足さず、引数の表は書き換えない", function()
+	local selections = { { "Kishinka" }, { "Daikatsu", "Fukuhei" } }
+	expect(Hikei.assignMochikomi(selections)).toEqual({ { "Kishinka" }, { "Daikatsu", "Fukuhei" } })
+	expect(Hikei.assignMochikomi({})).toEqual({})
+	local empty = { {} }
+	Hikei.assignMochikomi(empty)
+	expect(empty).toEqual({ {} })
+end)
+
+test("配る秘計が足りなければ、残りの分だけ配る", function()
+	local result = Hikei.assignMochikomi({
+		{ "Fukuhei", "Rakuseki", "Daikakei" },
+		{ "Hyoroko", "Bakuhawana", "Chohatsu" },
+		{},
+		{},
+	})
+	expect(result[3]).toEqual({ "Kishinka" })
+	expect(result[4]).toEqual({ "Daikatsu" })
+end)
+
 test("ステージ開始の使用記録は空で、どの枚も使える", function()
 	local usage = Hikei.newUsage()
 	local mochikomi = { "Fukuhei", "Kishinka" }

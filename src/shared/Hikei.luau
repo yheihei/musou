@@ -186,6 +186,42 @@ function Hikei.checkMochikomi(mochikomi: { string }, others: { string }): Remote
 	return nil
 end
 
+-- 出撃するメンバーの持ち込みを決める。selections は出撃するメンバーごとに選んだ秘計（入った順）。
+-- 選んだメンバーの持ち込みは選んだまま（上限より少なくても足さない）。
+-- 1枚も選んでいないメンバーには、誰も選んでいない秘計を設計の表の順に、選んでいないメンバーへ1枚ずつ順に配る。
+-- 上限に達するか、配る秘計が無くなったら終える。返す一覧は selections と同じ順
+function Hikei.assignMochikomi(selections: { { string } }): { { string } }
+	local taken: { [string]: boolean } = {}
+	local result: { { string } } = {}
+	local empty: { number } = {}
+	for index, selection in selections do
+		result[index] = table.clone(selection)
+		for _, id in selection do
+			taken[id] = true
+		end
+		if #selection == 0 then
+			table.insert(empty, index)
+		end
+	end
+	local pool = {}
+	for _, id in ORDER do
+		if not taken[id] then
+			table.insert(pool, id)
+		end
+	end
+	local next = 1
+	for _ = 1, Hikei.MOCHIKOMI_MAX do
+		for _, index in empty do
+			if next > #pool then
+				return result
+			end
+			table.insert(result[index], pool[next])
+			next += 1
+		end
+	end
+	return result
+end
+
 -- 空の使用記録。ステージの開始ごとに作り直す
 function Hikei.newUsage(): Usage
 	return {}

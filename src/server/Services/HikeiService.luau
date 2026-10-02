@@ -10,7 +10,9 @@
 -- - 発動したら使用済みにし、発動者の位置で、発動者の軍が得をする士気の出来事を知らせる（ShikiService）
 -- - 効果は処理が addEffect で足す。期限切れは Config.luau の Hikei 節の TickInterval ごとに確かめ、
 --   処理の finish を効果ごとに1回呼ぶ。打ち消し（dispelKyoka）とステージの終わりでも1回呼ぶ
--- - 出撃（StageService.started）で効果と使用記録を空にする。決着とロビーのフェーズへの戻りで残った効果を全部解除し、
+-- - 出撃（StageService.started）で、ロビーで選んだ秘計を出撃メンバーの持ち込みとして決め、ステージの終わりまで変えない。
+--   1枚も選んでいない人には、誰も選んでいない秘計を配る（Hikei.assignMochikomi）。上限より少なくても出撃できる
+-- - 出撃で効果と使用記録を空にする。決着とロビーのフェーズへの戻りで残った効果を全部解除し、
 --   ロビーのフェーズへ戻ったら持ち込みも外す
 -- - プレイヤーの持ち込みと使用済みは、Player の Attribute の HikeiMochikomi・HikeiUsed（秘計 ID をカンマでつないだ文字列）で
 --   クライアントへ複製する
@@ -30,6 +32,7 @@ local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ActionService = require(script.Parent.ActionService)
 local JoninService = require(script.Parent.JoninService)
+local SelectionService = require(script.Parent.SelectionService)
 local ShikiService = require(script.Parent.ShikiService)
 local StageService = require(script.Parent.StageService)
 
@@ -317,9 +320,22 @@ function HikeiService.useByJonin(joninId: string, slot: number): (boolean, strin
 	return use(joninUser(jonin), slot)
 end
 
--- 出撃したら、前のステージの効果と使用記録を空にする
-local function onStarted()
+-- 出撃したら、前のステージの効果を解除し、ロビーで選んだ秘計を持ち込みとして決めて、使用記録を空にする。
+-- 1枚も選んでいない人には、誰も選んでいない秘計を配る
+local function onStarted(info: StageService.StartInfo)
 	finishAll()
+	table.clear(mochikomiOf)
+	local selections = {}
+	for index, member in info.members do
+		selections[index] = SelectionService.getHikei(member)
+	end
+	for index, mochikomi in Hikei.assignMochikomi(selections) do
+		local member = info.members[index]
+		local reject = setMochikomiOf(userIdOf(member), mochikomi)
+		if reject then
+			warn(`HikeiService: {member.Name} の持ち込みを決められなかった（{reject}）`)
+		end
+	end
 	HikeiService.resetUsage()
 end
 
