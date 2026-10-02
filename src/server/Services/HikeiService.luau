@@ -17,6 +17,9 @@
 -- - プレイヤーの持ち込みと使用済みは、Player の Attribute の HikeiMochikomi・HikeiUsed（秘計 ID をカンマでつないだ文字列）で
 --   クライアントへ複製する
 -- - 発動・失敗・期限切れ・打ち消しは activated・failed・expired・dispelled で知らせる
+-- - 同じものを Remotes.NotifyHikei（ReplicatedStorage.Shared.HikeiNotice）で画面に出させる。
+--   発動・打ち消し・期限切れは出撃メンバー全員に、失敗はプレイヤーの本人だけに送る。
+--   同じ発動者の同じ秘計の期限切れと打ち消しは、まとめて切れた分を1回だけ送る
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -26,6 +29,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
+local HikeiNotice = require(ReplicatedStorage.Shared.HikeiNotice)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
@@ -64,6 +68,9 @@ export type Handler = {
 
 local HikeiService = {}
 
+-- 同じ発動者の同じ秘計の期限切れと打ち消しを、まとめて1回の知らせにする秒数
+local NOTICE_MERGE_TIME = 1
+
 local handlers: { [string]: Handler } = {}
 -- 窓口で登録した仮の処理の秘計
 local kariHandlers: { [string]: boolean } = {}
@@ -71,6 +78,9 @@ local kariHandlers: { [string]: boolean } = {}
 local mochikomiOf: { [string]: { string } } = {}
 local usage: Hikei.Usage = Hikei.newUsage()
 local effects: { Hikei.Effect } = Hikei.newEffects()
+local noticeRemote: RemoteEvent
+-- 知らせの種類・発動者・秘計から引く、最後に送った時刻（os.clock）
+local lastNotice: { [string]: number } = {}
 
 local activatedEvent = Instance.new("BindableEvent")
 -- 発動したときに、発動者の ID・発動者の名前・発動者の軍・秘計 ID で発火する
@@ -343,11 +353,56 @@ end
 local function onLobby()
 	finishAll()
 	table.clear(mochikomiOf)
+	table.clear(lastNotice)
 	HikeiService.resetUsage()
 end
 
 local function onPlayerRemoving(player: Player)
 	mochikomiOf[userIdOf(player)] = nil
+end
+
+-- 出撃メンバー全員に知らせを送る。merge なら、同じ種類・発動者・秘計の知らせを NOTICE_MERGE_TIME 秒に1回にする
+local function notifyMembers(notice: HikeiNotice.Notice, user: string, merge: boolean)
+	if merge then
+		local key = `{notice.kind}|{user}|{notice.hikei}`
+		local now = os.clock()
+		local last = lastNotice[key]
+		if last and now - last < NOTICE_MERGE_TIME then
+			return
+		end
+		lastNotice[key] = now
+	end
+	for _, member in StageService.getMembers() do
+		noticeRemote:FireClient(member, notice)
+	end
+end
+
+local function connectNotices()
+	HikeiService.activated:Connect(function(user: string, userName: string, gun: Gun.Gun, hikeiId: string)
+		notifyMembers({ kind = "Hatsudo", hikei = hikeiId, userName = userName, gun = gun, reason = nil }, user, false)
+	end)
+	HikeiService.expired:Connect(function(user: string, userName: string, gun: Gun.Gun, hikeiId: string)
+		notifyMembers({ kind = "Kigengire", hikei = hikeiId, userName = userName, gun = gun, reason = nil }, user, true)
+	end)
+	HikeiService.dispelled:Connect(function(user: string, userName: string, gun: Gun.Gun, hikeiId: string)
+		notifyMembers({ kind = "Uchikeshi", hikei = hikeiId, userName = userName, gun = gun, reason = nil }, user, true)
+	end)
+	HikeiService.failed:Connect(function(user: string, hikeiId: string?, reason: Hikei.UseFailure)
+		local player = playerOf(user)
+		if not player then
+			return
+		end
+		noticeRemote:FireClient(
+			player,
+			{
+				kind = "Shippai",
+				hikei = hikeiId,
+				userName = player.DisplayName,
+				gun = "Mikatagun",
+				reason = reason,
+			} :: HikeiNotice.Notice
+		)
+	end)
 end
 
 -- 窓口で渡された名前を、プレイヤーか上忍・首領の発動者の ID にする
@@ -513,6 +568,8 @@ local function registerDebugCommands()
 end
 
 function HikeiService.start()
+	noticeRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("NotifyHikei") :: RemoteEvent
+	connectNotices()
 	ActionService.onHikei(function(player: Player, slot: number)
 		HikeiService.useByPlayer(player, slot)
 	end)

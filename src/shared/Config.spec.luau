@@ -741,6 +741,7 @@ local SNAPSHOT = {
 			Daikakei = 60,
 		},
 		TickInterval = 0.5,
+		NoticeTime = 4,
 	},
 	Serifu = {
 		CharInterval = 0.04,

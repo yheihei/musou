@@ -9,7 +9,7 @@ test("表の全 Remote が ReplicatedStorage.Remotes に RemoteEvent として�
 	local remotes = project.tree.ReplicatedStorage.Remotes
 	local names = table.clone(RemoteSchema.clientToServer)
 	table.move(RemoteSchema.serverToClient, 1, #RemoteSchema.serverToClient, #names + 1, names)
-	expect(#names).toBe(13)
+	expect(#names).toBe(14)
 	local missing = {}
 	for _, name in names do
 		local node = remotes[name]

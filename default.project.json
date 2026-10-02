@@ -53,6 +53,9 @@
         },
         "StageResult": {
           "$className": "RemoteEvent"
+        },
+        "NotifyHikei": {
+          "$className": "RemoteEvent"
         }
       }
     },

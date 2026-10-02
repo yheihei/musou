@@ -1,5 +1,5 @@
 --!strict
--- ロビー・選択・イベントシーン・台詞・結果で使う Remote の引数の型と検証関数。
+-- ロビー・選択・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
 -- RemoteEvent は default.project.json の ReplicatedStorage.Remotes に宣言する。
 -- ハンドラは各機能で実装する。ここは型と、クライアントから届く値の検証だけを持つ。
 --
@@ -16,6 +16,7 @@
 -- | SkipCount | S→C | スキップした人数、全体の人数 |
 -- | PlaySerifu | S→C | CharacterId、Hyojo、SerifuId |
 -- | StageResult | S→C | StageResult |
+-- | NotifyHikei | S→C | HikeiNotice.Notice（秘計の発動・打ち消し・期限切れ・失敗） |
 
 local RemoteSchema = {}
 
@@ -150,6 +151,7 @@ RemoteSchema.serverToClient = {
 	"SkipCount",
 	"PlaySerifu",
 	"StageResult",
+	"NotifyHikei",
 }
 
 -- クライアントから届いた ID を受け付けるか。英数字と _ だけで、長さは1から上限まで

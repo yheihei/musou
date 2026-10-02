@@ -217,6 +217,7 @@ export type HikeiSection = {
 	Duration: { [string]: number },
 	TargetRange: { [string]: number },
 	TickInterval: number,
+	NoticeTime: number,
 }
 
 export type PartySection = {
@@ -1088,6 +1089,7 @@ local Config: Config = {
 			Daikakei = 60, -- 大火計地域の縁まで（中にいれば 0）
 		},
 		TickInterval = 0.5, -- 効果の期限切れを確かめる間隔（秒）
+		NoticeTime = 4, -- 秘計の発動・打ち消し・期限切れ・失敗の知らせを画面に出しておく秒数
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある
