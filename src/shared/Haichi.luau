@@ -2,7 +2,9 @@
 -- ステージの配置の構成（ADR 0006）。拠点の種類と開始時の軍、拠点どうしのつながり、部隊（率いる上忍・方針・開始時の拠点）を
 -- ステージ ID で引く。位置と形はプレースの目印に置く。試験用ステージだけは、目印の位置もここに持つ。
 -- 首領は Stages.luau の両軍の首領を引き、本陣から出す。部隊の兵数は Config.luau の Butai 節にある。
--- 構成の整合の検証と、構成とプレースの目印の突き合わせもここに置く。Roblox の API は使わない。
+-- 構成の整合の検証と、構成とプレースの目印の突き合わせもここに置く。
+-- 落石地点と大火計地域は目印だけで完結させ（ADR 0006）、参照する拠点とつながりの有無を読み込み時にここで確かめる。
+-- Roblox の API は使わない。
 
 local Characters = require("./Characters")
 local Config = require("./Config")
@@ -46,13 +48,22 @@ export type TsunagariIchi = {
 	-- kyotenA から kyotenB へたどる順の経由点
 	keiyuten: { Keiyuten },
 }
+-- 落石地点。kyotenA と kyotenB は塞ぐ区間（つながり）の両端の拠点
+export type RakusekiIchi = { id: string, kyotenA: string, kyotenB: string, x: number, z: number }
+-- 大火計地域。sizeX と sizeZ は範囲の大きさ
+export type DaikakeiIchi = { id: string, x: number, z: number, sizeX: number, sizeZ: number }
 export type ShikenMejirushi = {
 	-- 区画の大きさ（プレースの区画の範囲の目印と同じ値にする）
 	kukakuSizeX: number,
 	kukakuSizeZ: number,
 	kyoten: { [string]: KyotenIchi },
 	tsunagari: { TsunagariIchi },
+	rakusekiChiten: { RakusekiIchi },
+	daikakeiChiiki: { DaikakeiIchi },
 }
+
+-- プレースから読んだ落石地点の目印。Attribute の KyotenA・KyotenB が無ければ nil
+export type RakusekiMejirushi = { id: string, kyotenA: string?, kyotenB: string? }
 
 export type Haichi = {
 	stageId: string,
@@ -115,6 +126,16 @@ local definitions: { [string]: Haichi } = {
 					kyotenB = "TekiHonjin",
 					keiyuten = { { x = -260, z = -100 }, { x = -180, z = -240 } },
 				},
+			},
+			-- 中央と東の間を塞ぐと敵軍の東が、本陣と西の間を塞ぐと味方軍の西が孤立する
+			rakusekiChiten = {
+				{ id = "R1", kyotenA = "Chuo", kyotenB = "Higashi", x = 110, z = -30 },
+				{ id = "R2", kyotenA = "MikataHonjin", kyotenB = "Nishi", x = -150, z = 220 },
+			},
+			-- 中央から敵軍の本陣へ上る道と、味方軍の本陣の北の口の前
+			daikakeiChiiki = {
+				{ id = "D1", x = 0, z = -140, sizeX = 60, sizeZ = 80 },
+				{ id = "D2", x = 0, z = 180, sizeX = 100, sizeZ = 40 },
 			},
 		},
 	},
@@ -197,6 +218,84 @@ local function checkShikenMejirushi(haichi: Haichi, mejirushi: ShikenMejirushi, 
 			table.insert(problems, `つながり {key} の目印の位置が無い`)
 		end
 	end
+	local rakuseki: { RakusekiMejirushi } = {}
+	for _, chiten in mejirushi.rakusekiChiten do
+		table.insert(rakuseki, { id = chiten.id, kyotenA = chiten.kyotenA, kyotenB = chiten.kyotenB })
+		if not inside(chiten.x, chiten.z, 0, 0) then
+			table.insert(problems, `落石地点 {chiten.id} が区画の範囲からはみ出す`)
+		end
+	end
+	local _, rakusekiProblems = Haichi.checkRakusekiChiten(haichi, rakuseki)
+	table.move(rakusekiProblems, 1, #rakusekiProblems, #problems + 1, problems)
+	local daikakeiIds = {}
+	for _, chiiki in mejirushi.daikakeiChiiki do
+		table.insert(daikakeiIds, chiiki.id)
+		if not inside(chiiki.x, chiiki.z, chiiki.sizeX, chiiki.sizeZ) then
+			table.insert(problems, `大火計地域 {chiiki.id} が区画の範囲からはみ出す`)
+		end
+	end
+	local _, daikakeiProblems = Haichi.checkDaikakeiChiiki(daikakeiIds)
+	table.move(daikakeiProblems, 1, #daikakeiProblems, #problems + 1, problems)
+end
+
+-- 落石地点の目印を確かめ、使える地点の ID と、問題を日本語の文で返す。
+-- ID の重複（2つ目からは使わない）、両端の拠点の Attribute の欠け、構成に無い拠点、つながりで結ばれていない区間を見つける
+function Haichi.checkRakusekiChiten(haichi: Haichi, chiten: { RakusekiMejirushi }): ({ [string]: boolean }, { string })
+	local usable: { [string]: boolean } = {}
+	local problems: { string } = {}
+	local kyotenIds: { [string]: boolean } = {}
+	for _, kyoten in haichi.kyoten do
+		kyotenIds[kyoten.id] = true
+	end
+	local connected: { [string]: boolean } = {}
+	for _, tsunagari in haichi.tsunagari do
+		connected[Haichi.pairKey(tsunagari.kyotenA, tsunagari.kyotenB)] = true
+	end
+	local seen: { [string]: boolean } = {}
+	for _, item in chiten do
+		if seen[item.id] then
+			table.insert(problems, `落石地点 {item.id} が2つある`)
+			continue
+		end
+		seen[item.id] = true
+		local kyotenA, kyotenB = item.kyotenA, item.kyotenB
+		if not kyotenA or not kyotenB then
+			table.insert(problems, `落石地点 {item.id} に Attribute の KyotenA・KyotenB が無い`)
+			continue
+		end
+		local ok = true
+		for _, id in { kyotenA, kyotenB } do
+			if not kyotenIds[id] then
+				table.insert(problems, `落石地点 {item.id} の拠点 {id} が無い`)
+				ok = false
+			end
+		end
+		if ok and not connected[Haichi.pairKey(kyotenA, kyotenB)] then
+			table.insert(
+				problems,
+				`落石地点 {item.id} の区間 {Haichi.pairKey(kyotenA, kyotenB)} はつながりで結ばれていない`
+			)
+			ok = false
+		end
+		if ok then
+			usable[item.id] = true
+		end
+	end
+	return usable, problems
+end
+
+-- 大火計地域の目印の ID を確かめ、使える地域の ID と、問題を日本語の文で返す（ID の重複は2つ目から使わない）
+function Haichi.checkDaikakeiChiiki(ids: { string }): ({ [string]: boolean }, { string })
+	local usable: { [string]: boolean } = {}
+	local problems: { string } = {}
+	for _, id in ids do
+		if usable[id] then
+			table.insert(problems, `大火計地域 {id} が2つある`)
+		else
+			usable[id] = true
+		end
+	end
+	return usable, problems
 end
 
 -- 配置の構成の整合を確かめ、問題を日本語の文で返す。問題が無ければ空。

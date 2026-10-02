@@ -192,6 +192,7 @@ export type ButaiSection = {
 
 export type HikeiSection = {
 	Duration: { [string]: number },
+	TargetRange: { [string]: number },
 }
 
 export type PartySection = {
@@ -1036,6 +1037,11 @@ local Config: Config = {
 			Chohatsu = 15, -- 相手の上忍を誘い出す時間
 			Kishinka = 60,
 			Daikatsu = 30, -- 動揺させる時間
+		},
+		-- 発動者から対象の地点までの距離の上限（スタッド）。これより遠い地点しか無ければ発動できない
+		TargetRange = {
+			Rakuseki = 60, -- 落石地点まで
+			Daikakei = 60, -- 大火計地域の縁まで（中にいれば 0）
 		},
 	},
 

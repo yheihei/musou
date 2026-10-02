@@ -7,6 +7,10 @@
 -- - 試験用ステージの目印は構成に位置を持ち、テストプレイ中に作る（プレースには保存しない）。
 --   目印が無ければ読み込むときに作り、窓口の PlaceShikenMejirushi でも作り直せる
 -- - 首領は Stages.luau の両軍の首領を、その軍の本陣から出す
+-- - 落石地点と大火計地域は目印だけで完結させる（<区画>.Mejirushi.RakusekiChiten・DaikakeiChiiki）。
+--   出撃したときに出撃したステージの区画の目印だけを読み、参照する拠点とつながりを構成と突き合わせて警告を出す。
+--   使えない地点（ID の重複、無い拠点、結ばれていない区間）は読み込まない。目印は透明にし、当たり判定・接触・空間クエリから外す
+-- - 秘計の発動者から Config.luau の距離（Hikei 節の TargetRange）以内で一番近い落石地点と大火計地域を返す
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,10 +20,13 @@ local Colors = require(ReplicatedStorage.Shared.Colors)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
+local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
+local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local KukakuService = require(script.Parent.KukakuService)
+local StageService = require(script.Parent.StageService)
 
 export type LoadedKyoten = {
 	id: string,
@@ -44,6 +51,30 @@ export type LoadedShuryo = {
 	kyoten: string,
 }
 
+export type LoadedRakuseki = {
+	id: string,
+	-- 塞ぐ区間（つながり）の両端の拠点 ID
+	kyotenA: string,
+	kyotenB: string,
+	-- 岩を落とす位置
+	position: Vector3,
+}
+
+export type LoadedDaikakei = {
+	id: string,
+	-- 範囲の中心と向き、大きさ
+	cframe: CFrame,
+	size: Vector3,
+}
+
+export type LoadedHikeiMejirushi = {
+	stageId: string,
+	rakuseki: { LoadedRakuseki },
+	daikakei: { LoadedDaikakei },
+	-- 使えない地点（警告に出したもの）
+	warnings: { string },
+}
+
 export type Loaded = {
 	stageId: string,
 	kyoten: { LoadedKyoten },
@@ -60,6 +91,14 @@ local HaichiService = {}
 local KYOTEN_HEIGHT = 30
 local KEIYUTEN_SIZE = 2
 local KEIYUTEN_COLOR = Color3.fromRGB(255, 255, 255)
+-- 試験用ステージの落石地点の目印の大きさと、大火計地域の目印の厚み（スタッド）
+local RAKUSEKI_SIZE = 4
+local DAIKAKEI_THICKNESS = 2
+local RAKUSEKI_COLOR = Color3.fromRGB(150, 110, 70)
+local DAIKAKEI_COLOR = Color3.fromRGB(230, 90, 30)
+
+-- 出撃しているステージの落石地点と大火計地域。ロビーでは nil
+local currentHikei: LoadedHikeiMejirushi? = nil
 
 local function makeMarker(name: string, size: Vector3, cframe: CFrame, color: Color3, parent: Instance): Part
 	local part = Instance.new("Part")
@@ -108,7 +147,7 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 			`HaichiService: 区画 {stage.kukaku} の範囲（{bounds.Size.X} × {bounds.Size.Z}）が構成の大きさ（{mejirushi.kukakuSizeX} × {mejirushi.kukakuSizeZ}）と違う`
 		)
 	end
-	for _, name in { Mejirushi.KYOTEN, Mejirushi.TSUNAGARI } do
+	for _, name in { Mejirushi.KYOTEN, Mejirushi.TSUNAGARI, Mejirushi.RAKUSEKI_CHITEN, Mejirushi.DAIKAKEI_CHIIKI } do
 		local old = folder:FindFirstChild(name)
 		if old then
 			old:Destroy()
@@ -149,9 +188,178 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 		end
 		route.Parent = tsunagariFolder
 	end
+	local rakusekiFolder = Instance.new("Folder")
+	rakusekiFolder.Name = Mejirushi.RAKUSEKI_CHITEN
+	for _, chiten in mejirushi.rakusekiChiten do
+		local ground = groundPoint(center, chiten.x, chiten.z)
+		local part = makeMarker(
+			chiten.id,
+			Vector3.one * RAKUSEKI_SIZE,
+			CFrame.new(ground + Vector3.new(0, RAKUSEKI_SIZE / 2, 0)),
+			RAKUSEKI_COLOR,
+			rakusekiFolder
+		)
+		part:SetAttribute(Mejirushi.KYOTEN_A, chiten.kyotenA)
+		part:SetAttribute(Mejirushi.KYOTEN_B, chiten.kyotenB)
+	end
+	local daikakeiFolder = Instance.new("Folder")
+	daikakeiFolder.Name = Mejirushi.DAIKAKEI_CHIIKI
+	for _, chiiki in mejirushi.daikakeiChiiki do
+		local ground = groundPoint(center, chiiki.x, chiiki.z)
+		makeMarker(
+			chiiki.id,
+			Vector3.new(chiiki.sizeX, DAIKAKEI_THICKNESS, chiiki.sizeZ),
+			CFrame.new(ground + Vector3.new(0, DAIKAKEI_THICKNESS / 2, 0)),
+			DAIKAKEI_COLOR,
+			daikakeiFolder
+		)
+	end
 	kyotenFolder.Parent = folder
 	tsunagariFolder.Parent = folder
+	rakusekiFolder.Parent = folder
+	daikakeiFolder.Parent = folder
 	return true
+end
+
+-- 目印のパーツを、透明（KukakuService がタグで透明にする）で当たり判定・接触・空間クエリの外に置き直す
+local function settleMarker(part: BasePart)
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanTouch = false
+	part.CanQuery = false
+	if not CollectionService:HasTag(part, Mejirushi.TAG) then
+		CollectionService:AddTag(part, Mejirushi.TAG)
+	end
+end
+
+-- 目印のフォルダの下のパーツを名前の順に返す
+local function markerParts(folder: Instance?): { BasePart }
+	local parts = {}
+	for _, child in if folder then folder:GetChildren() else {} do
+		if child:IsA("BasePart") then
+			table.insert(parts, child)
+		end
+	end
+	table.sort(parts, function(a, b)
+		return a.Name < b.Name
+	end)
+	return parts
+end
+
+-- ステージの落石地点と大火計地域を、出撃したステージの区画の目印だけから読み込む。
+-- 構成と突き合わせて使えない地点は外し、警告を出す。構成か区画が無いステージでは nil（警告は出さない）
+function HaichiService.loadHikeiMejirushi(stageId: string): LoadedHikeiMejirushi?
+	local stage = Stages.get(stageId)
+	local haichi = Haichi.get(stageId)
+	if not stage or not haichi then
+		return nil
+	end
+	local folder = KukakuService.mejirushiOf(stage.kukaku)
+	if not folder then
+		return nil
+	end
+	if haichi.shikenMejirushi and not folder:FindFirstChild(Mejirushi.RAKUSEKI_CHITEN) then
+		HaichiService.placeShikenMejirushi(stageId)
+	end
+	local where = `ステージ {stageId} の`
+	local loaded: LoadedHikeiMejirushi = { stageId = stageId, rakuseki = {}, daikakei = {}, warnings = {} }
+
+	local rakusekiParts = markerParts(folder:FindFirstChild(Mejirushi.RAKUSEKI_CHITEN))
+	local rakusekiMarks: { Haichi.RakusekiMejirushi } = {}
+	for _, part in rakusekiParts do
+		settleMarker(part)
+		local kyotenA = part:GetAttribute(Mejirushi.KYOTEN_A)
+		local kyotenB = part:GetAttribute(Mejirushi.KYOTEN_B)
+		table.insert(rakusekiMarks, {
+			id = part.Name,
+			kyotenA = if type(kyotenA) == "string" then kyotenA else nil,
+			kyotenB = if type(kyotenB) == "string" then kyotenB else nil,
+		})
+	end
+	local usableRakuseki, rakusekiProblems = Haichi.checkRakusekiChiten(haichi, rakusekiMarks)
+	for index, mark in rakusekiMarks do
+		if usableRakuseki[mark.id] then
+			usableRakuseki[mark.id] = nil
+			table.insert(loaded.rakuseki, {
+				id = mark.id,
+				kyotenA = mark.kyotenA :: string,
+				kyotenB = mark.kyotenB :: string,
+				position = rakusekiParts[index].Position,
+			})
+		end
+	end
+
+	local daikakeiParts = markerParts(folder:FindFirstChild(Mejirushi.DAIKAKEI_CHIIKI))
+	local daikakeiIds = {}
+	for _, part in daikakeiParts do
+		settleMarker(part)
+		table.insert(daikakeiIds, part.Name)
+	end
+	local usableDaikakei, daikakeiProblems = Haichi.checkDaikakeiChiiki(daikakeiIds)
+	for _, part in daikakeiParts do
+		if usableDaikakei[part.Name] then
+			usableDaikakei[part.Name] = nil
+			table.insert(loaded.daikakei, { id = part.Name, cframe = part.CFrame, size = part.Size })
+		end
+	end
+
+	for _, problems in { rakusekiProblems, daikakeiProblems } do
+		for _, message in problems do
+			table.insert(loaded.warnings, message)
+			warn(`HaichiService: {where}秘計の目印: {message}`)
+		end
+	end
+	return loaded
+end
+
+-- 出撃しているステージの落石地点と大火計地域。ロビーでは nil
+function HaichiService.getHikeiMejirushi(): LoadedHikeiMejirushi?
+	return currentHikei
+end
+
+-- 出撃しているステージの落石地点のうち、position から距離の上限（Config.luau の Hikei 節の TargetRange.Rakuseki）以内で
+-- 一番近いもの。無ければ nil
+function HaichiService.nearestRakusekiChiten(position: Vector3): LoadedRakuseki?
+	local current = currentHikei
+	if not current then
+		return nil
+	end
+	local candidates = {}
+	for _, chiten in current.rakuseki do
+		local dx, dz = chiten.position.X - position.X, chiten.position.Z - position.Z
+		table.insert(candidates, { id = chiten.id, distance = math.sqrt(dx * dx + dz * dz) })
+	end
+	local id = Hikei.nearest(candidates, Hikei.targetRangeOf("Rakuseki") or 0)
+	for _, chiten in current.rakuseki do
+		if chiten.id == id then
+			return chiten
+		end
+	end
+	return nil
+end
+
+-- 出撃しているステージの大火計地域のうち、position から距離の上限（TargetRange.Daikakei）以内で一番近いもの。
+-- 距離は地域の縁までで、地域の中なら 0。無ければ nil
+function HaichiService.nearestDaikakeiChiiki(position: Vector3): LoadedDaikakei?
+	local current = currentHikei
+	if not current then
+		return nil
+	end
+	local candidates = {}
+	for _, chiiki in current.daikakei do
+		local offset = chiiki.cframe:PointToObjectSpace(position)
+		table.insert(
+			candidates,
+			{ id = chiiki.id, distance = Hikei.distanceToArea(offset.X, offset.Z, chiiki.size.X, chiiki.size.Z) }
+		)
+	end
+	local id = Hikei.nearest(candidates, Hikei.targetRangeOf("Daikakei") or 0)
+	for _, chiiki in current.daikakei do
+		if chiiki.id == id then
+			return chiiki
+		end
+	end
+	return nil
 end
 
 -- つながりの道筋の目印。フォルダごとに両端と経由点を返す
@@ -320,11 +528,67 @@ local function summarize(loaded: Loaded): { [string]: any }
 	}
 end
 
+local function describeHikei(loaded: LoadedHikeiMejirushi): { [string]: any }
+	local rakuseki = {}
+	for _, chiten in loaded.rakuseki do
+		table.insert(rakuseki, {
+			id = chiten.id,
+			kukan = `{chiten.kyotenA}-{chiten.kyotenB}`,
+			position = { round(chiten.position.X), round(chiten.position.Y), round(chiten.position.Z) },
+		})
+	end
+	local daikakei = {}
+	for _, chiiki in loaded.daikakei do
+		local position = chiiki.cframe.Position
+		table.insert(daikakei, {
+			id = chiiki.id,
+			center = { round(position.X), round(position.Y), round(position.Z) },
+			size = { round(chiiki.size.X), round(chiiki.size.Z) },
+		})
+	end
+	return { stageId = loaded.stageId, rakuseki = rakuseki, daikakei = daikakei, warnings = loaded.warnings }
+end
+
 local function registerDebugCommands()
+	DebugCommand.register(
+		"DumpHikeiMejirushi",
+		"[ステージ ID]",
+		"落石地点と大火計地域を JSON で返す（ステージ ID を省くと、出撃しているステージの読み込み済みのもの）",
+		function(stageId)
+			local loaded = if type(stageId) == "string" then HaichiService.loadHikeiMejirushi(stageId) else currentHikei
+			if not loaded then
+				return "落石地点と大火計地域を読み込めなかった（出撃していないか、配置の構成が無い）"
+			end
+			return HttpService:JSONEncode(describeHikei(loaded))
+		end
+	)
+	DebugCommand.register(
+		"FindHikeiChiten",
+		"<プレイヤー名>",
+		"プレイヤーから距離の上限以内で一番近い落石地点と大火計地域を返す（出撃しているステージ）",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not root then
+				return `{player.Name} のキャラクターがいない`
+			end
+			if not currentHikei then
+				return "出撃していないか、出撃したステージに配置の構成が無い"
+			end
+			local rakuseki = HaichiService.nearestRakusekiChiten(root.Position)
+			local daikakei = HaichiService.nearestDaikakeiChiiki(root.Position)
+			local position = root.Position
+			return HttpService:JSONEncode({
+				position = { round(position.X), round(position.Y), round(position.Z) },
+				rakuseki = if rakuseki then rakuseki.id else nil,
+				daikakei = if daikakei then daikakei.id else nil,
+			})
+		end
+	)
 	DebugCommand.register(
 		"PlaceShikenMejirushi",
 		"[ステージ ID]",
-		"試験用ステージの拠点とつながりの目印を、構成の位置からテストプレイ中だけ作り直す（既定は Test）",
+		"試験用ステージの拠点・つながり・落石地点・大火計地域の目印を、構成の位置からテストプレイ中だけ作り直す（既定は Test）",
 		function(stageId)
 			local id = if type(stageId) == "string" then stageId else "Test"
 			if not HaichiService.placeShikenMejirushi(id) then
@@ -352,6 +616,15 @@ end
 
 function HaichiService.start()
 	registerDebugCommands()
+	-- 出撃したステージの区画の落石地点と大火計地域を読み、ロビーへ戻ったら手放す
+	StageService.started:Connect(function(info: StageService.StartInfo)
+		currentHikei = HaichiService.loadHikeiMejirushi(info.stageId)
+	end)
+	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
+		if next == "Lobby" then
+			currentHikei = nil
+		end
+	end)
 end
 
 return HaichiService

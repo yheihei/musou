@@ -209,6 +209,37 @@ function Hikei.markUsed(usage: Usage, user: string, hikeiId: string): boolean
 	return true
 end
 
+-- 範囲の目印（大火計地域）までの水平の距離。localX・localZ は目印から見た位置（CFrame:PointToObjectSpace の X と Z）、
+-- sizeX・sizeZ は目印の大きさ。範囲の中なら 0
+function Hikei.distanceToArea(localX: number, localZ: number, sizeX: number, sizeZ: number): number
+	local dx = math.max(math.abs(localX) - sizeX / 2, 0)
+	local dz = math.max(math.abs(localZ) - sizeZ / 2, 0)
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+-- 秘計の対象にする地点（落石地点や大火計地域）の候補から、距離が maxDistance 以内で一番近いものの ID を返す。
+-- 距離が同じなら ID の順。maxDistance 以内に無ければ nil
+function Hikei.nearest(candidates: { { id: string, distance: number } }, maxDistance: number): string?
+	local bestId: string? = nil
+	local bestDistance = math.huge
+	for _, candidate in candidates do
+		if candidate.distance <= maxDistance then
+			local closer = candidate.distance < bestDistance
+			local tie = candidate.distance == bestDistance and bestId ~= nil and candidate.id < (bestId :: string)
+			if closer or tie then
+				bestId = candidate.id
+				bestDistance = candidate.distance
+			end
+		end
+	end
+	return bestId
+end
+
+-- 発動者から対象の地点までの距離の上限（Config.luau の Hikei 節の TargetRange）。上限の無い秘計は nil
+function Hikei.targetRangeOf(hikeiId: string): number?
+	return Config.Hikei.TargetRange[hikeiId]
+end
+
 -- 効果時間（秒）。期限の無い秘計は math.huge
 function Hikei.durationOf(hikeiId: string): number
 	return Config.Hikei.Duration[hikeiId] or math.huge

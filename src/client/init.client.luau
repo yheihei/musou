@@ -15,6 +15,7 @@ local SelectionController = require(Controllers:WaitForChild("SelectionControlle
 local SerifuController = require(Controllers:WaitForChild("SerifuController"))
 local PushController = require(Controllers:WaitForChild("PushController"))
 local MotionController = require(Controllers:WaitForChild("MotionController"))
+local HikeiMejirushiController = require(Controllers:WaitForChild("HikeiMejirushiController"))
 
 -- 入室直後の PartyState を受け取るため、画面より先に始める
 PartyClient.start()
@@ -25,5 +26,6 @@ SelectionController.start()
 SerifuController.start()
 PushController.start()
 MotionController.start()
+HikeiMejirushiController.start()
 -- 効果音を先に読み込み、最初に鳴らすときの遅れを無くす
 task.spawn(SoundPlayer.preload)

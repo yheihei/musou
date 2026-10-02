@@ -247,3 +247,33 @@ test("{秒} を使う説明の秘計には効果時間がある", function()
 		end
 	end
 end)
+
+test("大火計地域までの距離は、範囲の中なら 0、外なら縁までの距離", function()
+	expect(Hikei.distanceToArea(0, 0, 60, 80)).toBe(0)
+	expect(Hikei.distanceToArea(30, -40, 60, 80)).toBe(0)
+	expect(Hikei.distanceToArea(40, 0, 60, 80)).toBeNear(10)
+	expect(Hikei.distanceToArea(0, -50, 60, 80)).toBeNear(10)
+	expect(Hikei.distanceToArea(33, 44, 60, 80)).toBeNear(5)
+end)
+
+test("距離の上限以内で一番近い地点を返し、上限を超えたら nil を返す", function()
+	local candidates = {
+		{ id = "R2", distance = 40 },
+		{ id = "R1", distance = 25 },
+		{ id = "R3", distance = 80 },
+	}
+	expect(Hikei.nearest(candidates, 60)).toBe("R1")
+	expect(Hikei.nearest(candidates, 20)).toBe(nil)
+	expect(Hikei.nearest({}, 60)).toBe(nil)
+	expect(Hikei.nearest({ { id = "R1", distance = 60 } }, 60)).toBe("R1")
+end)
+
+test("距離が同じ地点は ID の順に選ぶ", function()
+	expect(Hikei.nearest({ { id = "D2", distance = 0 }, { id = "D1", distance = 0 } }, 60)).toBe("D1")
+end)
+
+test("落石と大火計には対象の地点までの距離の上限がある", function()
+	expect(Hikei.targetRangeOf("Rakuseki")).toBe(Config.Hikei.TargetRange.Rakuseki)
+	expect(Hikei.targetRangeOf("Daikakei")).toBe(Config.Hikei.TargetRange.Daikakei)
+	expect(Hikei.targetRangeOf("Kishinka")).toBe(nil)
+end)

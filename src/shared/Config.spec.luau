@@ -722,6 +722,10 @@ local SNAPSHOT = {
 			Kishinka = 60,
 			Daikatsu = 30,
 		},
+		TargetRange = {
+			Rakuseki = 60,
+			Daikakei = 60,
+		},
 	},
 	Serifu = {
 		CharInterval = 0.04,

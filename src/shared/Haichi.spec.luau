@@ -77,6 +77,8 @@ test("区画からはみ出す目印の位置を見つける", function()
 			kukakuSizeZ = source.kukakuSizeZ,
 			kyoten = kyoten,
 			tsunagari = source.tsunagari,
+			rakusekiChiten = source.rakusekiChiten,
+			daikakeiChiiki = source.daikakeiChiiki,
 		}
 	end)
 	expect(
@@ -195,3 +197,64 @@ test("構成にあって目印が無いもの、目印にあって構成に無�
 		"目印のつながり Higashi-TekiHonjin は構成に無い",
 	})
 end)
+
+test("落石地点の目印は、つながりで結ばれた区間を指すものだけ使える", function()
+	local haichi = Haichi.get("Test") :: Haichi.Haichi
+	local usable, problems = Haichi.checkRakusekiChiten(haichi, {
+		{ id = "R1", kyotenA = "Chuo", kyotenB = "Higashi" },
+		-- 目印の向きは逆でもよい
+		{ id = "R2", kyotenA = "Nishi", kyotenB = "MikataHonjin" },
+	})
+	expect(usable).toEqual({ R1 = true, R2 = true })
+	expect(problems).toEqual({})
+end)
+
+test(
+	"落石地点の ID の重複、存在しない拠点、結ばれていない区間、Attribute の欠けを見つける",
+	function()
+		local haichi = Haichi.get("Test") :: Haichi.Haichi
+		local usable, problems = Haichi.checkRakusekiChiten(haichi, {
+			{ id = "R1", kyotenA = "Chuo", kyotenB = "Higashi" },
+			{ id = "R1", kyotenA = "Chuo", kyotenB = "TekiHonjin" },
+			{ id = "R2", kyotenA = "Chuo", kyotenB = "Nowhere" },
+			{ id = "R3", kyotenA = "Higashi", kyotenB = "TekiHonjin" },
+			{ id = "R4", kyotenA = "Chuo", kyotenB = nil },
+		})
+		expect(usable).toEqual({ R1 = true })
+		expect(problems).toEqual({
+			"落石地点 R1 が2つある",
+			"落石地点 R2 の拠点 Nowhere が無い",
+			"落石地点 R3 の区間 Higashi-TekiHonjin はつながりで結ばれていない",
+			"落石地点 R4 に Attribute の KyotenA・KyotenB が無い",
+		})
+	end
+)
+
+test("大火計地域の ID の重複を見つけ、2つ目は使わない", function()
+	local usable, problems = Haichi.checkDaikakeiChiiki({ "D1", "D2", "D1" })
+	expect(usable).toEqual({ D1 = true, D2 = true })
+	expect(problems).toEqual({ "大火計地域 D1 が2つある" })
+end)
+
+test(
+	"試験用ステージの落石地点と大火計地域の位置を見つけ、区画からはみ出すものを見つける",
+	function()
+		local mejirushi = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi
+		expect(#mejirushi.rakusekiChiten > 0).toBe(true)
+		expect(#mejirushi.daikakeiChiiki > 0).toBe(true)
+		local haichi = testHaichi(function(copy)
+			local source = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi
+			copy.shikenMejirushi = {
+				kukakuSizeX = source.kukakuSizeX,
+				kukakuSizeZ = source.kukakuSizeZ,
+				kyoten = source.kyoten,
+				tsunagari = source.tsunagari,
+				rakusekiChiten = { { id = "R9", kyotenA = "Chuo", kyotenB = "Higashi", x = 500, z = 0 } },
+				daikakeiChiiki = { { id = "D9", x = 380, z = 0, sizeX = 60, sizeZ = 60 } },
+			}
+		end)
+		local problems = Haichi.validate(haichi, TEST_STAGE)
+		expect(contains(problems, "落石地点 R9 が区画の範囲からはみ出す")).toBe(true)
+		expect(contains(problems, "大火計地域 D9 が区画の範囲からはみ出す")).toBe(true)
+	end
+)
