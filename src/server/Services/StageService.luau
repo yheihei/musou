@@ -6,8 +6,11 @@
 --   受け付けなければ SelectionRejected で本人に理由を返す
 -- - 出撃すると、待機中でない全員を区画の出撃地点へ移す（周りを読み込ませてから出現し直す）。
 --   選んだキャラクターを Player の Attribute の CharacterId に書いてから出現し直すので、能力値と見た目が切り替わる
--- - イベントシーンのフェーズは、当面すぐ次へ進める
--- - finish で勝敗と理由を決め、出撃して残っているメンバーに StageResult を送る
+-- - イベントシーンのフェーズでは、ステージの定義のシーンを出撃して残っているメンバーに PlayEventScene で流す
+--   （待機中の人には流さない）。シーンの長さが過ぎるか、見ている全員がスキップを押すと次のフェーズへ進める。
+--   スキップの集計は ReplicatedStorage.Shared.SkipVote が持ち、スキップを受けるたびと人が抜けるたびに SkipCount を送る。
+--   流すシーンが無いか定義に無ければ、すぐ次のフェーズへ進める（敗北のシーンが無ければリザルトへ直行する）
+-- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、選択を外して全員をロビーへ戻す
 -- - 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す
 -- - 片付けは各サービスが started・finished・phaseChanged を受けて行う
@@ -15,9 +18,11 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local EventScenes = require(ReplicatedStorage.Shared.EventScenes)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local SelectionRules = require(ReplicatedStorage.Shared.SelectionRules)
+local SkipVote = require(ReplicatedStorage.Shared.SkipVote)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
@@ -26,6 +31,14 @@ local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
 local ProgressService = require(script.Parent.ProgressService)
 local SelectionService = require(script.Parent.SelectionService)
+
+-- 流しているイベントシーン
+type SceneRun = {
+	id: string,
+	vote: SkipVote.Vote,
+	-- 長さが過ぎる時刻（os.clock）
+	endsAt: number,
+}
 
 -- 出撃してから戻るまでのステージ
 type Session = {
@@ -36,6 +49,10 @@ type Session = {
 	battleStartedAt: number?,
 	-- 戦闘のフェーズの経過時間（秒）。決着するまでは nil
 	elapsed: number?,
+	-- 流しているイベントシーン。流していなければ nil
+	scene: SceneRun?,
+	-- 決着したときに作った StageResult。終了のイベントシーンの後に送る
+	result: RemoteSchema.StageResult?,
 }
 
 -- 開始の通知で渡す中身
@@ -51,6 +68,8 @@ local phase: StagePhase.Phase = "Lobby"
 local session: Session? = nil
 local rejectedRemote: RemoteEvent
 local resultRemote: RemoteEvent
+local playEventSceneRemote: RemoteEvent
+local skipCountRemote: RemoteEvent
 
 local phaseChangedEvent = Instance.new("BindableEvent")
 -- フェーズが変わったときに、新しいフェーズ（StagePhase.Phase）で発火する
@@ -95,6 +114,94 @@ local function transition(event: StagePhase.Event): boolean
 	return true
 end
 
+-- 出撃して、まだパーティーにいるメンバーの UserId
+local function memberIds(): { number }
+	local ids = {}
+	for _, member in StageService.getMembers() do
+		table.insert(ids, member.UserId)
+	end
+	return ids
+end
+
+local function sendSkipCount(run: SceneRun)
+	local skipped, total = SkipVote.count(run.vote)
+	for _, member in StageService.getMembers() do
+		skipCountRemote:FireClient(member, skipped, total)
+	end
+end
+
+-- イベントシーンのフェーズを抜けた後の処理。戦闘なら時間を測り始め、リザルトなら StageResult を送る
+local function afterScene(current: Session)
+	if phase == "Battle" then
+		current.battleStartedAt = os.clock()
+	elseif phase == "Result" then
+		local result = current.result
+		if result then
+			for _, member in StageService.getMembers() do
+				resultRemote:FireClient(member, result)
+			end
+		end
+	end
+end
+
+-- イベントシーンのフェーズを終えて次のフェーズへ進める。シーンを流していなければ何もしない
+local function endScene(current: Session)
+	if session ~= current or not current.scene then
+		return
+	end
+	current.scene = nil
+	if transition("SceneEnd") then
+		afterScene(current)
+	end
+end
+
+-- イベントシーンのフェーズを始める。流すシーンが無いか定義に無ければ、すぐ次のフェーズへ進める
+local function beginScene(current: Session, sceneId: string?)
+	local scene = EventScenes.get(sceneId)
+	if not scene then
+		if sceneId then
+			warn(`StageService: イベントシーン {sceneId} の定義が無いので飛ばす`)
+		end
+		if transition("SceneEnd") then
+			afterScene(current)
+		end
+		return
+	end
+	local run: SceneRun = {
+		id = scene.id,
+		vote = SkipVote.new(memberIds()),
+		endsAt = os.clock() + scene.duration,
+	}
+	current.scene = run
+	for _, member in StageService.getMembers() do
+		playEventSceneRemote:FireClient(member, scene.id)
+	end
+	task.delay(scene.duration, function()
+		if current.scene == run then
+			endScene(current)
+		end
+	end)
+end
+
+-- イベントシーンのスキップを数える。数えたら true と、スキップした人数・全体の人数を返す。
+-- 全員がスキップしたら次のフェーズへ進める。シーンを流していないときと、見ていない人・押し済みの人は数えない
+function StageService.skipEventScene(player: Player): (boolean, number, number)
+	local current = session
+	local run = if current then current.scene else nil
+	if not current or not run then
+		return false, 0, 0
+	end
+	local counted = SkipVote.skip(run.vote, player.UserId)
+	local skipped, total = SkipVote.count(run.vote)
+	if counted then
+		sendSkipCount(run)
+		if SkipVote.isComplete(run.vote) then
+			endScene(current)
+		end
+	end
+	return counted, skipped, total
+end
+
 -- 出撃するメンバー全員がキャラクターを選んでいるか
 local function membersReady(members: { Player }): boolean
 	for _, member in members do
@@ -129,8 +236,9 @@ local function moveToShutsugekiChiten(members: { Player }, chiten: { KukakuServi
 end
 
 -- 出撃する。受け付けたら nil、受け付けなければ拒否の理由を返す。
--- stageOverride を渡すと、選択を問わずそのステージへ出撃する（窓口の確認用）。ロビーのフェーズだけは確かめる
-function StageService.shutsugeki(player: Player, stageOverride: string?): SelectionRules.Reject?
+-- stageOverride を渡すと、選択を問わずそのステージへ出撃する（窓口の確認用）。ロビーのフェーズだけは確かめる。
+-- startScene を渡すと、ステージの定義の代わりにそのシーンを開始のイベントシーンとして流す（窓口の確認用）
+function StageService.shutsugeki(player: Player, stageOverride: string?, startScene: string?): SelectionRules.Reject?
 	local members = PartyService.getActivePlayers()
 	local stageId = stageOverride or SelectionService.getStage()
 	if stageOverride then
@@ -159,7 +267,14 @@ function StageService.shutsugeki(player: Player, stageOverride: string?): Select
 	if #members == 0 or not transition("Shutsugeki") then
 		return "NotLobby"
 	end
-	local current: Session = { stageId = stage.id, members = members, battleStartedAt = nil, elapsed = nil }
+	local current: Session = {
+		stageId = stage.id,
+		members = members,
+		battleStartedAt = nil,
+		elapsed = nil,
+		scene = nil,
+		result = nil,
+	}
 	session = current
 	moveToShutsugekiChiten(members, chiten)
 	if session ~= current then
@@ -167,13 +282,12 @@ function StageService.shutsugeki(player: Player, stageOverride: string?): Select
 		return nil
 	end
 	startedEvent:Fire({ stageId = stage.id, members = members, count = #members } :: StartInfo)
-	-- 開始のイベントシーンは、当面すぐ次へ進める
-	transition("SceneEnd")
-	current.battleStartedAt = os.clock()
+	beginScene(current, startScene or StagePhase.sceneIdFor(stage.eventScenes, "StartScene"))
 	return nil
 end
 
--- 勝敗を決めてリザルトへ進め、出撃して残っているメンバーに StageResult を送る。戦闘のフェーズでなければ false
+-- 勝敗を決めて終了のイベントシーンへ進める。StageResult は決着の時点で作り、終了のイベントシーンの後に
+-- 出撃して残っているメンバーへ送る。戦闘のフェーズでなければ false
 function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason): boolean
 	local current = session
 	if phase ~= "Battle" or not current then
@@ -181,9 +295,6 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	end
 	local elapsed = if current.battleStartedAt then os.clock() - current.battleStartedAt else 0
 	current.elapsed = elapsed
-	transition("Finish")
-	-- 終了のイベントシーンは、当面すぐ次へ進める
-	transition("SceneEnd")
 	local members = StageService.getMembers()
 	local result: RemoteSchema.StageResult = {
 		victory = victory,
@@ -199,10 +310,11 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 			newlyUnlocked = {},
 		})
 	end
+	current.result = result
+	transition("Finish")
 	finishedEvent:Fire(result)
-	for _, member in members do
-		resultRemote:FireClient(member, result)
-	end
+	local stage = Stages.get(current.stageId) :: Stages.Stage
+	beginScene(current, StagePhase.sceneIdFor(stage.eventScenes, "EndScene", victory))
 	return true
 end
 
@@ -221,11 +333,24 @@ function StageService.returnToLobby(player: Player): boolean
 	return true
 end
 
--- 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す
+-- 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す。
+-- イベントシーンの途中で抜けた人はスキップの人数から外し、残りの全員がスキップ済みなら次のフェーズへ進める
 local function onPartyChanged()
-	if session and phase ~= "Lobby" and #StageService.getMembers() == 0 then
+	local current = session
+	if not current or phase == "Lobby" then
+		return
+	end
+	if #StageService.getMembers() == 0 then
 		session = nil
 		transition("Abort")
+		return
+	end
+	local run = current.scene
+	if run and SkipVote.retain(run.vote, memberIds()) then
+		sendSkipCount(run)
+		if SkipVote.isComplete(run.vote) then
+			endScene(current)
+		end
 	end
 end
 
@@ -239,6 +364,11 @@ end
 
 local function onReturnToLobby(player: Player)
 	StageService.returnToLobby(player)
+end
+
+-- SkipEventScene は引数を持たない。届いた引数は読まない
+local function onSkipEventScene(player: Player)
+	StageService.skipEventScene(player)
 end
 
 local function registerDebugCommands()
@@ -296,6 +426,47 @@ local function registerDebugCommands()
 			return "ロビーへ戻した"
 		end
 	)
+	DebugCommand.register(
+		"StartEventScene",
+		"<シーン ID> [ステージ ID]",
+		"出撃するメンバー全員でステージ（既定は Test）へ出撃し、そのシーンを開始のイベントシーンとして流す（確認用）",
+		function(sceneId, stageId)
+			if type(sceneId) ~= "string" or not EventScenes.get(sceneId) then
+				local ids = {}
+				for id in EventScenes.definitions do
+					table.insert(ids, id)
+				end
+				table.sort(ids)
+				error(`シーン ID は {table.concat(ids, "、")} のどれか（{tostring(sceneId)}）`, 0)
+			end
+			local id = if stageId ~= nil then stageId else "Test"
+			if not RemoteSchema.isId(id) then
+				error(`ステージ ID の形が正しくない（{tostring(id)}）`, 0)
+			end
+			local leader = PartyService.getLeader()
+			if not leader then
+				return "パーティーに誰もいない"
+			end
+			local reason = StageService.shutsugeki(leader, id, sceneId)
+			if reason then
+				return `{id} への出撃を拒否した（{reason}）`
+			end
+			return `{id} に出撃し、イベントシーン {sceneId} を流した（フェーズ {phase}）`
+		end
+	)
+	DebugCommand.register(
+		"SkipEventScene",
+		"<プレイヤー名>",
+		"Remotes.SkipEventScene と同じ処理で、イベントシーンのスキップを押す",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local counted, skipped, total = StageService.skipEventScene(player)
+			if not counted then
+				return `{player.Name} のスキップを数えなかった（シーンを流していないか、見ていないか、押し済み。フェーズ {phase}）`
+			end
+			return `{player.Name} のスキップを数えた（{skipped}/{total}、フェーズ {phase}）`
+		end
+	)
 	DebugCommand.register("DumpStage", "", "ステージの進行の状態を JSON で返す", function()
 		local names = {}
 		for _, member in StageService.getMembers() do
@@ -305,11 +476,23 @@ local function registerDebugCommands()
 		local elapsed = if current
 			then current.elapsed or (if current.battleStartedAt then os.clock() - current.battleStartedAt else nil)
 			else nil
+		local run = if current then current.scene else nil
+		local scene: { [string]: any }? = nil
+		if run then
+			local skipped, total = SkipVote.count(run.vote)
+			scene = {
+				id = run.id,
+				skipped = skipped,
+				total = total,
+				remaining = math.max(run.endsAt - os.clock(), 0),
+			}
+		end
 		return HttpService:JSONEncode({
 			phase = phase,
 			stage = StageService.getStage(),
 			members = names,
 			elapsed = elapsed,
+			scene = scene,
 		})
 	end)
 end
@@ -318,10 +501,14 @@ function StageService.start()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	rejectedRemote = remotes:WaitForChild("SelectionRejected") :: RemoteEvent
 	resultRemote = remotes:WaitForChild("StageResult") :: RemoteEvent
+	playEventSceneRemote = remotes:WaitForChild("PlayEventScene") :: RemoteEvent
+	skipCountRemote = remotes:WaitForChild("SkipCount") :: RemoteEvent
 	local shutsugekiRemote = remotes:WaitForChild("Shutsugeki") :: RemoteEvent
 	shutsugekiRemote.OnServerEvent:Connect(onShutsugeki)
 	local returnRemote = remotes:WaitForChild("ReturnToLobby") :: RemoteEvent
 	returnRemote.OnServerEvent:Connect(onReturnToLobby)
+	local skipRemote = remotes:WaitForChild("SkipEventScene") :: RemoteEvent
+	skipRemote.OnServerEvent:Connect(onSkipEventScene)
 	PartyService.changed:Connect(onPartyChanged)
 	registerDebugCommands()
 end

@@ -124,7 +124,7 @@ src/
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
       SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
-      StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、勝敗の結果）
+      StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、イベントシーンの同期とスキップ、勝敗の結果）
       SerifuService  戦闘中の台詞を全員の画面の端に出す
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
@@ -152,6 +152,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 数値調整は `src/shared/Config.luau` に集約している
 - ステージの配置は、構成（拠点の種類と軍、つながり、部隊）を `src/shared/Haichi.luau` に、位置をプレースの目印に置く（ADR 0006）。試験用ステージ `Test` は目印の位置もコードに持ち、テストプレイ中に目印を作る。窓口の `Shutsugeki <プレイヤー名> Test` で出撃し、`DumpHaichi Test` で読み込んだ配置を見る
 - ステージの進行は StageService が持つ。フェーズはロビー → 開始のイベントシーン → 戦闘 → 終了のイベントシーン → リザルト → ロビーの順に進み、遷移は `src/shared/StagePhase.luau` が決める。ほかのサービスは `StageService.started`・`finished`・`phaseChanged` を受けて、始める処理と片付けをする
+- イベントシーンは、サーバーが出撃メンバーに `PlayEventScene` で流し、長さが過ぎるか全員がスキップを押すと次のフェーズへ進める。シーンの ID と長さは `src/shared/EventScenes.luau`、スキップの集計は `src/shared/SkipVote.luau` にある。窓口の `StartEventScene Shiken` で、試験用のシーンを流して出撃する
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
 - 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない

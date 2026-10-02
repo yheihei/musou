@@ -54,3 +54,28 @@ test("PartyState には開始と終了のイベントシーンを EventScene と
 		expect(table.find(RemoteSchema.phases, StagePhase.toPartyPhase(phase)) ~= nil).toBe(true)
 	end
 end)
+
+test("開始のイベントシーンのフェーズでは、ステージの開始のシーンを流す", function()
+	local scenes = { start = "A", victory = "B", defeat = "C" }
+	expect(StagePhase.sceneIdFor(scenes, "StartScene")).toBe("A")
+	expect(StagePhase.sceneIdFor({}, "StartScene")).toBe(nil)
+end)
+
+test("終了のイベントシーンのフェーズでは、勝敗に合ったシーンを流す", function()
+	local scenes = { start = "A", victory = "B", defeat = "C" }
+	expect(StagePhase.sceneIdFor(scenes, "EndScene", true)).toBe("B")
+	expect(StagePhase.sceneIdFor(scenes, "EndScene", false)).toBe("C")
+end)
+
+test("敗北のシーンが無ければ、敗北では何も流さずリザルトへ直行する", function()
+	local scenes = { start = "A", victory = "B" }
+	expect(StagePhase.sceneIdFor(scenes, "EndScene", false)).toBe(nil)
+	expect(StagePhase.sceneIdFor(scenes, "EndScene", true)).toBe("B")
+end)
+
+test("イベントシーンのフェーズでなければ何も流さない", function()
+	local scenes = { start = "A", victory = "B", defeat = "C" }
+	for _, phase in { "Lobby", "Battle", "Result" } :: { StagePhase.Phase } do
+		expect(StagePhase.sceneIdFor(scenes, phase, true)).toBe(nil)
+	end
+end)

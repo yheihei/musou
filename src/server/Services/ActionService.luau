@@ -13,6 +13,7 @@
 --   ほかの行動が終わったときにまだ押していれば、ガードに戻る
 -- - 緊急回避はガードの最中だけ出せ、入れた方向へサーバーの拘束で動かす。続けて出すほど後隙が伸びる
 --   （計算は ReplicatedStorage.Shared.KinkyuKaihi）
+-- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -23,6 +24,7 @@ local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
 local Push = require(script.Parent.Parent.Combat.Push)
 
@@ -270,11 +272,15 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	if not valid then
 		return
 	end
+	local releasing = action == Actions.Guard and argument == false
+	if PartyService.getPhase() == "EventScene" and not releasing then
+		return
+	end
 	-- 秘計は受け取るだけで、まだ何もしない（#93 で作る）
 	if action == Actions.Hikei then
 		return
 	end
-	if action == Actions.Guard and argument == false then
+	if releasing then
 		releaseGuard(player)
 		return
 	end
