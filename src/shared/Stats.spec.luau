@@ -11,6 +11,8 @@ local BASE: Stats.Values = { MaxHealth = 300, Attack = 12, Defense = 10, WalkSpe
 -- 与ダメージの計算の係数を固定する
 local PARAMS: Config.StatsSection = {
 	Characters = {},
+	Jonin = BASE,
+	Shuryo = BASE,
 	DefenseHalf = 100,
 	MinDamage = 1,
 }

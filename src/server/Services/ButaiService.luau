@@ -295,6 +295,17 @@ function ButaiService.changeHeisu(id: string, delta: number): number?
 	return heisu
 end
 
+-- 率いる上忍を失わせる。部隊は残し、士気だけを Config.luau の Butai 節の JoninGekihaShiki 下げる。部隊がいなければ false
+function ButaiService.loseJonin(id: string): boolean
+	local butai = find(id)
+	if not butai then
+		return false
+	end
+	Butai.loseJonin(butai, Config.Butai.JoninGekihaShiki)
+	publish(butai)
+	return true
+end
+
 -- 目的地を差し替える。mokutekichi を nil にすると、その場で止まる。部隊がいなければ false
 function ButaiService.setMokutekichi(
 	id: string,

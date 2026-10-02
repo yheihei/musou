@@ -119,3 +119,14 @@ test(
 		expect(Butai.keiyutenBetween(tsunagari, "A", "C")).toBe(nil)
 	end
 )
+
+test("率いる上忍を失った部隊は残り、士気だけが下がる", function()
+	local butai = newButai({ x = 0, z = 0 })
+	butai.jonin = "ShikenJonin1"
+	Butai.loseJonin(butai, 15)
+	expect(butai.jonin).toBe(nil)
+	expect(butai.shiki).toBe(35)
+	expect(butai.heisu).toBe(30)
+	Butai.loseJonin(butai, 100)
+	expect(butai.shiki).toBe(0)
+end)

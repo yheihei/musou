@@ -115,6 +115,12 @@ function Butai.setMokutekichi(butai: Butai, mokutekichi: Point?, keiyuten: { Poi
 	butai.mokutekiKyoten = if mokutekichi then kyoten else nil
 end
 
+-- 率いる上忍を失った部隊を残し、士気だけを shikiLoss 下げる（0 未満にはしない）
+function Butai.loseJonin(butai: Butai, shikiLoss: number)
+	butai.jonin = nil
+	butai.shiki = math.max(butai.shiki - shikiLoss, 0)
+end
+
 -- 兵数を delta だけ増減する。0 未満にはしない。増減した後の兵数を返す
 function Butai.changeHeisu(butai: Butai, delta: number): number
 	butai.heisu = math.max(math.floor(butai.heisu + delta), 0)

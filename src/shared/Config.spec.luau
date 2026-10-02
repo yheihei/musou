@@ -21,6 +21,8 @@ local SNAPSHOT = {
 			Sekishusai = { MaxHealth = 320, Attack = 13, Defense = 12, WalkSpeed = 23, AttackSpeed = 1 },
 			KanaOni = { MaxHealth = 360, Attack = 16, Defense = 14, WalkSpeed = 22, AttackSpeed = 0.8 },
 		},
+		Jonin = { MaxHealth = 600, Attack = 14, Defense = 12, WalkSpeed = 14, AttackSpeed = 1 },
+		Shuryo = { MaxHealth = 1200, Attack = 16, Defense = 16, WalkSpeed = 14, AttackSpeed = 1 },
 		DefenseHalf = 100,
 		MinDamage = 1,
 	},
@@ -701,6 +703,7 @@ local SNAPSHOT = {
 		Speed = 12,
 		MoveInterval = 0.5,
 		InitialShiki = 50,
+		JoninGekihaShiki = 15,
 		Heisu = {
 			Test = {
 				Mikata1 = 30,

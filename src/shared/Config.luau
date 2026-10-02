@@ -22,6 +22,8 @@ export type StatValues = {
 
 export type StatsSection = {
 	Characters: { [string]: StatValues },
+	Jonin: StatValues,
+	Shuryo: StatValues,
 	DefenseHalf: number,
 	MinDamage: number,
 }
@@ -185,6 +187,7 @@ export type ButaiSection = {
 	Speed: number,
 	MoveInterval: number,
 	InitialShiki: number,
+	JoninGekihaShiki: number,
 }
 
 export type HikeiSection = {
@@ -261,6 +264,9 @@ local Config: Config = {
 			-- 金鬼は重く遅い。攻撃の速さを落とし、威力を上げる
 			KanaOni = { MaxHealth = 360, Attack = 16, Defense = 14, WalkSpeed = 22, AttackSpeed = 0.8 },
 		},
+		-- 上忍と首領（NPC）の基本の能力値。キャラクターごとの値はまだ無く、役目で決める
+		Jonin = { MaxHealth = 600, Attack = 14, Defense = 12, WalkSpeed = 14, AttackSpeed = 1 },
+		Shuryo = { MaxHealth = 1200, Attack = 16, Defense = 16, WalkSpeed = 14, AttackSpeed = 1 },
 		DefenseHalf = 100, -- 防御がこの値のとき、受けるダメージが半分になる
 		MinDamage = 1, -- 与ダメージの下限
 	},
@@ -1008,6 +1014,7 @@ local Config: Config = {
 		Speed = 12, -- 部隊が目的地へ進む速さ（スタッド/秒）。下忍の歩く速さに合わせる
 		MoveInterval = 0.5, -- 部隊の位置を進める間隔（秒）
 		InitialShiki = 50, -- 部隊の開始時の士気。交戦の士気の補正は差で効く（Kosen 節）
+		JoninGekihaShiki = 15, -- 率いる上忍が倒されたときに、残った部隊の士気を下げる量
 		Heisu = {
 			-- 試験用ステージ。率いる上忍のいる部隊は 30、本陣の守備は 40
 			Test = {

@@ -119,13 +119,14 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / JoninService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
       SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、イベントシーンの同期とスキップ、勝敗の結果）
       ButaiService  戦場の部隊のデータ（位置・兵数・士気）と部隊どうしの交戦。配置から作り、目的地へ位置だけを進め、ReplicatedStorage.Butai の Attribute で複製する
+      JoninService  上忍と首領のデータ（能力値・体力・率いる部隊）。上忍は部隊とともに動き、首領は本陣にとどまる。ReplicatedStorage.Jonin の Attribute で複製する
       SerifuService  戦闘中の台詞を全員の画面の端に出す
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
@@ -154,6 +155,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - ステージの配置は、構成（拠点の種類と軍、つながり、部隊）を `src/shared/Haichi.luau` に、位置をプレースの目印に置く（ADR 0006）。試験用ステージ `Test` は目印の位置もコードに持ち、テストプレイ中に目印を作る。窓口の `Shutsugeki <プレイヤー名> Test` で出撃し、`DumpHaichi Test` で読み込んだ配置を見る
 - ステージの進行は StageService が持つ。フェーズはロビー → 開始のイベントシーン → 戦闘 → 終了のイベントシーン → リザルト → ロビーの順に進み、遷移は `src/shared/StagePhase.luau` が決める。ほかのサービスは `StageService.started`・`finished`・`phaseChanged` を受けて、始める処理と片付けをする
 - 戦場の部隊は ButaiService がデータで持ち（ADR 0003）、目的地へ経由点をたどって位置だけを進める（計算は `src/shared/Butai.luau`）。クライアントは `ReplicatedStorage.Butai` の部隊ごとの Configuration の Attribute（`Position`・`Gun`・`Heisu`・`Shiki`・`Jonin`、交戦の相手の `Kosen`）を読む。窓口の `DumpButai`・`AddButai`・`MoveButai`・`ShowButai`・`DumpKosen` で確かめる
+- 上忍と首領は JoninService がデータで持つ（計算は `src/shared/Jonin.luau`）。上忍は率いる部隊の位置に合わせ、首領は本陣の中心に置く。能力値は `Config.luau` の Stats 節の Jonin・Shuryo。クライアントは `ReplicatedStorage.Jonin` のキャラクター ID ごとの Configuration の Attribute（`Position`・`Health`・`MaxHealth`・`Gun`・`Butai`・`Shuryo`・`DisplayName`）を読む。窓口の `DumpJonin`・`SetJoninHealth` で確かめる
 - 敵味方の部隊が近づくと交戦を始め、決着までその場にとどまる。相手は1部隊ずつで、交戦中の敵の手前に来た部隊は待つ。組み方と損害の計算は `src/shared/Kosen.luau`、距離と係数は `Config.luau` の Kosen 節
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、出撃メンバーなら区画の出撃地点から、ほかの人はロビーから出る

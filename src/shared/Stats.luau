@@ -24,6 +24,11 @@ function Stats.baseOf(characterId: string): Values?
 	return Config.Stats.Characters[characterId]
 end
 
+-- 上忍か首領（NPC）の基本の能力値。キャラクターごとの値はまだ無く、役目（首領か）で決める
+function Stats.npcBaseOf(shuryo: boolean): Values
+	return if shuryo then Config.Stats.Shuryo else Config.Stats.Jonin
+end
+
 -- 基本値に補正を足した能力値を返す。
 -- 能力値ごとに (基本値 + add の合計) × multiply の積 を求め、0 未満にはしない
 function Stats.compute(base: Values, modifiers: { Modifier }): Values
