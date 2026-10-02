@@ -11,6 +11,7 @@ local function newButai(position: Butai.Point): Butai.Butai
 		position = position,
 		heisu = 30,
 		shiki = 50,
+		shikiHosei = 0,
 		jonin = nil,
 		mokutekichi = nil,
 		keiyuten = {},
@@ -126,7 +127,9 @@ test("率いる上忍を失った部隊は残り、士気だけが下がる", fu
 	Butai.loseJonin(butai, 15)
 	expect(butai.jonin).toBe(nil)
 	expect(butai.shiki).toBe(35)
+	expect(butai.shikiHosei).toBe(-15)
 	expect(butai.heisu).toBe(30)
 	Butai.loseJonin(butai, 100)
 	expect(butai.shiki).toBe(0)
+	expect(butai.shikiHosei).toBe(-115)
 end)

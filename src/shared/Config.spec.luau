@@ -702,7 +702,6 @@ local SNAPSHOT = {
 	Butai = {
 		Speed = 12,
 		MoveInterval = 0.5,
-		InitialShiki = 50,
 		JoninGekihaShiki = 15,
 		Heisu = {
 			Test = {
@@ -712,6 +711,18 @@ local SNAPSHOT = {
 				Teki2 = 30,
 				Teki3 = 40,
 			},
+		},
+	},
+	Shiki = {
+		Initial = 50,
+		Min = 0,
+		Max = 100,
+		Radius = 150,
+		Duration = 60,
+		Dekigoto = {
+			JoninGekiha = { Gun = 5, Butai = 15 },
+			KyotenKanraku = { Gun = 5, Butai = 15 },
+			Hikei = { Gun = 2, Butai = 10 },
 		},
 	},
 	Hikei = {

@@ -186,8 +186,28 @@ export type ButaiSection = {
 	Heisu: { [string]: { [string]: number } },
 	Speed: number,
 	MoveInterval: number,
-	InitialShiki: number,
 	JoninGekihaShiki: number,
+}
+
+-- 出来事1種類ぶんの士気の上下の量
+export type DekigotoShiki = {
+	-- 軍全体の士気。得をする軍は上がり、相手の軍は下がる
+	Gun: number,
+	-- 近くの部隊の士気に足す補正の最大値。出来事の位置で最大になり、距離と時間で減る
+	Butai: number,
+}
+
+export type ShikiSection = {
+	Initial: number,
+	Min: number,
+	Max: number,
+	Radius: number,
+	Duration: number,
+	Dekigoto: {
+		JoninGekiha: DekigotoShiki,
+		KyotenKanraku: DekigotoShiki,
+		Hikei: DekigotoShiki,
+	},
 }
 
 export type HikeiSection = {
@@ -237,6 +257,7 @@ export type Config = {
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
+	Shiki: ShikiSection,
 	Hikei: HikeiSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
@@ -1014,8 +1035,7 @@ local Config: Config = {
 	Butai = {
 		Speed = 12, -- 部隊が目的地へ進む速さ（スタッド/秒）。下忍の歩く速さに合わせる
 		MoveInterval = 0.5, -- 部隊の位置を進める間隔（秒）
-		InitialShiki = 50, -- 部隊の開始時の士気。交戦の士気の補正は差で効く（Kosen 節）
-		JoninGekihaShiki = 15, -- 率いる上忍が倒されたときに、残った部隊の士気を下げる量
+		JoninGekihaShiki = 15, -- 率いる上忍が倒されたときに、残った部隊の士気をずっと下げる量
 		Heisu = {
 			-- 試験用ステージ。率いる上忍のいる部隊は 30、本陣の守備は 40
 			Test = {
@@ -1025,6 +1045,22 @@ local Config: Config = {
 				Teki2 = 30,
 				Teki3 = 40,
 			},
+		},
+	},
+
+	-- 士気。軍全体の士気を軍ごとに1本持ち、部隊の士気はそれに近くの出来事の補正を足して決める。計算は Shiki.luau にある。
+	-- 交戦の押し合いは部隊どうしの士気の差で決まる（Kosen 節の ShikiEffect）
+	Shiki = {
+		Initial = 50, -- 軍全体の士気の開始時の値。部隊の士気も同じ値から始まる
+		Min = 0, -- 軍全体と部隊の士気の下限
+		Max = 100, -- 軍全体と部隊の士気の上限
+		Radius = 150, -- 出来事の補正が届く距離（スタッド）。出来事の位置で最大、この距離で 0 になる
+		Duration = 60, -- 出来事の補正が消えるまでの秒数。同じ速さで 0 へ戻る
+		-- 出来事の種類ごとの上下の量
+		Dekigoto = {
+			JoninGekiha = { Gun = 5, Butai = 15 }, -- 上忍の撃破。得をするのは倒した側の軍
+			KyotenKanraku = { Gun = 5, Butai = 15 }, -- 拠点の陥落。得をするのは制圧した側の軍
+			Hikei = { Gun = 2, Butai = 10 }, -- 秘計の発動。得をするのは使った側の軍
 		},
 	},
 

@@ -9,6 +9,8 @@
 -- - 部隊ごとに ReplicatedStorage.Butai の下へ部隊 ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・軍（Gun）・兵数（Heisu）・士気（Shiki）・
 --   率いる上忍（Jonin）をクライアントへ複製する
+-- - 士気は ShikiService が setShikiProvider で渡す関数で、部隊を進める間隔ごとに交戦の計算の前で求め直す。
+--   関数が無ければ、Config.luau の Shiki 節の開始時の値のまま（率いる上忍を失うと下がる）
 -- - 窓口の ShowButai で、部隊の位置に軍の色の柱と、部隊 ID と兵数を出す（確認用）
 -- - 敵味方の部隊が Config.luau の Kosen 節の StartDistance まで近づくと交戦を始め、両部隊はその場で止まる。
 --   相手は1部隊ずつで、交戦中の敵の部隊に近づいた部隊はその手前で待つ（組み方は ReplicatedStorage.Shared.Kosen の match）。
@@ -60,6 +62,8 @@ ButaiService.FOLDER = "Butai"
 -- 確認用の柱の大きさ（スタッド）
 local MARKER_HEIGHT = 14
 local MARKER_WIDTH = 6
+-- 士気をこれ未満しか変えないときは複製し直さない
+local SHIKI_EPSILON = 0.01
 
 -- 足した順の部隊
 local butaiList: { Butai.Butai } = {}
@@ -75,6 +79,8 @@ local kosenList: { KosenState } = {}
 local aiteOf: { [string]: string } = {}
 -- 交戦中の敵の部隊の手前で待っている部隊
 local waiting: { [string]: boolean } = {}
+-- 部隊の今の士気を返す関数（ShikiService が渡す）
+local shikiProvider: ((Butai.Butai) -> number)? = nil
 
 local kosenStartedEvent = Instance.new("BindableEvent")
 -- 交戦を始めたときに、2つの部隊 ID で発火する
@@ -227,16 +233,26 @@ function ButaiService.add(spec: AddSpec): Butai.Butai?
 		gun = spec.gun,
 		position = { x = spec.position.x, z = spec.position.z },
 		heisu = math.max(math.floor(spec.heisu), 0),
-		shiki = Config.Butai.InitialShiki,
+		shiki = Config.Shiki.Initial,
+		shikiHosei = 0,
 		jonin = spec.jonin,
 		mokutekichi = nil,
 		keiyuten = {},
 		kyoten = spec.kyoten,
 		mokutekiKyoten = nil,
 	}
+	local provider = shikiProvider
+	if provider then
+		butai.shiki = provider(butai)
+	end
 	table.insert(butaiList, butai)
 	publish(butai)
 	return butai
+end
+
+-- 部隊の今の士気を返す関数を登録する。部隊を進める間隔ごとに、交戦の計算の前で全部隊の士気を求め直す
+function ButaiService.setShikiProvider(provider: (Butai.Butai) -> number)
+	shikiProvider = provider
 end
 
 -- 部隊 ID の交戦をやめさせる。相手の部隊は交戦していない状態に戻す
@@ -436,6 +452,21 @@ local function removeDefeated()
 	end
 end
 
+-- 全部隊の士気を求め直し、変わった部隊を複製する
+local function refreshShiki()
+	local provider = shikiProvider
+	if not provider then
+		return
+	end
+	for _, butai in butaiList do
+		local shiki = provider(butai)
+		if math.abs(shiki - butai.shiki) >= SHIKI_EPSILON then
+			butai.shiki = shiki
+			publish(butai)
+		end
+	end
+end
+
 -- 交戦していない部隊どうしで、近づいた敵味方に交戦を始めさせ、交戦中の敵の手前の部隊を待たせる
 local function matchAll()
 	local units: { Kosen.Unit } = {}
@@ -466,6 +497,7 @@ local function tick(dt: number)
 	if StageService.getPhase() ~= "Battle" then
 		return
 	end
+	refreshShiki()
 	fightAll(dt)
 	removeDefeated()
 	matchAll()
@@ -486,7 +518,8 @@ local function describe(butai: Butai.Butai): { [string]: any }
 		id = butai.id,
 		gun = butai.gun,
 		heisu = butai.heisu,
-		shiki = butai.shiki,
+		shiki = round(butai.shiki),
+		shikiHosei = butai.shikiHosei,
 		jonin = butai.jonin,
 		position = { round(butai.position.x), round(butai.position.z) },
 		kyoten = butai.kyoten,

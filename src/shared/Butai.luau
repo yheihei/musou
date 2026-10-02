@@ -1,6 +1,7 @@
 --!strict
 -- 戦場の部隊のデータ（ADR 0003）。部隊は位置・兵数・士気を持つデータで、視界の外では位置だけを動かす。
--- 開始時の部隊の構成は Haichi.luau、兵数・速さ・士気の初期値は Config.luau の Butai 節にある。
+-- 開始時の部隊の構成は Haichi.luau、兵数と速さは Config.luau の Butai 節にある。
+-- 士気は軍全体の士気に部隊ごとの補正と近くの出来事の補正を足して求める（Shiki.luau）。
 -- 位置は水平の (x, z) で持ち、高さは持たない（出現させるときに地面の高さに合わせる）。
 -- Roblox の API は使わない。
 
@@ -15,7 +16,10 @@ export type Butai = {
 	position: Point,
 	-- 兵数（0 以上の整数）
 	heisu: number,
+	-- 今の士気。交戦の計算に使う
 	shiki: number,
+	-- 部隊ごとの士気の補正。軍全体の士気に足す（率いる上忍を失うと下がる）
+	shikiHosei: number,
 	-- 率いる上忍のキャラクター ID。率いる上忍のいない部隊は nil
 	jonin: string?,
 	-- 目指す位置。着いたか、目指す位置が無ければ nil
@@ -115,10 +119,12 @@ function Butai.setMokutekichi(butai: Butai, mokutekichi: Point?, keiyuten: { Poi
 	butai.mokutekiKyoten = if mokutekichi then kyoten else nil
 end
 
--- 率いる上忍を失った部隊を残し、士気だけを shikiLoss 下げる（0 未満にはしない）
+-- 率いる上忍を失った部隊を残し、士気だけを shikiLoss 下げる（0 未満にはしない）。
+-- 下げた分は部隊ごとの補正にも残し、軍全体の士気から士気を求め直しても下がったままにする
 function Butai.loseJonin(butai: Butai, shikiLoss: number)
 	butai.jonin = nil
 	butai.shiki = math.max(butai.shiki - shikiLoss, 0)
+	butai.shikiHosei -= shikiLoss
 end
 
 -- 兵数を delta だけ増減する。0 未満にはしない。増減した後の兵数を返す
