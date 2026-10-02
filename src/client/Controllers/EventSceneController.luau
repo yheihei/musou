@@ -7,7 +7,9 @@
 -- - 役者は ReplicatedStorage.Yakusha の雛形を自分の画面だけに写して動かす。雛形の Animate にある待機と歩きの
 --   モーションを流し、位置を動かして歩かせる（新しいモーションは作らない）
 -- - 再生中は、操作（移動・ジャンプ・攻撃・秘計）を止め、HUD を隠し、上下に黒帯を出し、
---   プレイヤーのキャラクターと名札を自分の画面で隠す
+--   プレイヤーのキャラクターと名札を自分の画面で隠す。移動とジャンプは、入力を高い優先度で吸い取り、
+--   自分のキャラクターの歩く速さと跳ぶ高さを 0 にして止める（PlayerModule は StarterPlayer の下にあり、
+--   require すると別の実体を作るおそれがあるので触らない）
 -- - フェーズがイベントシーンでなくなったら（長さが過ぎたか全員がスキップした）、すぐに片付けて元に戻す。
 --   台本を終えてもフェーズが変わらなければ、シーンの長さに END_TIMEOUT 秒を足した時刻で元に戻す
 -- - 途中で人が抜けても、写した役者で最後まで進める
@@ -16,7 +18,6 @@ local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local StarterPlayer = game:GetService("StarterPlayer")
 local TweenService = game:GetService("TweenService")
 
 local EventScenes = require(ReplicatedStorage.Shared.EventScenes)
@@ -94,9 +95,17 @@ type Letterbox = {
 	bottom: Frame,
 }
 
+-- 止める前の自分のキャラクターの歩く速さと跳ぶ高さ
+type Frozen = {
+	humanoid: Humanoid,
+	walkSpeed: number,
+	jumpHeight: number,
+}
+
 local current: Playback? = nil
 local token = 0
 local letterbox: Letterbox? = nil
+local frozen: Frozen? = nil
 
 local startedEvent = Instance.new("BindableEvent")
 -- 再生を始めたときに、シーン ID で発火する
@@ -154,31 +163,35 @@ local function showLetterbox(visible: boolean)
 	end
 end
 
--- Roblox 標準の操作（移動とジャンプ）。見つからなければ nil
-local function getControls(): any
-	local scripts = Players.LocalPlayer:FindFirstChildOfClass("PlayerScripts")
-	local module = (scripts and scripts:FindFirstChild("PlayerModule")) or StarterPlayer:FindFirstChild("PlayerModule")
-	if not module or not module:IsA("ModuleScript") then
-		return nil
+-- 自分のキャラクターの歩く速さと跳ぶ高さを 0 にするか、止める前の値に戻す。
+-- 戻すのは、止めている間にサーバーが値を変えていない（0 のまま）ときだけ
+local function setMovementFrozen(freeze: boolean)
+	if freeze then
+		local character = Players.LocalPlayer.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and not frozen then
+			frozen = { humanoid = humanoid, walkSpeed = humanoid.WalkSpeed, jumpHeight = humanoid.JumpHeight }
+			humanoid.WalkSpeed = 0
+			humanoid.JumpHeight = 0
+		end
+		return
 	end
-	local ok, playerModule = pcall(require, module)
-	if not ok or type(playerModule) ~= "table" or type((playerModule :: any).GetControls) ~= "function" then
-		return nil
-	end
-	return (playerModule :: any):GetControls()
-end
-
--- 操作を止めるか戻す。攻撃などの入力を送らないようにし、移動とジャンプの入力を止める
-local function setControlsEnabled(enabled: boolean)
-	InputController.setEnabled(enabled)
-	local controls = getControls()
-	if controls then
-		if enabled then
-			controls:Enable()
-		else
-			controls:Disable()
+	local saved = frozen
+	frozen = nil
+	if saved and saved.humanoid.Parent then
+		if saved.humanoid.WalkSpeed == 0 then
+			saved.humanoid.WalkSpeed = saved.walkSpeed
+		end
+		if saved.humanoid.JumpHeight == 0 then
+			saved.humanoid.JumpHeight = saved.jumpHeight
 		end
 	end
+end
+
+-- 操作を止めるか戻す。攻撃などの入力を送らないようにし、移動とジャンプの入力を吸い取って止める
+local function setControlsEnabled(enabled: boolean)
+	InputController.setEnabled(enabled)
+	setMovementFrozen(not enabled)
 	if enabled then
 		ContextActionService:UnbindAction(FREEZE_ACTION)
 	else
