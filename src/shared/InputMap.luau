@@ -77,6 +77,15 @@ InputMap.Hikei = {
 	},
 } :: { Binding }
 
+-- イベントシーンのスキップ。再生中だけ受け付け、押したら取り消せない。
+-- Space と A は標準のジャンプと重なるので使わず、左手で押せる F と、戦闘で使わない R1 にする
+InputMap.Skip = {
+	trigger = "Press",
+	keyboard = { "KeyCode.F" },
+	gamepad = { "KeyCode.ButtonR1" },
+	labels = { Keyboard = "F", Gamepad = "R1" },
+} :: Operation
+
 -- ジャンプと秘計の表記。ジャンプは Roblox 標準の割り当てなので表記だけを持つ。秘計は枚をまとめて出す
 InputMap.JumpLabels = { Keyboard = "Space", Gamepad = "A" } :: Labels
 InputMap.HikeiLabels = { Keyboard = "1〜3", Gamepad = "十字キー" } :: Labels
@@ -86,7 +95,7 @@ export type Hint = {
 	labels: Labels,
 }
 
--- 画面の操作の案内。設計のボタン表と同じ順に、操作の名前とボタン表記を並べる
+-- 画面の操作の案内。設計のボタン表と同じ順に、戦闘の操作の名前とボタン表記を並べる（スキップはイベントシーンの画面に出す）
 function InputMap.hints(): { Hint }
 	return {
 		{ name = "通常攻撃", labels = InputMap.Attack.labels },
@@ -125,6 +134,7 @@ function InputMap.all(): { { name: string, device: "keyboard" | "gamepad", input
 	for slot, binding in InputMap.Hikei do
 		add(`Hikei{slot}`, binding)
 	end
+	add("Skip", InputMap.Skip)
 	return result
 end
 

@@ -9,7 +9,8 @@
 -- - イベントシーンのフェーズでは、ステージの定義のシーンを出撃して残っているメンバーに PlayEventScene で流す
 --   （待機中の人には流さない）。役者とカメラの位置は setSceneSettingProvider で登録した関数（EventSceneService）が作り、
 --   シーン ID に添えて送る。シーンの長さ（EventScenes.durationOf）が過ぎるか、見ている全員がスキップを押すと次のフェーズへ進める。
---   スキップの集計は ReplicatedStorage.Shared.SkipVote が持ち、スキップを受けるたびと人が抜けるたびに SkipCount を送る。
+--   スキップの集計は ReplicatedStorage.Shared.SkipVote が持ち、シーンを流し始めたとき、スキップを受けるたび、
+--   人が抜けるたびに SkipCount を送る。
 --   流すシーンが無いか定義に無ければ、すぐ次のフェーズへ進める（敗北のシーンが無ければリザルトへ直行する）
 -- - 戦闘のフェーズには制限時間（Config.luau の Stage 節）があり、終了予定の時刻（workspace:GetServerTimeNow の時刻）を
 --   workspace の Attribute の BattleDeadline に置いてクライアントへ複製する。過ぎたら時間切れで負けにする
@@ -228,6 +229,8 @@ local function beginScene(current: Session, sceneId: string?)
 	for _, member in members do
 		playEventSceneRemote:FireClient(member, scene.id, setting)
 	end
+	-- 再生の始めから「スキップ 0/人数」を出させる
+	sendSkipCount(run)
 	task.delay(duration, function()
 		if current.scene == run then
 			endScene(current)

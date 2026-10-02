@@ -15,7 +15,7 @@ test("入力はすべて KeyCode か UserInputType の名前で書く", function
 end)
 
 test("どの操作にも PC とゲームパッドの入力と表記がある", function()
-	local bindings = { InputMap.Attack, InputMap.ChargeKogeki, InputMap.Guard, InputMap.Ougi }
+	local bindings = { InputMap.Attack, InputMap.ChargeKogeki, InputMap.Guard, InputMap.Ougi, InputMap.Skip }
 	for _, binding in InputMap.Hikei do
 		table.insert(bindings, binding :: any)
 	end
@@ -101,6 +101,19 @@ test("設計のボタン表どおりの割り当て", function()
 	expect(InputMap.Hikei[1].gamepad).toEqual({ "KeyCode.DPadLeft" })
 	expect(InputMap.Hikei[2].gamepad).toEqual({ "KeyCode.DPadUp" })
 	expect(InputMap.Hikei[3].gamepad).toEqual({ "KeyCode.DPadRight" })
+	expect(InputMap.Skip.keyboard).toEqual({ "KeyCode.F" })
+	expect(InputMap.Skip.gamepad).toEqual({ "KeyCode.ButtonR1" })
+end)
+
+test("スキップは押したときに1回送り、取り消しの入力は無い", function()
+	expect(InputMap.Skip.trigger).toBe("Press")
+	local names = {}
+	for _, entry in InputMap.all() do
+		if entry.name == "Skip" then
+			table.insert(names, entry.input)
+		end
+	end
+	expect(names).toEqual({ "KeyCode.F", "KeyCode.ButtonR1" })
 end)
 
 test(
