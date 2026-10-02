@@ -5,6 +5,11 @@
 -- 出撃では spawnAt が CharacterId を書いてから出撃地点に出現し直す（出現し直しは1回）。
 -- ロビーへ戻っても CharacterId は書き換えないので、見た目は最後に出撃したキャラクターのまま残る。
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
+--
+-- - Roblox の自動の出現（Players.CharacterAutoLoads）は止め、出現はここで行う
+-- - 入室した人はロビーに出現する（出撃中に入った待機中の人も）
+-- - 倒れた人（キャラクターが無い人を含む）は、Config.luau の Stage 節の秒数がたつと、
+--   setRespawner で登録した関数で出現し直す。既定はロビー。出撃中のメンバーの行き先は StageService が決める
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,9 +27,18 @@ local PlayerService = {}
 -- 出撃などで出現し直す前に、出現位置の周りを読み込ませるのを待つ秒数の上限
 local STREAM_TIMEOUT = 5
 
+-- 倒れた人を見回る間隔（秒）
+local DOWN_CHECK_INTERVAL = 0.5
+
 -- 今の姿（spawnAt で出現し直している間は、これから出現する姿）のキャラクター ID。
 -- CharacterId の変化の通知は遅れて届くことがあるので、これと同じなら出現し直さない
 local appliedCharacterIds: { [Player]: string } = {}
+-- spawnAt か spawnInLobby で出現し直している最中の人
+local spawning: { [Player]: boolean } = {}
+-- 倒れているのに気づいた時刻（os.clock）
+local downSince: { [Player]: number } = {}
+-- 倒れた人を出現し直させる関数。既定はロビー（start で入れる）
+local respawner: ((Player) -> ())? = nil
 
 -- 使うキャラクターの ID。Attribute が無いか操作キャラクターでなければ既定のキャラクター
 function PlayerService.getCharacterId(player: Player): string
@@ -71,10 +85,13 @@ function PlayerService.consumeOugiStock(player: Player): boolean
 	return ok
 end
 
--- 出現し直して、cframe の位置に cframe の向き（水平の成分）で立たせる。高さは地面に合わせる。
--- characterId を渡すと、使うキャラクターをそれに変えてから出現し直す。
--- StreamingEnabled なので、先に出現位置の周りをクライアントへ読み込ませる。出現し直すまで待つ
-function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: string?)
+-- 出撃したときの撃破数（0）と奥義ゲージ（OugiGauge.initial）に戻す
+function PlayerService.resetForShutsugeki(player: Player)
+	player:SetAttribute("Gekihasu", 0)
+	setOugi(player, OugiGauge.initial())
+end
+
+local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?)
 	local position = cframe.Position
 	local streamed, streamError = pcall(function()
 		player:RequestStreamAroundAsync(position, STREAM_TIMEOUT)
@@ -110,16 +127,65 @@ function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: stri
 	Ground.placeCharacter(character, position.X, position.Z)
 end
 
+-- 出現し直して、cframe の位置に cframe の向き（水平の成分）で立たせる。高さは地面に合わせる。
+-- characterId を渡すと、使うキャラクターをそれに変えてから出現し直す。
+-- StreamingEnabled なので、先に出現位置の周りをクライアントへ読み込ませる。出現し直すまで待つ
+function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: string?)
+	spawning[player] = true
+	local ok, err = pcall(spawnAtNow, player, cframe, characterId)
+	spawning[player] = nil
+	downSince[player] = nil
+	if not ok then
+		warn(`PlayerService: {player.Name} を出現し直せなかった: {err}`)
+	end
+end
+
 -- ロビーの SpawnLocation に出現し直す。出現し直すまで待つ
 function PlayerService.spawnInLobby(player: Player)
 	if not player.Parent then
 		return
 	end
+	spawning[player] = true
 	local ok, err = pcall(function()
 		player:LoadCharacter()
 	end)
+	spawning[player] = nil
+	downSince[player] = nil
 	if not ok then
 		warn(`PlayerService: {player.Name} をロビーに出現し直せなかった: {err}`)
+	end
+end
+
+-- 倒れた人を出現し直させる関数を登録する。登録した関数は、spawnAt か spawnInLobby で出現し直させる
+function PlayerService.setRespawner(fn: (Player) -> ())
+	respawner = fn
+end
+
+-- 倒れているか。キャラクターが無いか、体力が 0 なら倒れている
+local function isDown(player: Player): boolean
+	local character = player.Character
+	if not character or not character.Parent then
+		return true
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	return humanoid == nil or humanoid.Health <= 0
+end
+
+-- 倒れてから Config.Stage.SaishutsugekiDelay 秒たった人を出現し直させる
+local function checkDown()
+	local now = os.clock()
+	for _, player in Players:GetPlayers() do
+		if spawning[player] or not isDown(player) then
+			downSince[player] = nil
+			continue
+		end
+		local since = downSince[player]
+		if not since then
+			downSince[player] = now
+		elseif now - since >= Config.Stage.SaishutsugekiDelay then
+			downSince[player] = nil
+			task.spawn(respawner or PlayerService.spawnInLobby, player)
+		end
 	end
 end
 
@@ -148,6 +214,9 @@ local function onPlayerAdded(player: Player)
 	end)
 	if player.Character then
 		onCharacterAdded(player, player.Character)
+	else
+		-- 自動の出現を止めているので、入室した人をロビーに出す（出撃中に入った待機中の人も）
+		task.spawn(PlayerService.spawnInLobby, player)
 	end
 	-- 使うキャラクターが変わったら、能力値と見た目を当て直すために出現し直す。
 	-- 今の姿がすでにそのキャラクターのとき（spawnAt が出現し直すときを含む）は何もしない
@@ -219,14 +288,24 @@ local function registerDebugCommands()
 end
 
 function PlayerService.start()
+	-- 出現の場所とタイミングはここで決める。止める前に入室して自動で出現した人は、そのまま続ける
+	Players.CharacterAutoLoads = false
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		appliedCharacterIds[player] = nil
+		spawning[player] = nil
+		downSince[player] = nil
 	end)
 	registerDebugCommands()
+	task.spawn(function()
+		while true do
+			task.wait(DOWN_CHECK_INTERVAL)
+			checkDown()
+		end
+	end)
 end
 
 return PlayerService

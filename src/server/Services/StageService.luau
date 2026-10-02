@@ -10,6 +10,11 @@
 --   （待機中の人には流さない）。シーンの長さが過ぎるか、見ている全員がスキップを押すと次のフェーズへ進める。
 --   スキップの集計は ReplicatedStorage.Shared.SkipVote が持ち、スキップを受けるたびと人が抜けるたびに SkipCount を送る。
 --   流すシーンが無いか定義に無ければ、すぐ次のフェーズへ進める（敗北のシーンが無ければリザルトへ直行する）
+-- - 戦闘のフェーズには制限時間（Config.luau の Stage 節）があり、終了予定の時刻（workspace:GetServerTimeNow の時刻）を
+--   workspace の Attribute の BattleDeadline に置いてクライアントへ複製する。過ぎたら時間切れで負けにする
+-- - 出撃すると、出撃するメンバーの撃破数と奥義ゲージを出撃したときの値に戻す
+-- - 倒れた出撃メンバーは、出撃したステージの区画の出撃地点から再出撃する（暫定。兵站線に沿った再出撃は #103 で置き換える）。
+--   ロビーのフェーズの人と待機中の人はロビーに出現する
 -- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、選択を外して全員をロビーへ戻す
 -- - 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す
@@ -18,6 +23,7 @@
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local EventScenes = require(ReplicatedStorage.Shared.EventScenes)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
@@ -49,6 +55,8 @@ type Session = {
 	battleStartedAt: number?,
 	-- 戦闘のフェーズの経過時間（秒）。決着するまでは nil
 	elapsed: number?,
+	-- 戦闘のフェーズの終了予定の時刻（workspace:GetServerTimeNow の時刻）。戦闘のフェーズの外では nil
+	deadline: number?,
 	-- 流しているイベントシーン。流していなければ nil
 	scene: SceneRun?,
 	-- 決着したときに作った StageResult。終了のイベントシーンの後に送る
@@ -63,6 +71,11 @@ export type StartInfo = {
 }
 
 local StageService = {}
+
+-- 終了予定の時刻を置く workspace の Attribute
+StageService.DEADLINE_ATTRIBUTE = "BattleDeadline"
+-- 時間切れを確かめる間隔（秒）
+local DEADLINE_CHECK_INTERVAL = 0.25
 
 local phase: StagePhase.Phase = "Lobby"
 local session: Session? = nil
@@ -103,10 +116,21 @@ function StageService.getMembers(): { Player }
 	return result
 end
 
+-- 戦闘のフェーズの終了予定の時刻を書き、クライアントへ複製する。nil で消す
+local function setDeadline(current: Session?, deadline: number?)
+	if current then
+		current.deadline = deadline
+	end
+	workspace:SetAttribute(StageService.DEADLINE_ATTRIBUTE, deadline)
+end
+
 local function transition(event: StagePhase.Event): boolean
 	local next = StagePhase.next(phase, event)
 	if not next then
 		return false
+	end
+	if next ~= "Battle" then
+		setDeadline(session, nil)
 	end
 	phase = next
 	PartyService.setPhase(StagePhase.toPartyPhase(next))
@@ -134,6 +158,7 @@ end
 local function afterScene(current: Session)
 	if phase == "Battle" then
 		current.battleStartedAt = os.clock()
+		setDeadline(current, workspace:GetServerTimeNow() + Config.Stage.TimeLimit)
 	elseif phase == "Result" then
 		local result = current.result
 		if result then
@@ -212,26 +237,57 @@ local function membersReady(members: { Player }): boolean
 	return true
 end
 
--- メンバーを入った順に出撃地点へ移し、全員が出現し直すまで待つ
-local function moveToShutsugekiChiten(members: { Player }, chiten: { KukakuService.ShutsugekiChiten })
+-- 出撃した順番（1から）のメンバーが立つ出撃地点。地点が無ければ nil
+local function chitenFor(chiten: { KukakuService.ShutsugekiChiten }, index: number): CFrame?
 	local numbers = {}
 	local cframes: { [number]: CFrame } = {}
 	for _, point in chiten do
 		table.insert(numbers, point.number)
 		cframes[point.number] = point.cframe
 	end
+	local number = Mejirushi.shutsugekiNumberOf(index, numbers)
+	return if number then cframes[number] else nil
+end
+
+-- メンバーを入った順に出撃地点へ移し、全員が出現し直すまで待つ
+local function moveToShutsugekiChiten(members: { Player }, chiten: { KukakuService.ShutsugekiChiten })
 	local pending = #members
 	for index, member in members do
-		local number = Mejirushi.shutsugekiNumberOf(index, numbers) :: number
+		local cframe = chitenFor(chiten, index) :: CFrame
 		-- キャラクターを選んでいない人（窓口でステージを指定した出撃）は、今のキャラクターのまま出る
 		local characterId = SelectionService.getCharacter(member)
 		task.spawn(function()
-			PlayerService.spawnAt(member, cframes[number], characterId)
+			PlayerService.spawnAt(member, cframe, characterId)
 			pending -= 1
 		end)
 	end
 	while pending > 0 do
 		task.wait()
+	end
+end
+
+-- 倒れた人を出現し直させる。出撃して残っているメンバーは、出撃したステージの区画の出撃地点から再出撃する
+-- （暫定。兵站線に沿った再出撃は #103 で置き換える）。ロビーのフェーズの人と待機中の人はロビーに出す
+local function respawn(player: Player)
+	local current = session
+	local index = if current and phase ~= "Lobby" then table.find(current.members, player) else nil
+	if current and index and PartyService.isMember(player.UserId) then
+		local stage = Stages.get(current.stageId) :: Stages.Stage
+		local cframe = chitenFor(KukakuService.shutsugekiChiten(stage.kukaku), index)
+		if cframe then
+			PlayerService.spawnAt(player, cframe)
+			return
+		end
+	end
+	PlayerService.spawnInLobby(player)
+end
+
+-- 戦闘のフェーズで終了予定の時刻を過ぎていたら、時間切れで負けにする
+local function checkDeadline()
+	local current = session
+	local deadline = if current then current.deadline else nil
+	if phase == "Battle" and deadline and workspace:GetServerTimeNow() >= deadline then
+		StageService.finish(false, "TimeUp")
 	end
 end
 
@@ -272,10 +328,14 @@ function StageService.shutsugeki(player: Player, stageOverride: string?, startSc
 		members = members,
 		battleStartedAt = nil,
 		elapsed = nil,
+		deadline = nil,
 		scene = nil,
 		result = nil,
 	}
 	session = current
+	for _, member in members do
+		PlayerService.resetForShutsugeki(member)
+	end
 	moveToShutsugekiChiten(members, chiten)
 	if session ~= current then
 		-- 移している間に全員が抜けた
@@ -467,6 +527,20 @@ local function registerDebugCommands()
 			return `{player.Name} のスキップを数えた（{skipped}/{total}、フェーズ {phase}）`
 		end
 	)
+	DebugCommand.register(
+		"SetDeadline",
+		"<残り秒数>",
+		"戦闘のフェーズの残り時間を書き換える。0 にすると時間切れで負ける（確認用）",
+		function(value)
+			local seconds = math.max(DebugCommand.toNumber(value, "残り秒数"), 0)
+			local current = session
+			if phase ~= "Battle" or not current then
+				return `戦闘のフェーズでないので書き換えなかった（フェーズ {phase}）`
+			end
+			setDeadline(current, workspace:GetServerTimeNow() + seconds)
+			return `戦闘のフェーズの残り時間を {seconds} 秒にした`
+		end
+	)
 	DebugCommand.register("DumpStage", "", "ステージの進行の状態を JSON で返す", function()
 		local names = {}
 		for _, member in StageService.getMembers() do
@@ -487,11 +561,13 @@ local function registerDebugCommands()
 				remaining = math.max(run.endsAt - os.clock(), 0),
 			}
 		end
+		local deadline = if current then current.deadline else nil
 		return HttpService:JSONEncode({
 			phase = phase,
 			stage = StageService.getStage(),
 			members = names,
 			elapsed = elapsed,
+			remaining = if deadline then math.max(deadline - workspace:GetServerTimeNow(), 0) else nil,
 			scene = scene,
 		})
 	end)
@@ -510,7 +586,14 @@ function StageService.start()
 	local skipRemote = remotes:WaitForChild("SkipEventScene") :: RemoteEvent
 	skipRemote.OnServerEvent:Connect(onSkipEventScene)
 	PartyService.changed:Connect(onPartyChanged)
+	PlayerService.setRespawner(respawn)
 	registerDebugCommands()
+	task.spawn(function()
+		while true do
+			task.wait(DEADLINE_CHECK_INTERVAL)
+			checkDeadline()
+		end
+	end)
 end
 
 return StageService

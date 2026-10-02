@@ -10,6 +10,10 @@ local SNAPSHOT = {
 	Party = {
 		MaxMembers = 4,
 	},
+	Stage = {
+		TimeLimit = 2400,
+		SaishutsugekiDelay = 5,
+	},
 	Stats = {
 		Characters = {
 			Jin = { MaxHealth = 300, Attack = 12, Defense = 10, WalkSpeed = 24, AttackSpeed = 1 },

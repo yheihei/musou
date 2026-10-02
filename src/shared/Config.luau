@@ -191,6 +191,11 @@ export type PartySection = {
 	MaxMembers: number,
 }
 
+export type StageSection = {
+	TimeLimit: number,
+	SaishutsugekiDelay: number,
+}
+
 export type SerifuSection = {
 	CharInterval: number,
 	HoldTime: number,
@@ -208,6 +213,7 @@ export type SoundSection = {
 
 export type Config = {
 	Party: PartySection,
+	Stage: StageSection,
 	Stats: StatsSection,
 	Combo: ComboSection,
 	Bukishu: BukishuSection,
@@ -232,6 +238,12 @@ local Config: Config = {
 	-- パーティー。1サーバーが1パーティーにあたる。Roblox のサーバーの最大人数も同じ値にする
 	Party = {
 		MaxMembers = 4,
+	},
+
+	-- ステージの進行。戦闘のフェーズの制限時間と、倒れたプレイヤーの再出撃
+	Stage = {
+		TimeLimit = 2400, -- 戦闘のフェーズの制限時間（秒）。過ぎると時間切れで負ける
+		SaishutsugekiDelay = 5, -- 倒れてから再出撃するまでの秒数
 	},
 
 	-- 能力値と与ダメージの計算。能力値の補正は Stats.luau が足す
