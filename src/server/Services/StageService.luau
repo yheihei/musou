@@ -7,7 +7,8 @@
 -- - 出撃すると、待機中でない全員を区画の出撃地点へ移す（周りを読み込ませてから出現し直す）。
 --   選んだキャラクターを Player の Attribute の CharacterId に書いてから出現し直すので、能力値と見た目が切り替わる
 -- - イベントシーンのフェーズでは、ステージの定義のシーンを出撃して残っているメンバーに PlayEventScene で流す
---   （待機中の人には流さない）。シーンの長さが過ぎるか、見ている全員がスキップを押すと次のフェーズへ進める。
+--   （待機中の人には流さない）。役者とカメラの位置は setSceneSettingProvider で登録した関数（EventSceneService）が作り、
+--   シーン ID に添えて送る。シーンの長さ（EventScenes.durationOf）が過ぎるか、見ている全員がスキップを押すと次のフェーズへ進める。
 --   スキップの集計は ReplicatedStorage.Shared.SkipVote が持ち、スキップを受けるたびと人が抜けるたびに SkipCount を送る。
 --   流すシーンが無いか定義に無ければ、すぐ次のフェーズへ進める（敗北のシーンが無ければリザルトへ直行する）
 -- - 戦闘のフェーズには制限時間（Config.luau の Stage 節）があり、終了予定の時刻（workspace:GetServerTimeNow の時刻）を
@@ -87,6 +88,9 @@ local resultRemote: RemoteEvent
 local playEventSceneRemote: RemoteEvent
 local skipCountRemote: RemoteEvent
 
+-- PlayEventScene に添える役者とカメラの位置を作る関数（EventSceneService が登録する）
+local sceneSettingProvider: ((stageId: string, sceneId: string, members: { Player }) -> any)? = nil
+
 local phaseChangedEvent = Instance.new("BindableEvent")
 -- フェーズが変わったときに、新しいフェーズ（StagePhase.Phase）で発火する
 StageService.phaseChanged = phaseChangedEvent.Event
@@ -99,6 +103,12 @@ StageService.finished = finishedEvent.Event
 
 function StageService.getPhase(): StagePhase.Phase
 	return phase
+end
+
+-- PlayEventScene に添える役者とカメラの位置を作る関数を登録する。関数は、ステージ ID・シーン ID・
+-- 出撃して残っているメンバー（出撃した順）を受け取る
+function StageService.setSceneSettingProvider(provider: (stageId: string, sceneId: string, members: { Player }) -> any)
+	sceneSettingProvider = provider
 end
 
 -- 出撃しているステージ。ロビーでは nil
@@ -195,16 +205,30 @@ local function beginScene(current: Session, sceneId: string?)
 		end
 		return
 	end
+	local duration = EventScenes.durationOf(scene)
 	local run: SceneRun = {
 		id = scene.id,
 		vote = SkipVote.new(memberIds()),
-		endsAt = os.clock() + scene.duration,
+		endsAt = os.clock() + duration,
 	}
 	current.scene = run
-	for _, member in StageService.getMembers() do
-		playEventSceneRemote:FireClient(member, scene.id)
+	local members = StageService.getMembers()
+	local setting: any = nil
+	local provider = sceneSettingProvider
+	if provider then
+		local ok, result = pcall(provider, current.stageId, scene.id, members)
+		if ok then
+			setting = result
+		else
+			warn(
+				`StageService: イベントシーン {scene.id} の役者とカメラの位置を作れなかった: {result}`
+			)
+		end
 	end
-	task.delay(scene.duration, function()
+	for _, member in members do
+		playEventSceneRemote:FireClient(member, scene.id, setting)
+	end
+	task.delay(duration, function()
 		if current.scene == run then
 			endScene(current)
 		end

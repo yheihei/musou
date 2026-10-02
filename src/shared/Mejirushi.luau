@@ -13,6 +13,8 @@
 -- | つながりの道筋 | <区画>.Mejirushi.Tsunagari の下のフォルダ（Attribute の KyotenA・KyotenB） | 経由点 1、2… |
 -- | 落石地点 | <区画>.Mejirushi.RakusekiChiten（パーツに Attribute の KyotenA・KyotenB） | 地点 ID |
 -- | 大火計地域 | <区画>.Mejirushi.DaikakeiChiiki（パーツの位置・大きさ・向きが範囲） | 地域 ID |
+-- | イベントシーンのカメラ | <区画>.Mejirushi.EventScene.<シーン ID>.Camera（パーツの位置と向き） | ショットの名前 |
+-- | イベントシーンの役者 | <区画>.Mejirushi.EventScene.<シーン ID>.Yakusha（パーツの位置と向き） | キャラクター ID か Player1〜Player4 |
 --
 -- - 目印のパーツにはタグ Mejirushi を付け、Anchored を true、CanCollide・CanTouch・CanQuery を false にする
 -- - プレースには編集しやすいよう半透明で保存し、サーバーが起動時に透明にする
@@ -41,6 +43,10 @@ Mejirushi.TSUNAGARI = "Tsunagari"
 -- 目印のフォルダの下の、落石地点と大火計地域
 Mejirushi.RAKUSEKI_CHITEN = "RakusekiChiten"
 Mejirushi.DAIKAKEI_CHIIKI = "DaikakeiChiiki"
+-- 目印のフォルダの下の、イベントシーンの目印と、シーンのフォルダの下のカメラと役者
+Mejirushi.EVENT_SCENE = "EventScene"
+Mejirushi.CAMERA = "Camera"
+Mejirushi.YAKUSHA = "Yakusha"
 
 -- つながりの道筋のフォルダと落石地点に付ける、両端の拠点 ID の Attribute
 Mejirushi.KYOTEN_A = "KyotenA"

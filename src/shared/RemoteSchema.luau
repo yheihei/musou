@@ -12,7 +12,7 @@
 -- | SkipEventScene | C→S | なし |
 -- | PartyState | S→C | PartyState |
 -- | SelectionRejected | S→C | RejectReason |
--- | PlayEventScene | S→C | EventSceneId |
+-- | PlayEventScene | S→C | EventSceneId、役者とカメラの位置（EventSceneService.Setting。作れなければ nil） |
 -- | SkipCount | S→C | スキップした人数、全体の人数 |
 -- | PlaySerifu | S→C | CharacterId、Hyojo、SerifuId |
 -- | StageResult | S→C | StageResult |

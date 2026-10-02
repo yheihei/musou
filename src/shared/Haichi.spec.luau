@@ -67,6 +67,38 @@ test("試験用ステージの目印の位置は、すべて試験用区画の�
 	end
 end)
 
+test("向きの度を水平の向きにする（北は z の -、東は x の +）", function()
+	local function rounded(degrees: number): { number }
+		local x, z = Haichi.facingOf(degrees)
+		return { math.round(x * 1000) / 1000, math.round(z * 1000) / 1000 }
+	end
+	expect(rounded(0)).toEqual({ 0, -1 })
+	expect(rounded(90)).toEqual({ 1, 0 })
+	expect(rounded(180)).toEqual({ 0, 1 })
+	expect(rounded(270)).toEqual({ -1, 0 })
+end)
+
+test("区画からはみ出すイベントシーンの目印を見つける", function()
+	local haichi = testHaichi(function(copy)
+		local source = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi
+		local shikenMejirushi = table.clone(source)
+		shikenMejirushi.eventScene = {
+			Shiken = {
+				camera = { Zenkei = { x = 0, y = 10, z = 450, lookX = 0, lookY = 0, lookZ = 0 } },
+				yakusha = { Hayate = { x = -500, z = 0, facing = 0 } },
+			},
+		}
+		copy.shikenMejirushi = shikenMejirushi
+	end)
+	local problems = Haichi.validate(haichi, TEST_STAGE)
+	expect(contains(problems, "イベントシーン Shiken のカメラ Zenkei が区画の範囲からはみ出す")).toBe(
+		true
+	)
+	expect(contains(problems, "イベントシーン Shiken の役者 Hayate が区画の範囲からはみ出す")).toBe(
+		true
+	)
+end)
+
 test("区画からはみ出す目印の位置を見つける", function()
 	local haichi = testHaichi(function(copy)
 		local source = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi

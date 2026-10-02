@@ -52,6 +52,16 @@ export type TsunagariIchi = {
 export type RakusekiIchi = { id: string, kyotenA: string, kyotenB: string, x: number, z: number }
 -- 大火計地域。sizeX と sizeZ は範囲の大きさ
 export type DaikakeiIchi = { id: string, x: number, z: number, sizeX: number, sizeZ: number }
+-- イベントシーンのカメラのショット。カメラの位置（y は地面からの高さ）と、見る先（lookY は地面からの高さ）
+export type ShotIchi = { x: number, y: number, z: number, lookX: number, lookY: number, lookZ: number }
+-- イベントシーンの役者の立ち位置と向き。facing は北から時計回りの度（北は z の -）
+export type YakushaIchi = { x: number, z: number, facing: number }
+export type EventSceneIchi = {
+	-- ショットの名前から引くカメラ
+	camera: { [string]: ShotIchi },
+	-- 役者の名前（キャラクター ID か Player1〜Player4）から引く立ち位置
+	yakusha: { [string]: YakushaIchi },
+}
 export type ShikenMejirushi = {
 	-- 区画の大きさ（プレースの区画の範囲の目印と同じ値にする）
 	kukakuSizeX: number,
@@ -60,6 +70,8 @@ export type ShikenMejirushi = {
 	tsunagari: { TsunagariIchi },
 	rakusekiChiten: { RakusekiIchi },
 	daikakeiChiiki: { DaikakeiIchi },
+	-- シーン ID から引くイベントシーンの目印
+	eventScene: { [string]: EventSceneIchi }?,
 }
 
 -- プレースから読んだ落石地点の目印。Attribute の KyotenA・KyotenB が無ければ nil
@@ -136,6 +148,23 @@ local definitions: { [string]: Haichi } = {
 			daikakeiChiiki = {
 				{ id = "D1", x = 0, z = -140, sizeX = 60, sizeZ = 80 },
 				{ id = "D2", x = 0, z = 180, sizeX = 100, sizeZ = 40 },
+			},
+			-- 試験用のシーン（EventScenes.luau の Shiken）。出撃地点（z = 200）の北で、ハヤテと1人目のプレイヤーが
+			-- 北を向いて並び、北から試験の上忍1が歩いてくる
+			eventScene = {
+				Shiken = {
+					camera = {
+						Zenkei = { x = 24, y = 16, z = 198, lookX = 0, lookY = 3, lookZ = 168 },
+						Hayate = { x = -5, y = 6, z = 174, lookX = -5, lookY = 5, lookZ = 182 },
+						Teki = { x = 0, y = 6, z = 171, lookX = 0, lookY = 5, lookZ = 162 },
+						Player = { x = 5, y = 6, z = 174, lookX = 5, lookY = 5, lookZ = 182 },
+					},
+					yakusha = {
+						Hayate = { x = -5, z = 182, facing = 0 },
+						Player1 = { x = 5, z = 182, facing = 0 },
+						ShikenJonin1 = { x = 0, z = 150, facing = 180 },
+					},
+				},
 			},
 		},
 	},
@@ -236,6 +265,30 @@ local function checkShikenMejirushi(haichi: Haichi, mejirushi: ShikenMejirushi, 
 	end
 	local _, daikakeiProblems = Haichi.checkDaikakeiChiiki(daikakeiIds)
 	table.move(daikakeiProblems, 1, #daikakeiProblems, #problems + 1, problems)
+	for sceneId, scene in mejirushi.eventScene or {} do
+		for name, shot in scene.camera do
+			if not inside(shot.x, shot.z, 0, 0) or not inside(shot.lookX, shot.lookZ, 0, 0) then
+				table.insert(
+					problems,
+					`イベントシーン {sceneId} のカメラ {name} が区画の範囲からはみ出す`
+				)
+			end
+		end
+		for name, ichi in scene.yakusha do
+			if not inside(ichi.x, ichi.z, 0, 0) then
+				table.insert(
+					problems,
+					`イベントシーン {sceneId} の役者 {name} が区画の範囲からはみ出す`
+				)
+			end
+		end
+	end
+end
+
+-- 向き（北から時計回りの度）の水平の向き。北は z の -、東は x の +
+function Haichi.facingOf(degrees: number): (number, number)
+	local angle = math.rad(degrees)
+	return math.sin(angle), -math.cos(angle)
 end
 
 -- 落石地点の目印を確かめ、使える地点の ID と、問題を日本語の文で返す。

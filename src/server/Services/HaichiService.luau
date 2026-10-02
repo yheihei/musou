@@ -5,7 +5,8 @@
 --
 -- - 構成にあって目印が無い拠点は読み込まない。目印が無いつながりは、拠点の間をまっすぐ結ぶ
 -- - 試験用ステージの目印は構成に位置を持ち、テストプレイ中に作る（プレースには保存しない）。
---   目印が無ければ読み込むときに作り、窓口の PlaceShikenMejirushi でも作り直せる
+--   目印が無ければ読み込むときに作り、窓口の PlaceShikenMejirushi でも作り直せる。
+--   イベントシーンのカメラと役者の目印（<区画>.Mejirushi.EventScene）も一緒に作る
 -- - 首領は Stages.luau の両軍の首領を、その軍の本陣から出す
 -- - 落石地点と大火計地域は目印だけで完結させる（<区画>.Mejirushi.RakusekiChiten・DaikakeiChiiki）。
 --   出撃したときに出撃したステージの区画の目印だけを読み、参照する拠点とつながりを構成と突き合わせて警告を出す。
@@ -96,6 +97,11 @@ local RAKUSEKI_SIZE = 4
 local DAIKAKEI_THICKNESS = 2
 local RAKUSEKI_COLOR = Color3.fromRGB(150, 110, 70)
 local DAIKAKEI_COLOR = Color3.fromRGB(230, 90, 30)
+-- 試験用ステージのイベントシーンのカメラと役者の目印の大きさ（スタッド）
+local CAMERA_SIZE = Vector3.new(1, 1, 2)
+local YAKUSHA_SIZE = Vector3.new(2, 5, 1)
+local CAMERA_COLOR = Color3.fromRGB(80, 200, 240)
+local YAKUSHA_COLOR = Color3.fromRGB(240, 240, 120)
 
 -- 出撃しているステージの落石地点と大火計地域。ロビーでは nil
 local currentHikei: LoadedHikeiMejirushi? = nil
@@ -147,7 +153,15 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 			`HaichiService: 区画 {stage.kukaku} の範囲（{bounds.Size.X} × {bounds.Size.Z}）が構成の大きさ（{mejirushi.kukakuSizeX} × {mejirushi.kukakuSizeZ}）と違う`
 		)
 	end
-	for _, name in { Mejirushi.KYOTEN, Mejirushi.TSUNAGARI, Mejirushi.RAKUSEKI_CHITEN, Mejirushi.DAIKAKEI_CHIIKI } do
+	for _, name in
+		{
+			Mejirushi.KYOTEN,
+			Mejirushi.TSUNAGARI,
+			Mejirushi.RAKUSEKI_CHITEN,
+			Mejirushi.DAIKAKEI_CHIIKI,
+			Mejirushi.EVENT_SCENE,
+		}
+	do
 		local old = folder:FindFirstChild(name)
 		if old then
 			old:Destroy()
@@ -214,10 +228,40 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 			daikakeiFolder
 		)
 	end
+	local eventSceneFolder = Instance.new("Folder")
+	eventSceneFolder.Name = Mejirushi.EVENT_SCENE
+	for sceneId, scene in mejirushi.eventScene or {} do
+		local sceneFolder = Instance.new("Folder")
+		sceneFolder.Name = sceneId
+		local cameraFolder = Instance.new("Folder")
+		cameraFolder.Name = Mejirushi.CAMERA
+		for name, shot in scene.camera do
+			local position = groundPoint(center, shot.x, shot.z) + Vector3.new(0, shot.y, 0)
+			local look = groundPoint(center, shot.lookX, shot.lookZ) + Vector3.new(0, shot.lookY, 0)
+			makeMarker(name, CAMERA_SIZE, CFrame.lookAt(position, look), CAMERA_COLOR, cameraFolder)
+		end
+		local yakushaFolder = Instance.new("Folder")
+		yakushaFolder.Name = Mejirushi.YAKUSHA
+		for name, ichi in scene.yakusha do
+			local standing = groundPoint(center, ichi.x, ichi.z) + Vector3.new(0, YAKUSHA_SIZE.Y / 2, 0)
+			local facingX, facingZ = Haichi.facingOf(ichi.facing)
+			makeMarker(
+				name,
+				YAKUSHA_SIZE,
+				CFrame.lookAt(standing, standing + Vector3.new(facingX, 0, facingZ)),
+				YAKUSHA_COLOR,
+				yakushaFolder
+			)
+		end
+		cameraFolder.Parent = sceneFolder
+		yakushaFolder.Parent = sceneFolder
+		sceneFolder.Parent = eventSceneFolder
+	end
 	kyotenFolder.Parent = folder
 	tsunagariFolder.Parent = folder
 	rakusekiFolder.Parent = folder
 	daikakeiFolder.Parent = folder
+	eventSceneFolder.Parent = folder
 	return true
 end
 

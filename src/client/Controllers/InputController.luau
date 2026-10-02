@@ -7,6 +7,7 @@
 -- - ガードは押したときと離したときに送り、ガード中に方向を入れ始めたら緊急回避を送る
 -- - タッチ用のボタンは出さない（スマホの操作は M2 で作る）
 -- - 秘計の 1〜3 キーと重なる道具の持ち物欄は消す
+-- - setEnabled(false) の間（イベントシーンの再生中）は何も送らない。止めるときに押していたガードは離したことにする
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -33,11 +34,27 @@ local RIGHT_CLICK = "UserInputType.MouseButton2"
 local remote: RemoteEvent
 local attackHeld = false
 local guardHeld = false
+-- 入力を送るか。イベントシーンの再生中は false
+local enabled = true
 
 type InputEnum = Enum.KeyCode | Enum.UserInputType
 
 local function send(action: Actions.Action, argument: any?)
-	remote:FireServer(action, argument)
+	if enabled then
+		remote:FireServer(action, argument)
+	end
+end
+
+-- 入力を送るかを切り替える。止めるときは、押しっぱなしの通常攻撃をやめ、押していたガードは離したことにする
+function InputController.setEnabled(value: boolean)
+	if not value and enabled then
+		attackHeld = false
+		if guardHeld then
+			guardHeld = false
+			remote:FireServer(Actions.Guard, false)
+		end
+	end
+	enabled = value
 end
 
 -- 対応表の入力を Enum に直す。右クリックは別に扱うので、含まれていたかを2つ目に返す

@@ -16,6 +16,7 @@ Ui.Layer = {
 	HikeiNotice = 40,
 	UnofficialNotice = 50,
 	Waiting = 60,
+	Letterbox = 65,
 	SkipCount = 70,
 	Dialogue = 80,
 	Selection = 90,

@@ -8,6 +8,7 @@
 -- - 右下に撃破数。その上に持ち込んだ秘計の枚を、枚の順に名前と切るボタンで並べ、使用済みの枚は暗くする。
 --   持ち込みが無いときは出さない
 -- - 体力のゲージの上に操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える（秘計の枚のボタンも）
+-- - イベントシーンの再生中は setVisible で隠す
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,6 +23,7 @@ local Ui = require(script.Parent.Parent.Ui)
 local HUDController = {}
 
 local player = Players.LocalPlayer
+local screen: ScreenGui? = nil
 
 -- 画面の端からの余白と、左下の枠の大きさ（ピクセル）
 local MARGIN = 24
@@ -282,7 +284,7 @@ local function buildGui(): Gui
 
 	local hikeiRow, hikeiSlots = buildHikeiRow()
 
-	Ui.screenGui("HUD", Ui.Layer.Hud, { panel, hint, gekihasu, hikeiRow })
+	screen = Ui.screenGui("HUD", Ui.Layer.Hud, { panel, hint, gekihasu, hikeiRow })
 
 	return {
 		healthFill = healthFill,
@@ -308,6 +310,13 @@ local function disableCoreHealth()
 		task.wait(0.5)
 	end
 	warn("HUDController: 標準の体力表示を消せなかった")
+end
+
+-- HUD を出すか隠すかを切り替える（イベントシーンの再生中は隠す）
+function HUDController.setVisible(visible: boolean)
+	if screen then
+		screen.Enabled = visible
+	end
 end
 
 function HUDController.start()
