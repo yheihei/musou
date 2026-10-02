@@ -1,11 +1,13 @@
 --!strict
--- 画面下部の HUD。自分の体力、奥義ゲージ（次の1本までの量とストックの本数）、撃破数、操作の案内を出す。
--- 体力は Humanoid から、奥義ゲージと撃破数は Player の Attribute（OugiGauge・OugiStock・Gekihasu）から読む。
+-- 画面下部の HUD。自分の体力、奥義ゲージ（次の1本までの量とストックの本数）、撃破数、持ち込んだ秘計の残り、
+-- 操作の案内を出す。体力は Humanoid から、奥義ゲージと撃破数は Player の Attribute（OugiGauge・OugiStock・Gekihasu）から、
+-- 秘計は Player の Attribute（HikeiMochikomi・HikeiUsed。ReplicatedStorage.Shared.Hikei の decodeList で読む）から読む。
 -- Roblox 標準の体力表示は消す。
 --
 -- - 左下に体力のゲージと奥義ゲージ、奥義ゲージの右にストックの本数（上限の数だけ枠を並べる）
--- - 右下に撃破数
--- - 体力のゲージの上に操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える
+-- - 右下に撃破数。その上に持ち込んだ秘計の枚を、枚の順に名前と切るボタンで並べ、使用済みの枚は暗くする。
+--   持ち込みが無いときは出さない
+-- - 体力のゲージの上に操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える（秘計の枚のボタンも）
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,6 +15,7 @@ local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local Ui = require(script.Parent.Parent.Ui)
 
@@ -30,6 +33,11 @@ local LOW_HEALTH = 0.3
 -- ストックの枠の大きさと間隔
 local PIP_SIZE = 18
 local PIP_GAP = 6
+-- 撃破数の枠の高さと、秘計の枚の大きさと間隔
+local GEKIHASU_HEIGHT = 72
+local HIKEI_WIDTH = 112
+local HIKEI_HEIGHT = 58
+local HIKEI_GAP = 6
 
 local TWEEN = TweenInfo.new(0.15)
 
@@ -80,6 +88,16 @@ local function bar(name: string, y: number, height: number, color: Color3): (Fra
 	return frame :: Frame, fill :: Frame
 end
 
+-- 秘計の枚1つ
+type HikeiSlot = {
+	frame: Frame,
+	-- 切るボタンの表記
+	key: TextLabel,
+	name: TextLabel,
+	-- 使用済みの印
+	used: TextLabel,
+}
+
 type Gui = {
 	healthFill: Frame,
 	healthText: TextLabel,
@@ -87,7 +105,75 @@ type Gui = {
 	pips: { Frame },
 	gekihasu: TextLabel,
 	hint: TextLabel,
+	hikeiRow: Frame,
+	hikeiSlots: { HikeiSlot },
 }
+
+-- 持ち込んだ秘計の枚を並べる。枚は秘計のボタンの数だけ作り、持ち込みの無い枚は隠す
+local function buildHikeiRow(): (Frame, { HikeiSlot })
+	local slots: { HikeiSlot } = {}
+	local children: { Instance } = {
+		Ui.create("UIListLayout", {
+			FillDirection = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, HIKEI_GAP),
+		}),
+	}
+	for slot = 1, #InputMap.Hikei do
+		local key = label({
+			Name = "Key",
+			Position = UDim2.fromOffset(8, 4),
+			Size = UDim2.new(1, -16, 0, 18),
+			TextSize = Ui.TextSize.Small,
+			TextColor3 = Ui.Color.Accent,
+		})
+		local name = label({
+			Name = "HikeiName",
+			Position = UDim2.fromOffset(8, 22),
+			Size = UDim2.new(1, -16, 0, 30),
+			Font = Ui.Font.Heavy,
+			TextSize = Ui.TextSize.Large,
+		})
+		local used = label({
+			Name = "Used",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -8, 0, 4),
+			Size = UDim2.fromOffset(60, 18),
+			TextSize = Ui.TextSize.Small,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			TextColor3 = Ui.Color.Disabled,
+			Text = "使用済み",
+			Visible = false,
+		})
+		local frame = Ui.create("Frame", {
+			Name = `Hikei{slot}`,
+			LayoutOrder = slot,
+			Size = UDim2.fromOffset(HIKEI_WIDTH, HIKEI_HEIGHT),
+			BackgroundColor3 = Ui.Color.Panel,
+			BackgroundTransparency = 0.35,
+			BorderSizePixel = 0,
+			Visible = false,
+		}, {
+			Ui.create("UICorner", { CornerRadius = UDim.new(0, 8) }),
+			Ui.create("UIStroke", { Color = Ui.Color.Accent, Thickness = 1 }),
+			key,
+			name,
+			used,
+		})
+		table.insert(slots, { frame = frame :: Frame, key = key, name = name, used = used })
+		table.insert(children, frame)
+	end
+	local row = Ui.create("Frame", {
+		Name = "Hikei",
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -MARGIN, 1, -(MARGIN + GEKIHASU_HEIGHT + 10)),
+		Size = UDim2.fromOffset((HIKEI_WIDTH + HIKEI_GAP) * #InputMap.Hikei, HIKEI_HEIGHT),
+		BackgroundTransparency = 1,
+		Visible = false,
+	}, children)
+	return row :: Frame, slots
+end
 
 local function buildGui(): Gui
 	local healthBar, healthFill = bar("Health", 14, 20, Ui.Color.Health)
@@ -172,7 +258,7 @@ local function buildGui(): Gui
 		Name = "Gekihasu",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -MARGIN, 1, -MARGIN),
-		Size = UDim2.fromOffset(240, 72),
+		Size = UDim2.fromOffset(240, GEKIHASU_HEIGHT),
 		BackgroundTransparency = 1,
 	}, {
 		label({
@@ -194,7 +280,9 @@ local function buildGui(): Gui
 		}),
 	})
 
-	Ui.screenGui("HUD", Ui.Layer.Hud, { panel, hint, gekihasu })
+	local hikeiRow, hikeiSlots = buildHikeiRow()
+
+	Ui.screenGui("HUD", Ui.Layer.Hud, { panel, hint, gekihasu, hikeiRow })
 
 	return {
 		healthFill = healthFill,
@@ -203,6 +291,8 @@ local function buildGui(): Gui
 		pips = pips,
 		gekihasu = gekihasu:FindFirstChild("Count") :: TextLabel,
 		hint = hint,
+		hikeiRow = hikeiRow,
+		hikeiSlots = hikeiSlots,
 	}
 end
 
@@ -241,6 +331,27 @@ function HUDController.start()
 		end
 	end
 
+	-- 持ち込んだ秘計の枚に、名前と切るボタンを出す。使用済みの枚は暗くする
+	local function refreshHikei()
+		local mochikomi = Hikei.decodeList(player:GetAttribute(Hikei.MOCHIKOMI_ATTRIBUTE))
+		local used = Hikei.decodeList(player:GetAttribute(Hikei.USED_ATTRIBUTE))
+		gui.hikeiRow.Visible = #mochikomi > 0
+		for slot, view in gui.hikeiSlots do
+			local id = mochikomi[slot]
+			local definition = if id then Hikei.get(id) else nil
+			view.frame.Visible = definition ~= nil
+			if definition then
+				local isUsed = table.find(used, definition.id) ~= nil
+				view.key.Text = Ui.label(InputMap.Hikei[slot].labels)
+				view.name.Text = definition.displayName
+				view.frame.BackgroundTransparency = if isUsed then 0.75 else 0.35
+				view.key.TextColor3 = if isUsed then Ui.Color.Disabled else Ui.Color.Accent
+				view.name.TextColor3 = if isUsed then Ui.Color.Disabled else Ui.Color.Text
+				view.used.Visible = isUsed
+			end
+		end
+	end
+
 	local healthConnections: { RBXScriptConnection } = {}
 	local function watchHealth(character: Model)
 		for _, connection in healthConnections do
@@ -265,15 +376,19 @@ function HUDController.start()
 	player:GetAttributeChangedSignal("Gekihasu"):Connect(refreshGekihasu)
 	player:GetAttributeChangedSignal("OugiStock"):Connect(refreshOugi)
 	player:GetAttributeChangedSignal("OugiGauge"):Connect(refreshOugi)
+	player:GetAttributeChangedSignal(Hikei.MOCHIKOMI_ATTRIBUTE):Connect(refreshHikei)
+	player:GetAttributeChangedSignal(Hikei.USED_ATTRIBUTE):Connect(refreshHikei)
 	player.CharacterAdded:Connect(watchHealth)
 	if player.Character then
 		task.spawn(watchHealth, player.Character)
 	end
 	Ui.onInputKindChanged(function()
 		gui.hint.Text = hintText()
+		refreshHikei()
 	end)
 	refreshGekihasu()
 	refreshOugi()
+	refreshHikei()
 end
 
 return HUDController
