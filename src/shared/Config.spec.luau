@@ -733,6 +733,26 @@ local SNAPSHOT = {
 		RollOffMaxDistance = 150,
 		HitInterval = 0.06,
 	},
+	GeninProto = {
+		Counts = { 30, 60, 100 },
+		DefaultCount = 30,
+		SpawnRadiusMin = 25,
+		SpawnRadiusMax = 60,
+		WalkSpeed = 12,
+		AttackRange = 4.5,
+		AttackCooldown = 1.5,
+		AttackTime = 0.4,
+		SweepInterval = 2,
+		SweepRadius = 14,
+		MaxHits = 2,
+		KnockbackDistance = 12,
+		KnockbackTime = 0.5,
+		KnockbackHeight = 4,
+		DownTime = 1.5,
+		RespawnDelay = 1,
+		SimRate = 20,
+		SendRate = 10,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }

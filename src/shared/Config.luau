@@ -199,6 +199,28 @@ export type SerifuSection = {
 	BattleQueueMax: number,
 }
 
+-- 下忍の描き方の試作（検証用ブランチだけ）
+export type GeninProtoSection = {
+	Counts: { number },
+	DefaultCount: number,
+	SpawnRadiusMin: number,
+	SpawnRadiusMax: number,
+	WalkSpeed: number,
+	AttackRange: number,
+	AttackCooldown: number,
+	AttackTime: number,
+	SweepInterval: number,
+	SweepRadius: number,
+	MaxHits: number,
+	KnockbackDistance: number,
+	KnockbackTime: number,
+	KnockbackHeight: number,
+	DownTime: number,
+	RespawnDelay: number,
+	SimRate: number,
+	SendRate: number,
+}
+
 export type SoundSection = {
 	Volume: { [string]: number },
 	RollOffMinDistance: number,
@@ -226,6 +248,7 @@ export type Config = {
 	Hikei: HikeiSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
+	GeninProto: GeninProtoSection,
 }
 
 local Config: Config = {
@@ -1037,6 +1060,29 @@ local Config: Config = {
 		RollOffMinDistance = 10, -- 戦闘の効果音が小さくなり始める距離（スタッド）
 		RollOffMaxDistance = 150, -- 戦闘の効果音が聞こえなくなる距離（スタッド）
 		HitInterval = 0.06, -- 1人の攻撃の命中の音を続けて鳴らす最短の間隔（秒）。まとめて当てたときに重ならないように
+	},
+
+	-- 下忍の描き方の試作（検証用ブランチだけ。main には入れない）。案A はサーバーの Humanoid、案B はクライアントで描く。
+	-- 計算は Proto/GeninSim.luau、送る形は Proto/Snapshot.luau にある
+	GeninProto = {
+		Counts = { 30, 60, 100 }, -- 体数の切り替えの候補
+		DefaultCount = 30,
+		SpawnRadiusMin = 25, -- プレイヤーから湧かせる距離の下限と上限（スタッド）
+		SpawnRadiusMax = 60,
+		WalkSpeed = 12, -- 下忍の歩く速さ（下忍の本番の値と同じ）
+		AttackRange = 4.5, -- この距離まで近づくと攻撃する
+		AttackCooldown = 1.5, -- 攻撃の間隔（秒）
+		AttackTime = 0.4, -- 攻撃の動きの長さ（秒）
+		SweepInterval = 2, -- 自動の薙ぎ払いの間隔（秒）。吹き飛びと撃破を一定の頻度で起こす
+		SweepRadius = 14, -- 薙ぎ払いが届く半径（スタッド）
+		MaxHits = 2, -- 薙ぎ払いに何回当たると倒れるか
+		KnockbackDistance = 12, -- 吹き飛ぶ距離（スタッド）
+		KnockbackTime = 0.5, -- 吹き飛んでいる時間（秒）
+		KnockbackHeight = 4, -- 吹き飛びの放物線の高さ（スタッド）
+		DownTime = 1.5, -- 倒れてから消えるまで（秒）
+		RespawnDelay = 1, -- 消えてから湧き直すまで（秒）
+		SimRate = 20, -- 案B のサーバーの計算の回数（1秒あたり）
+		SendRate = 10, -- 案B のクライアントへ送る回数（1秒あたり）
 	},
 }
 
