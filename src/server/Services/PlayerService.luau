@@ -35,6 +35,8 @@ local DOWN_CHECK_INTERVAL = 0.5
 local appliedCharacterIds: { [Player]: string } = {}
 -- spawnAt か spawnInLobby で出現し直している最中の人
 local spawning: { [Player]: boolean } = {}
+-- 出現し直すたびに増やす番号。読み込みを待つ間に後から出現し直しが始まったら、古い方は途中でやめる
+local spawnTokens: { [Player]: number } = {}
 -- 倒れているのに気づいた時刻（os.clock）
 local downSince: { [Player]: number } = {}
 -- 倒れた人を出現し直させる関数。既定はロビー（start で入れる）
@@ -91,7 +93,23 @@ function PlayerService.resetForShutsugeki(player: Player)
 	setOugi(player, OugiGauge.initial())
 end
 
-local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?)
+-- 出現し直しを始める。番号を進めて返す
+local function beginSpawn(player: Player): number
+	local token = (spawnTokens[player] or 0) + 1
+	spawnTokens[player] = token
+	spawning[player] = true
+	return token
+end
+
+-- 出現し直しを終える。後から別の出現し直しが始まっていれば、そちらに任せる
+local function endSpawn(player: Player, token: number)
+	if spawnTokens[player] == token then
+		spawning[player] = nil
+		downSince[player] = nil
+	end
+end
+
+local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?, token: number)
 	local position = cframe.Position
 	local streamed, streamError = pcall(function()
 		player:RequestStreamAroundAsync(position, STREAM_TIMEOUT)
@@ -99,7 +117,7 @@ local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?)
 	if not streamed then
 		warn(`PlayerService: {player.Name} の出現位置の周りを読み込めなかった: {streamError}`)
 	end
-	if not player.Parent then
+	if not player.Parent or spawnTokens[player] ~= token then
 		return
 	end
 	if characterId then
@@ -109,6 +127,9 @@ local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?)
 	local loaded, loadError = pcall(function()
 		player:LoadCharacter()
 	end)
+	if spawnTokens[player] ~= token then
+		return
+	end
 	local character = player.Character
 	if not loaded or not character then
 		warn(`PlayerService: {player.Name} を出現し直せなかった: {loadError}`)
@@ -131,10 +152,9 @@ end
 -- characterId を渡すと、使うキャラクターをそれに変えてから出現し直す。
 -- StreamingEnabled なので、先に出現位置の周りをクライアントへ読み込ませる。出現し直すまで待つ
 function PlayerService.spawnAt(player: Player, cframe: CFrame, characterId: string?)
-	spawning[player] = true
-	local ok, err = pcall(spawnAtNow, player, cframe, characterId)
-	spawning[player] = nil
-	downSince[player] = nil
+	local token = beginSpawn(player)
+	local ok, err = pcall(spawnAtNow, player, cframe, characterId, token)
+	endSpawn(player, token)
 	if not ok then
 		warn(`PlayerService: {player.Name} を出現し直せなかった: {err}`)
 	end
@@ -145,12 +165,11 @@ function PlayerService.spawnInLobby(player: Player)
 	if not player.Parent then
 		return
 	end
-	spawning[player] = true
+	local token = beginSpawn(player)
 	local ok, err = pcall(function()
 		player:LoadCharacter()
 	end)
-	spawning[player] = nil
-	downSince[player] = nil
+	endSpawn(player, token)
 	if not ok then
 		warn(`PlayerService: {player.Name} をロビーに出現し直せなかった: {err}`)
 	end
@@ -161,14 +180,18 @@ function PlayerService.setRespawner(fn: (Player) -> ())
 	respawner = fn
 end
 
--- 倒れているか。キャラクターが無いか、体力が 0 なら倒れている
+-- 倒れているか。キャラクターが無いか、体力が 0 か、Humanoid が Dead の状態か、HumanoidRootPart が無ければ
+-- 倒れている（奈落に落ちて体の部品が消えた場合も含める）
 local function isDown(player: Player): boolean
 	local character = player.Character
 	if not character or not character.Parent then
 		return true
 	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	return humanoid == nil or humanoid.Health <= 0
+	if humanoid == nil or humanoid.Health <= 0 or humanoid:GetState() == Enum.HumanoidStateType.Dead then
+		return true
+	end
+	return character:FindFirstChild("HumanoidRootPart") == nil
 end
 
 -- 倒れてから Config.Stage.SaishutsugekiDelay 秒たった人を出現し直させる
@@ -297,6 +320,7 @@ function PlayerService.start()
 	Players.PlayerRemoving:Connect(function(player)
 		appliedCharacterIds[player] = nil
 		spawning[player] = nil
+		spawnTokens[player] = nil
 		downSince[player] = nil
 	end)
 	registerDebugCommands()

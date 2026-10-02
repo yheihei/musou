@@ -18,6 +18,9 @@ export type Event =
 
 local StagePhase = {}
 
+-- 戦闘のフェーズの終了予定の時刻（workspace:GetServerTimeNow の時刻）を置く workspace の Attribute。戦闘の外では無い
+StagePhase.DEADLINE_ATTRIBUTE = "BattleDeadline"
+
 StagePhase.phases = { "Lobby", "StartScene", "Battle", "EndScene", "Result" } :: { Phase }
 StagePhase.events = { "Shutsugeki", "SceneEnd", "Finish", "ReturnToLobby", "Abort" } :: { Event }
 

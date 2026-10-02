@@ -13,7 +13,8 @@
 --   ほかの行動が終わったときにまだ押していれば、ガードに戻る
 -- - 緊急回避はガードの最中だけ出せ、入れた方向へサーバーの拘束で動かす。続けて出すほど後隙が伸びる
 --   （計算は ReplicatedStorage.Shared.KinkyuKaihi）
--- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする
+-- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする。
+--   受けておいた先行入力も捨て、ガードを押したままでもガードに戻さない（始まっていた行動は最後まで進める）
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -362,10 +363,17 @@ function ActionService.start()
 
 	-- 終わった行動を待機に戻し、続きの行動と先行入力を始める。待機でガードを押したままならガードに戻る
 	RunService.Heartbeat:Connect(function()
+		local inScene = PartyService.getPhase() == "EventScene"
 		for player, machine in machines do
+			if inScene and machine.buffered ~= nil then
+				local dropped = table.clone(machine)
+				dropped.buffered = nil
+				machines[player] = dropped
+				machine = dropped
+			end
 			if machine.action ~= nil or machine.buffered ~= nil then
 				advance(player, nil)
-			elseif guardHeld[player] and getHumanoid(player) then
+			elseif guardHeld[player] and getHumanoid(player) and not inScene then
 				advance(player, Actions.Guard)
 			end
 		end

@@ -72,8 +72,6 @@ export type StartInfo = {
 
 local StageService = {}
 
--- 終了予定の時刻を置く workspace の Attribute
-StageService.DEADLINE_ATTRIBUTE = "BattleDeadline"
 -- 時間切れを確かめる間隔（秒）
 local DEADLINE_CHECK_INTERVAL = 0.25
 
@@ -121,7 +119,7 @@ local function setDeadline(current: Session?, deadline: number?)
 	if current then
 		current.deadline = deadline
 	end
-	workspace:SetAttribute(StageService.DEADLINE_ATTRIBUTE, deadline)
+	workspace:SetAttribute(StagePhase.DEADLINE_ATTRIBUTE, deadline)
 end
 
 local function transition(event: StagePhase.Event): boolean
