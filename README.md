@@ -92,7 +92,7 @@ end)
 ### テスト用のサーバーコマンド
 
 動いているサーバーのサービスを、`ServerStorage.DebugCommand`（BindableFunction）から操作できる。
-Studio MCP の `execute_luau`（Server）、テストプレイ中のコマンドバー、公開サーバーの開発者コンソールのサーバーのコマンドから呼ぶ。
+テストプレイ中のコマンドバー（サーバー表示）か、公開サーバーの開発者コンソールのサーバーのコマンドから呼ぶ。
 `ServerStorage` はクライアントへ複製されず、公開サーバーの開発者コンソールでサーバーのコマンドを実行できるのは所有者だけ。
 
 ```lua
@@ -103,7 +103,26 @@ print(DebugCommand:Invoke("SetOugiGauge", "Player1", 100))
 
 - 未登録の名前を渡すと、登録済みのコマンドの一覧が返る
 - コマンドが失敗したときは、エラーを投げずに失敗の内容を文字列で返す
-- プレイヤーは名前（`Player.Name`）で指定する
+- プレイヤーは名前（`Player.Name`）で指定する。Studio のテストプレイでは自分のユーザー名になる
+
+Studio MCP の `execute_luau` は `Invoke` を呼べない（2026-10-02 から Capabilities で拒否される）。
+そのため Studio では、`ServerStorage.DebugCommand` の Attribute `Request` に命令を書くと、サーバーが窓口を呼んで結果を `Response` に書く。
+
+```lua
+-- execute_luau（Server）の1回目で命令を書く
+local HttpService = game:GetService("HttpService")
+local DebugCommand = game:GetService("ServerStorage").DebugCommand
+DebugCommand:SetAttribute("Request", HttpService:JSONEncode({ id = "1", args = { "DumpParty" } }))
+```
+
+```lua
+-- 2回目で結果を読む（{"id":"1","results":[...]}）
+return game:GetService("ServerStorage").DebugCommand:GetAttribute("Response")
+```
+
+- 入口は Studio だけで受け付ける
+- `execute_luau` の中で結果を待つとタイムアウトするので、書く呼び出しと読む呼び出しを分ける
+- 命令は1つずつ書き、`Response` の `id` が変わってから次を書く
 
 コマンドは各サービスが `DebugCommand.register(名前, 引数の説明, 説明, 関数)` で登録する（`src/server/DebugCommand.luau`）。
 

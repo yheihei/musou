@@ -1,12 +1,19 @@
 --!strict
 -- テスト用のサーバーコマンドの窓口。ServerStorage.DebugCommand（BindableFunction）から、
--- 各サービスが登録した関数を名前で呼ぶ。Studio MCP の execute_luau（Server）や
+-- 各サービスが登録した関数を名前で呼ぶ。テストプレイ中のコマンドバーや、
 -- 開発者コンソールのサーバーのコマンドから使う。ServerStorage はクライアントへ複製されない。
 --
 --   game.ServerStorage.DebugCommand:Invoke("SetOugiGauge", "Player1", 100)
 --   game.ServerStorage.DebugCommand:Invoke("Help")
+--
+-- Studio MCP の execute_luau は Invoke を呼べない（Capabilities で拒否される）ので、Studio では Attribute の入口も設ける。
+-- ServerStorage.DebugCommand の Attribute の Request に、JSON で {"id": 任意の文字列, "args": [コマンド名, 引数...]} を書くと、
+-- サーバーが窓口を呼び、結果を Attribute の Response に {"id": 同じ id, "results": [結果の文字列...]} で書く。
+-- 命令は1つずつ書き、Response の id が変わってから次を書く（続けて書くと前の命令を読み落とす）
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ServerStorage = game:GetService("ServerStorage")
 
 type Handler = (...any) -> ...any
@@ -86,6 +93,33 @@ function DebugCommand.invoke(name: unknown, ...: any): ...any
 	return table.unpack(results, 2, results.n)
 end
 
+-- Attribute の入口の名前
+DebugCommand.REQUEST_ATTRIBUTE = "Request"
+DebugCommand.RESPONSE_ATTRIBUTE = "Response"
+
+-- Attribute の Request に書かれた命令で窓口を呼び、結果を Response に書く
+local function handleRequest(bindable: BindableFunction)
+	local raw = bindable:GetAttribute(DebugCommand.REQUEST_ATTRIBUTE)
+	if type(raw) ~= "string" then
+		return
+	end
+	local decoded, request = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	local id = if decoded and type(request) == "table" then request.id else nil
+	local args = if decoded and type(request) == "table" and type(request.args) == "table" then request.args else nil
+	local results = {}
+	if not args then
+		table.insert(results, `命令の形が正しくない（{raw}）`)
+	else
+		local packed = table.pack(DebugCommand.invoke(table.unpack(args)))
+		for index = 1, packed.n do
+			table.insert(results, tostring(packed[index]))
+		end
+	end
+	bindable:SetAttribute(DebugCommand.RESPONSE_ATTRIBUTE, HttpService:JSONEncode({ id = id, results = results }))
+end
+
 function DebugCommand.start()
 	DebugCommand.register("Help", "", "登録済みのコマンドの一覧を返す", function()
 		return DebugCommand.list()
@@ -93,6 +127,12 @@ function DebugCommand.start()
 
 	local bindable = ServerStorage:WaitForChild("DebugCommand") :: BindableFunction
 	bindable.OnInvoke = DebugCommand.invoke
+	-- Attribute の入口は Studio だけで受け付ける（公開サーバーでは開発者コンソールから Invoke を呼ぶ）
+	if RunService:IsStudio() then
+		bindable:GetAttributeChangedSignal(DebugCommand.REQUEST_ATTRIBUTE):Connect(function()
+			task.spawn(handleRequest, bindable)
+		end)
+	end
 end
 
 return DebugCommand
