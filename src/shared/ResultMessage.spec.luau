@@ -1,0 +1,106 @@
+--!strict
+local RemoteSchema = require("./RemoteSchema")
+local ResultMessage = require("./ResultMessage")
+local Stages = require("./Stages")
+local testkit = require("@testkit")
+
+local test, expect = testkit.test, testkit.expect
+
+local function result(): any
+	return {
+		victory = true,
+		reason = "TekigunShuryoGekiha",
+		elapsed = 754.2,
+		members = {
+			{ userId = 1, name = "yhei_hei", gekihasu = 120, newlyUnlocked = { "Iga1" } },
+			{ userId = 2, name = "Player2", gekihasu = 0, newlyUnlocked = {} },
+		},
+	}
+end
+
+test("勝敗の理由のすべてに画面に出す文がある", function()
+	for _, reason in RemoteSchema.resultReasons do
+		expect(#(ResultMessage.reasons[reason] or "") > 0).toBe(true)
+	end
+end)
+
+test("勝敗の見出しは勝利か敗北", function()
+	expect(ResultMessage.headline(true)).toBe("勝利")
+	expect(ResultMessage.headline(false)).toBe("敗北")
+end)
+
+test("勝敗の理由を文にし、表に無い理由はそのまま返す", function()
+	expect(ResultMessage.reasonOf("TekigunShuryoGekiha")).toBe("敵軍の首領を討ち取った")
+	expect(ResultMessage.reasonOf("TimeUp")).toBe("時間切れ")
+	expect(ResultMessage.reasonOf("Nowhere")).toBe("Nowhere")
+end)
+
+test("経過時間は分:秒で書き、分の桁はそろえない", function()
+	expect(ResultMessage.formatElapsed(0)).toBe("0:00")
+	expect(ResultMessage.formatElapsed(5)).toBe("0:05")
+	expect(ResultMessage.formatElapsed(65)).toBe("1:05")
+	expect(ResultMessage.formatElapsed(754)).toBe("12:34")
+	expect(ResultMessage.formatElapsed(2400)).toBe("40:00")
+end)
+
+test("経過時間の秒の端数は切り捨てる", function()
+	expect(ResultMessage.formatElapsed(0.9)).toBe("0:00")
+	expect(ResultMessage.formatElapsed(59.99)).toBe("0:59")
+	expect(ResultMessage.formatElapsed(754.9)).toBe("12:34")
+end)
+
+test("経過時間は 60 分を超えても分で数える", function()
+	expect(ResultMessage.formatElapsed(3600)).toBe("60:00")
+	expect(ResultMessage.formatElapsed(3725.5)).toBe("62:05")
+	expect(ResultMessage.formatElapsed(4500)).toBe("75:00")
+end)
+
+test("負の経過時間と数でない経過時間は 0 秒にする", function()
+	expect(ResultMessage.formatElapsed(-1)).toBe("0:00")
+	expect(ResultMessage.formatElapsed(-0.5)).toBe("0:00")
+	expect(ResultMessage.formatElapsed(0 / 0)).toBe("0:00")
+end)
+
+test("開放したステージは順番と表示名で書き、表に無い ID はそのまま返す", function()
+	local stage = Stages.get("Iga1") :: Stages.Stage
+	expect(ResultMessage.stageName("Iga1")).toBe(`第{stage.order}ステージ　{stage.displayName}`)
+	expect(ResultMessage.stageName("Nowhere")).toBe("Nowhere")
+end)
+
+test("待ちの文はリーダーの名前を入れ、名前が分からなければ省く", function()
+	expect(ResultMessage.waitingFor("yhei_hei")).toBe("リーダーの yhei_hei が次の行動を選んでいます")
+	expect(ResultMessage.waitingFor(nil)).toBe("リーダーが次の行動を選んでいます")
+end)
+
+test("正しい形の結果を受け付ける", function()
+	expect(ResultMessage.isResult(result())).toBe(true)
+	local noMembers = result()
+	noMembers.members = {}
+	expect(ResultMessage.isResult(noMembers)).toBe(true)
+	local unknownReason = result()
+	unknownReason.reason = "Nowhere"
+	expect(ResultMessage.isResult(unknownReason)).toBe(true)
+end)
+
+test("形の違う結果は受け付けない", function()
+	expect(ResultMessage.isResult(nil)).toBe(false)
+	expect(ResultMessage.isResult("Victory")).toBe(false)
+	local noVictory = result()
+	noVictory.victory = nil
+	expect(ResultMessage.isResult(noVictory)).toBe(false)
+	local textElapsed = result()
+	textElapsed.elapsed = "12:34"
+	expect(ResultMessage.isResult(textElapsed)).toBe(false)
+	local noMembers = result()
+	noMembers.members = nil
+	expect(ResultMessage.isResult(noMembers)).toBe(false)
+	local noGekihasu = result()
+	noGekihasu.members[2].gekihasu = nil
+	expect(ResultMessage.isResult(noGekihasu)).toBe(false)
+	local numberStage = result()
+	numberStage.members[1].newlyUnlocked = { 1 }
+	expect(ResultMessage.isResult(numberStage)).toBe(false)
+	local textMember = result()
+	textMember.members = { "yhei_hei" }
+	expect(ResultMessage.isResult(textMember)).toBe(false)
+end)

@@ -556,6 +556,40 @@ local function registerDebugCommands()
 		end
 	)
 	DebugCommand.register(
+		"SendStageResult",
+		"[ステージ ID...]",
+		"リザルトのフェーズで、StageResult を出撃して残っているメンバーへ送り直す。ステージ ID を渡すと、全員の新しく開放したステージをそれに置き換える（画面の確認用。進行は変えない）",
+		function(...)
+			local stageIds: { string } = {}
+			for _, value in { ... } do
+				if not RemoteSchema.isId(value) then
+					error(`ステージ ID の形が正しくない（{tostring(value)}）`, 0)
+				end
+				table.insert(stageIds, value :: string)
+			end
+			local current = session
+			local result = if current then current.result else nil
+			if phase ~= "Result" or not result then
+				return `リザルトのフェーズでないので送らなかった（フェーズ {phase}）`
+			end
+			local sent = table.clone(result)
+			if #stageIds > 0 then
+				sent.members = {}
+				for _, member in result.members do
+					local copy = table.clone(member)
+					copy.newlyUnlocked = stageIds
+					table.insert(sent.members, copy)
+				end
+			end
+			local members = StageService.getMembers()
+			for _, member in members do
+				resultRemote:FireClient(member, sent)
+			end
+			local unlocked = if #stageIds > 0 then table.concat(stageIds, "、") else "決着したときのまま"
+			return `StageResult を {#members} 人に送り直した（新しく開放したステージ {unlocked}）`
+		end
+	)
+	DebugCommand.register(
 		"ReturnToLobby",
 		"<プレイヤー名>",
 		"Remotes.ReturnToLobby と同じ処理で、リザルトからロビーへ戻る",

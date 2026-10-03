@@ -186,6 +186,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、出撃メンバーなら区画の出撃地点から、ほかの人はロビーから出る
 - イベントシーンは、サーバーが出撃メンバーに `PlayEventScene` で流し、長さが過ぎるか全員がスキップを押すと次のフェーズへ進める。シーンの ID と長さは `src/shared/EventScenes.luau`、スキップの集計は `src/shared/SkipVote.luau` にある。窓口の `StartEventScene Shiken` で、試験用のシーンを流して出撃する
 - 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送ると選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
+- リザルト画面（ResultController）は、`StageResult` を受けた人にだけ、勝敗と理由・経過時間・全員の撃破数・本人が開放したステージを出す。`Retry` と `ReturnToLobby` のボタンはリーダーにだけ出し、ほかの人には待ちの文を出す。文は `src/shared/ResultMessage.luau` にある。窓口の `SendStageResult Iga1` で、開放したステージを差し替えた結果を送り直して確かめる
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
 - BGM は `src/shared/Bgm.luau` の登録表に場面（ロビー・イベントシーン・戦闘・勝利・敗北）ごとに置き、クライアントの BgmController が本人にだけ流す。場面は `Bgm.sceneFor` が PartyState のフェーズと StageResult の勝敗から決め、待機中の人はロビーの曲にする。切り替えはフェードで、音量とフェードの長さは `Config.luau` の Bgm 節。流している場面は `SoundService.Bgm` の Attribute `Scene` で確かめる
