@@ -104,4 +104,18 @@ function Heitansen.isConnected(result: Result, gun: Gun.Gun, kyotenId: string): 
 	return result[gun].connected[kyotenId] == true
 end
 
+-- つながりが入っている兵站線の軍。両端がその軍の兵站線につながった拠点で、その軍が通れるつながりなら、その軍。
+-- どちらの兵站線にも入っていなければ nil
+function Heitansen.gunOf(result: Result, tsunagari: Tsunagari): Gun.Gun?
+	for _, gun in Gun.list do
+		local blocked = tsunagari.blocked
+		local passable = not (blocked and blocked[gun])
+		local connected = result[gun].connected
+		if passable and connected[tsunagari.kyotenA] and connected[tsunagari.kyotenB] then
+			return gun
+		end
+	end
+	return nil
+end
+
 return Heitansen

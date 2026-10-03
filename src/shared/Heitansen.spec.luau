@@ -147,3 +147,21 @@ test("相手の軍は Gun.opponentOf で引ける", function()
 	expect(Gun.isGun("mikatagun")).toBe(false)
 	expect(Gun.isGun(nil)).toBe(false)
 end)
+
+test("両端が同じ軍の兵站線につながったつながりは、その軍の兵站線に入る", function()
+	local result = Heitansen.compute(kyotenList(), tsunagariList())
+	expect(Heitansen.gunOf(result, { kyotenA = "MikataHonjin", kyotenB = "A" })).toBe("Mikatagun")
+	expect(Heitansen.gunOf(result, { kyotenA = "A", kyotenB = "D" })).toBe("Mikatagun")
+	expect(Heitansen.gunOf(result, { kyotenA = "C", kyotenB = "TekiHonjin" })).toBe("Tekigun")
+	-- 両軍の境目のつながりは、どちらの兵站線にも入らない
+	expect(Heitansen.gunOf(result, { kyotenA = "B", kyotenB = "C" })).toBe(nil)
+end)
+
+test("通れないつながりと、孤立した拠点へのつながりは兵站線に入らない", function()
+	local list = tsunagariList()
+	list[1].blocked = { Mikatagun = true }
+	local result = Heitansen.compute(kyotenList(), list)
+	expect(Heitansen.gunOf(result, list[1])).toBe(nil)
+	expect(Heitansen.gunOf(result, list[2])).toBe(nil)
+	expect(Heitansen.isConnected(result, "Mikatagun", "B")).toBe(false)
+end)

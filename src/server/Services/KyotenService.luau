@@ -19,10 +19,12 @@
 --   その部隊が範囲の中にいなければ、拠点の中心に守備の部隊（Shubi<拠点 ID>）を作る
 -- - 守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間、
 --   時間に比例して耐久が減る。仮の湧き処理の敵は攻める軍に数えない
+-- - 孤立した拠点は守備を補充しない。孤立は HeitansenService が setKoritsuProvider で渡す関数で引く
+-- - 拠点を作り終えたら loaded で知らせる（HeitansenService が兵站線を求め始める）
 -- - 拠点ごとに ReplicatedStorage.Kyoten の下へ拠点 ID の名前で Configuration を置き、Attribute で
 --   軍（Gun）・耐久（Taikyu）・耐久の上限（MaxTaikyu）・本陣か（Honjin）・
---   中心（Position。Vector2 の X と Y にワールドの X と Z）・範囲の大きさ（Size。Vector2 の X と Y に大きさの X と Z）を
---   クライアントへ複製する
+--   中心（Position。Vector2 の X と Y にワールドの X と Z）・範囲の大きさ（Size。Vector2 の X と Y に大きさの X と Z）・
+--   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
 
@@ -62,6 +64,10 @@ local LABEL_HEIGHT = 12
 
 -- 配置の順の拠点
 local entries: { Entry } = {}
+-- 出撃したステージの配置。配置の構成が無いステージとロビーでは nil
+local haichi: HaichiService.Loaded? = nil
+-- 拠点が孤立しているかと、孤立しない拠点かを返す関数（HeitansenService が渡す）
+local koritsuProvider: ((id: string) -> (boolean, boolean))? = nil
 -- 拠点 ID から引く、補充を受ける守備の部隊の ID
 local hojuButai: { [string]: string } = {}
 -- 拠点 ID から引く、前に補充してからの秒数
@@ -76,6 +82,18 @@ KyotenService.taikyuChanged = taikyuChangedEvent.Event
 local seiatsuEvent = Instance.new("BindableEvent")
 -- 拠点が制圧されたときに、拠点 ID・制圧した軍・元の軍で発火する
 KyotenService.seiatsu = seiatsuEvent.Event
+local loadedEvent = Instance.new("BindableEvent")
+-- 出撃したステージの拠点を作り終えたときに、ステージ ID で発火する
+KyotenService.loaded = loadedEvent.Event
+
+-- 拠点が孤立しているかと、孤立しない拠点か。関数が無ければどちらも false
+local function koritsuOf(id: string): (boolean, boolean)
+	local provider = koritsuProvider
+	if provider then
+		return provider(id)
+	end
+	return false, false
+end
 
 local function find(id: string): Entry?
 	for _, entry in entries do
@@ -98,7 +116,9 @@ end
 
 local function labelOf(entry: Entry): string
 	local state = entry.state
-	return `{state.id} {Kyoten.displayTaikyu(state.taikyu)}/{Kyoten.maxTaikyu(state.honjin)}`
+	local koritsu = koritsuOf(state.id)
+	local suffix = if koritsu then " 孤立" else ""
+	return `{state.id} {Kyoten.displayTaikyu(state.taikyu)}/{Kyoten.maxTaikyu(state.honjin)}{suffix}`
 end
 
 local function updateMarker(entry: Entry)
@@ -165,9 +185,29 @@ local function publish(entry: Entry)
 	config:SetAttribute("Honjin", state.honjin)
 	config:SetAttribute("Position", Vector2.new(center.X, center.Z))
 	config:SetAttribute("Size", Vector2.new(entry.size.X, entry.size.Z))
+	local koritsu, neverIsolated = koritsuOf(state.id)
+	config:SetAttribute("Koritsu", koritsu)
+	config:SetAttribute("NeverIsolated", neverIsolated)
 	if showMarkers then
 		updateMarker(entry)
 	end
+end
+
+-- 拠点が孤立しているかと、孤立しない拠点かを返す関数を登録する。孤立した拠点は守備を補充しない
+function KyotenService.setKoritsuProvider(provider: (id: string) -> (boolean, boolean))
+	koritsuProvider = provider
+end
+
+-- 全部の拠点を複製し直す。孤立が変わったときに HeitansenService が呼ぶ
+function KyotenService.republish()
+	for _, entry in entries do
+		publish(entry)
+	end
+end
+
+-- 出撃したステージの配置。配置の構成が無いステージとロビーでは nil
+function KyotenService.getHaichi(): HaichiService.Loaded?
+	return haichi
 end
 
 -- 拠点の今の状態（表はそのもの）。出撃したステージの拠点に無ければ nil
@@ -391,7 +431,9 @@ local function tick(dt: number)
 	end
 	for _, entry in table.clone(entries) do
 		local id = entry.state.id
-		local elapsed = (hojuElapsed[id] or 0) + dt
+		-- 孤立した拠点は補充しない。兵站線がつながったら、そこから間隔を数え直す
+		local koritsu = koritsuOf(id)
+		local elapsed = if koritsu then 0 else (hojuElapsed[id] or 0) + dt
 		if elapsed >= Config.Kyoten.HojuInterval then
 			elapsed -= Config.Kyoten.HojuInterval
 			hoju(entry)
@@ -409,6 +451,7 @@ local function clear()
 	table.clear(entries)
 	table.clear(hojuButai)
 	table.clear(hojuElapsed)
+	haichi = nil
 	folder:ClearAllChildren()
 	local container = markerFolder
 	if container then
@@ -426,6 +469,7 @@ local function onStarted(info: StageService.StartInfo)
 	if not loaded then
 		return
 	end
+	haichi = loaded
 	for _, kyoten in loaded.kyoten do
 		local entry: Entry = {
 			state = Kyoten.new(kyoten.id, kyoten.honjin, kyoten.gun),
@@ -442,6 +486,7 @@ local function onStarted(info: StageService.StartInfo)
 			hojuButai[butai.kyoten] = butai.id
 		end
 	end
+	loadedEvent:Fire(info.stageId)
 end
 
 local function describe(entry: Entry): { [string]: any }
@@ -462,6 +507,7 @@ local function describe(entry: Entry): { [string]: any }
 		hojuButai = hojuTargetOf(entry),
 		hojuIn = round(math.max(Config.Kyoten.HojuInterval - (hojuElapsed[state.id] or 0), 0)),
 		kogeki = kogekiCountOf(entry),
+		koritsu = (koritsuOf(state.id)),
 	}
 end
 
