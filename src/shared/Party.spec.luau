@@ -106,6 +106,7 @@ test("PartyState の写しにフェーズ・リーダー・メンバーを載せ
 	local state = Party.toState(party)
 	expect(state.phase).toBe("Battle")
 	expect(state.leader).toBe(10)
+	expect(state.story).toBe(nil)
 	expect(state.stage).toBe(nil)
 	expect(state.unlockedStages).toEqual({})
 	expect(state.members).toEqual({
@@ -114,10 +115,11 @@ test("PartyState の写しにフェーズ・リーダー・メンバーを載せ
 	})
 end)
 
-test("ステージ・キャラクター・秘計は渡された値を載せる", function()
+test("ストーリー・ステージ・キャラクター・秘計は渡された値を載せる", function()
 	local party = Party.new()
 	Party.join(party, 10, "A")
 	local state = Party.toState(party, {
+		story = "Iga",
 		stage = "Iga1",
 		unlockedStages = { "Iga1" },
 		characterOf = function(userId)
@@ -127,6 +129,7 @@ test("ステージ・キャラクター・秘計は渡された値を載せる",
 			return { "Fukuhei" }
 		end,
 	})
+	expect(state.story).toBe("Iga")
 	expect(state.stage).toBe("Iga1")
 	expect(state.unlockedStages).toEqual({ "Iga1" })
 	expect(state.members[1].character).toBe("Jin")

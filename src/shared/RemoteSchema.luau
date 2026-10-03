@@ -5,6 +5,7 @@
 --
 -- | Remote | 向き | 引数 |
 -- |---|---|---|
+-- | SelectStory | C→S | ClanId（ストーリー） |
 -- | SelectStage | C→S | StageId |
 -- | SelectCharacter | C→S | CharacterId |
 -- | SelectHikei | C→S | HikeiId、選ぶなら true・外すなら false |
@@ -18,11 +19,15 @@
 -- | StageResult | S→C | StageResult |
 -- | NotifyHikei | S→C | HikeiNotice.Notice（秘計の発動・打ち消し・期限切れ・失敗） |
 
+local Characters = require("./Characters")
+
 local RemoteSchema = {}
 
 -- クライアントから届く ID の長さの上限
 RemoteSchema.MAX_ID_LENGTH = 64
 
+-- ストーリーはクランごとに1本なので、クラン ID で表す
+export type ClanId = Characters.ClanId
 export type StageId = string
 export type CharacterId = string
 export type HikeiId = string
@@ -40,6 +45,9 @@ export type RejectReason =
 	"NotLobby" -- ロビーのフェーズ以外での選択
 	| "NotLeader" -- リーダーだけができる操作
 	| "Waiting" -- 待機中のプレイヤーの操作
+	| "UnknownStory" -- 存在しないストーリー（4つのクランのどれでもない）
+	| "StoryNotReady" -- ステージがまだ無いストーリー（準備中）
+	| "StoryLocked" -- リーダーが開放したステージの無いストーリー
 	| "UnknownStage" -- 存在しないステージ
 	| "StageLocked" -- リーダーが開放していないステージ
 	| "StageNotSelected" -- ステージを選ぶ前の選択
@@ -59,6 +67,9 @@ RemoteSchema.rejectReasons = {
 	"NotLobby",
 	"NotLeader",
 	"Waiting",
+	"UnknownStory",
+	"StoryNotReady",
+	"StoryLocked",
 	"UnknownStage",
 	"StageLocked",
 	"StageNotSelected",
@@ -94,6 +105,8 @@ export type PartyState = {
 	phase: Phase,
 	-- リーダーの UserId。誰もいないときは nil
 	leader: number?,
+	-- リーダーが選んでいるストーリー
+	story: ClanId?,
 	-- リーダーが選んでいるステージ
 	stage: StageId?,
 	-- リーダーが開放済みのステージ
@@ -136,6 +149,7 @@ export type StageResult = {
 
 -- ReplicatedStorage.Remotes に宣言する RemoteEvent の名前（Action は Actions.luau が扱う）
 RemoteSchema.clientToServer = {
+	"SelectStory",
 	"SelectStage",
 	"SelectCharacter",
 	"SelectHikei",
@@ -168,6 +182,9 @@ end
 
 -- C→S の Remote ごとの検証関数。受け付けるなら true
 RemoteSchema.validate = {
+	SelectStory = function(clanId: unknown): boolean
+		return RemoteSchema.isId(clanId)
+	end,
 	SelectStage = function(stageId: unknown): boolean
 		return RemoteSchema.isId(stageId)
 	end,

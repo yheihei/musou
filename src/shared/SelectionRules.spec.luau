@@ -1,4 +1,5 @@
 --!strict
+local Characters = require("./Characters")
 local RemoteSchema = require("./RemoteSchema")
 local SelectionRules = require("./SelectionRules")
 local Stages = require("./Stages")
@@ -55,6 +56,74 @@ test("ステージの選択の拒否の理由は Remote の拒否の理由に含
 		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
 	end
 end)
+
+-- 定義表のストーリーのステージの ID をすべて返す（試験用ステージは入れない）
+local function storyStageIds(): { string }
+	local ids = {}
+	for _, clan in Characters.clanIds do
+		for _, stage in Stages.storyOf(clan) do
+			table.insert(ids, stage.id)
+		end
+	end
+	return ids
+end
+
+test("リーダーはロビーで、開放したステージのあるストーリーを選べる", function()
+	expect(SelectionRules.checkStory(LEADER, "Iga", { "Iga1" })).toBe(nil)
+end)
+
+test("リーダー以外はストーリーを選べない", function()
+	expect(SelectionRules.checkStory(MEMBER, "Iga", { "Iga1" })).toBe("NotLeader")
+end)
+
+test("ロビー以外のフェーズと待機中の人はストーリーを選べない", function()
+	for _, phase in { "EventScene", "Battle", "Result" } do
+		expect(SelectionRules.checkStory(at(LEADER, { phase = phase }), "Iga", { "Iga1" })).toBe("NotLobby")
+	end
+	expect(SelectionRules.checkStory(at(LEADER, { waiting = true }), "Iga", { "Iga1" })).toBe("Waiting")
+end)
+
+test("4つのクランのどれでもないストーリーは選べない", function()
+	for _, id in { "Nowhere", "Iga1", "Test", "iga" } do
+		expect(SelectionRules.checkStory(LEADER, id, storyStageIds())).toBe("UnknownStory")
+	end
+end)
+
+test("リーダーが開放したステージの無いストーリーは、未開放として選べない", function()
+	expect(SelectionRules.checkStory(LEADER, "Iga", {})).toBe("StoryLocked")
+	-- 試験用ステージは伊賀のストーリーに数えない
+	expect(SelectionRules.checkStory(LEADER, "Iga", { "Test" })).toBe("StoryLocked")
+end)
+
+test(
+	"ステージがまだ無いストーリーは、全部のステージを開放していても準備中として選べない",
+	function()
+		local unlocked = storyStageIds()
+		for _, clan in Characters.clanIds do
+			local expected = if #Stages.storyOf(clan) == 0 then "StoryNotReady" else nil
+			expect(SelectionRules.checkStory(LEADER, clan, unlocked)).toBe(expected)
+		end
+	end
+)
+
+test("新しいリーダーが開放したステージの無いストーリーの選択は外す", function()
+	expect(SelectionRules.keepsStory("Iga", { "Iga1" })).toBe(true)
+	expect(SelectionRules.keepsStory("Iga", {})).toBe(false)
+	expect(SelectionRules.keepsStory(nil, {})).toBe(true)
+end)
+
+test(
+	"ストーリーの選択の拒否の理由は制限ごとに別の値で、Remote の拒否の理由に含まれる",
+	function()
+		local reasons = { "NotLobby", "Waiting", "NotLeader", "UnknownStory", "StoryNotReady", "StoryLocked" }
+		local seen = {}
+		for _, reason in reasons do
+			expect(seen[reason]).toBe(nil)
+			seen[reason] = true
+			expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
+		end
+	end
+)
 
 local IGA1 = Stages.get("Iga1") :: Stages.Stage
 
@@ -116,6 +185,36 @@ test("ステージを変えたとき、新しいステージで選べないキ�
 	expect(SelectionRules.keepsCharacter("Torika", KOGA_TEST)).toBe(false)
 	expect(SelectionRules.keepsCharacter("Hayate", IGA1)).toBe(false)
 end)
+
+test(
+	"ステージを外してストーリーを変えたとき、ストーリーのクランの操作キャラクター以外は外す",
+	function()
+		expect(SelectionRules.keepsCharacter("Jin", nil, "Iga")).toBe(true)
+		expect(SelectionRules.keepsCharacter("Jin", nil, "Koga")).toBe(false)
+		expect(SelectionRules.keepsCharacter("Hayate", nil, "Iga")).toBe(false)
+		expect(SelectionRules.keepsCharacter("Nobody", nil, "Iga")).toBe(false)
+	end
+)
+
+test("ストーリーもステージも選んでいなければ、キャラクターの選択は残す", function()
+	expect(SelectionRules.keepsCharacter("Jin", nil, nil)).toBe(true)
+end)
+
+test(
+	"画面には、選んでいるストーリーか、選んでいるステージのストーリーを出す",
+	function()
+		expect(SelectionRules.shownStory("Saika", KOGA_TEST, { "Iga1" })).toBe("Saika")
+		expect(SelectionRules.shownStory(nil, KOGA_TEST, { "Iga1" })).toBe("Koga")
+	end
+)
+
+test(
+	"ストーリーもステージも選んでいなければ、リーダーが開放した最初のストーリーを画面に出す",
+	function()
+		expect(SelectionRules.shownStory(nil, nil, { "Iga1" })).toBe("Iga")
+		expect(SelectionRules.shownStory(nil, nil, {})).toBe(Characters.clanIds[1])
+	end
+)
 
 test(
 	"キャラクターの選択の拒否の理由は制限ごとに別の値で、Remote の拒否の理由に含まれる",

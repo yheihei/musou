@@ -131,6 +131,15 @@ test("読んだ値の定義表に無いステージと新しい版はそのま�
 	expect(data.cleared).toEqual({ "Fuma9" })
 end)
 
+test("M1 の保存データは、版と開放とクリアの記録を変えずに読み込める", function()
+	-- M1 で伊賀第1ステージをクリアした人の保存データ
+	local data = Progress.normalize({ version = 1, unlocked = { "Iga1" }, cleared = { "Iga1" } }) :: Progress.Data
+	expect(Progress.VERSION).toBe(1)
+	expect(data.version).toBe(1)
+	expect(Progress.isUnlocked(data, "Iga1")).toBe(true)
+	expect(data.cleared).toEqual({ "Iga1" })
+end)
+
 test("試験用ステージは最初から開放せず、クリアしても記録しない", function()
 	local data = Progress.new()
 	expect(Progress.isUnlocked(data, "Test")).toBe(false)

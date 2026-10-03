@@ -15,6 +15,9 @@
         "Action": {
           "$className": "RemoteEvent"
         },
+        "SelectStory": {
+          "$className": "RemoteEvent"
+        },
         "SelectStage": {
           "$className": "RemoteEvent"
         },

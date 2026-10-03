@@ -103,8 +103,9 @@ function Party.activeMembers(party: Party): { Member }
 end
 
 -- クライアントへ送る PartyState の写しを作る。
--- ステージ・開放済みのステージ・キャラクター・秘計は、それぞれを扱う処理が extra で渡す
+-- ストーリー・ステージ・開放済みのステージ・キャラクター・秘計は、それぞれを扱う処理が extra で渡す
 export type Extra = {
+	story: RemoteSchema.ClanId?,
 	stage: string?,
 	unlockedStages: { string }?,
 	characterOf: ((userId: number) -> string?)?,
@@ -128,6 +129,7 @@ function Party.toState(party: Party, extra: Extra?): RemoteSchema.PartyState
 	return {
 		phase = party.phase,
 		leader = if leader then leader.userId else nil,
+		story = given.story,
 		stage = given.stage,
 		unlockedStages = given.unlockedStages or {},
 		members = members,

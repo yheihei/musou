@@ -1,10 +1,12 @@
 --!strict
--- 出撃前の画面のキャラクターの欄。選んでいるステージのストーリーのクランの操作キャラクターを、顔・名前・武器・奥義で並べ、
+-- 出撃前の画面のキャラクターの欄。画面に出しているストーリーのクランの操作キャラクターを、顔・名前・武器・奥義で並べ、
 -- 押すと Remotes.SelectCharacter で選ぶ。選べるか（首領、NPC、他のメンバーとの重なりなど）はサーバーが判定する。
 --
+-- - 画面に出すストーリーはステージの欄と同じ（SelectionRules.shownStory）。
+--   選んでいるストーリー、無ければリーダーが開放した最初のストーリー
 -- - 選べないキャラクターは暗くして理由を添える。理由は SelectionRules.checkCharacter をクライアントでも呼んで出す
 -- - 他のメンバーが選んだキャラクターには選んだ人の名前を、本人が選んだキャラクターには「選択中」を添える
--- - ステージを選ぶ前は、最初のストーリーのクランを暗くして並べる
+-- - ステージを選ぶ前は、ストーリーのクランのキャラクターを暗くして並べる
 -- - 顔は顔グラフィックの登録表（KaoGraphic）の通常の表情。登録の無いキャラクターは顔の枠を出さない
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -112,16 +114,6 @@ local function buildCard(character: Characters.Character, order: number, onPress
 	}
 end
 
--- ステージを選ぶ前に並べるクラン。ストーリーのある最初のクラン
-local function defaultClan(): Characters.ClanId
-	for _, clan in Characters.clanIds do
-		if #Stages.storyOf(clan) > 0 then
-			return clan
-		end
-	end
-	return Characters.clanIds[1]
-end
-
 function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 	local frame, content = SectionKit.section("Character", "キャラクター", 2)
 	local hint = Ui.text({
@@ -167,7 +159,8 @@ function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 
 	local function update(state: RemoteSchema.PartyState)
 		local stage = if state.stage then Stages.get(state.stage) else nil
-		showClan(if stage then stage.clan else defaultClan())
+		local clan = SelectionRules.shownStory(state.story, stage, state.unlockedStages)
+		showClan(clan)
 		local me = SectionKit.me(state)
 		local requester: SelectionRules.Requester = {
 			phase = state.phase,
@@ -184,7 +177,7 @@ function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 			end
 		end
 		hint.Text = if stage
-			then `{Characters.clanNames[stage.clan]}のキャラクターから選ぶ`
+			then `{Characters.clanNames[clan]}のキャラクターから選ぶ`
 			else "先にリーダーがステージを選ぶ"
 
 		for _, card in cards do

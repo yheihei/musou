@@ -1,16 +1,22 @@
 --!strict
--- 出撃前の選択（ステージ・キャラクター・秘計）の状態を持ち、Remote の選択を受け付ける。
+-- 出撃前の選択（ストーリー・ステージ・キャラクター・秘計）の状態を持ち、Remote の選択を受け付ける。
 -- 受け付けるかは ReplicatedStorage.Shared.SelectionRules が決め、拒否したら SelectionRejected で本人に理由を返す。
 -- 選択の状態は PartyService.setExtraProvider で PartyState に載せ、変わるたびに全員へ送り直す。
 --
+-- - ストーリーはリーダーだけが、ロビーのフェーズで、リーダーが開放したステージのあるストーリーから選べる
 -- - ステージはリーダーだけが、ロビーのフェーズで、リーダーの開放済みのステージから選べる
--- - リーダーが代わったときと、リーダーの開放済みが変わったときに確かめ直し、開放していないステージの選択は外す
+-- - ステージを選ぶと、ストーリーもそのステージのクランにする。選んでいるストーリーと別のストーリーのステージでも
+--   拒否せず、ストーリーを切り替える（後から押した方を通す）
+-- - 別のストーリーを選んだら、ステージの選択を外す
+-- - リーダーが代わったときと、リーダーの開放済みが変わったときに確かめ直し、開放していないステージの選択と、
+--   開放したステージの無いストーリーの選択を外す
 -- - キャラクターはステージを選んだ後に、ストーリーのクランの操作キャラクターから、他のメンバーと重ならずに選べる
--- - ステージが変わったら、新しいステージで選べなくなったキャラクターの選択を外す
+-- - ストーリーかステージが変わったら、選べなくなったキャラクターの選択を外す
 -- - 秘計は1枚ずつ選ぶか外し、持ち込みの上限まで、他のメンバーと重ならずに選べる（先に選んだ人のもの）。
 --   秘計の枚数は出撃の条件にしない
 -- - 抜けた人の選択は外し、ほかの人が選べるようにする
--- - リザルトからロビーへ戻ったら、StageService が clear で選択を全部外す
+-- - リザルトからロビーへ戻ったら、StageService が clear でストーリー以外の選択を外す。
+--   続けて同じストーリーを遊べるよう、ストーリーは残す
 -- - リザルトからリトライでロビーへ戻ったら、選択は残し、StageService が revalidate で確かめ直す
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -25,7 +31,9 @@ local ProgressService = require(script.Parent.ProgressService)
 
 local SelectionService = {}
 
--- リーダーが選んでいるステージ
+-- リーダーが選んでいるストーリー
+local selectedStory: Stages.ClanId? = nil
+-- リーダーが選んでいるステージ。選んでいるときは、ストーリーもこのステージのクランにしている
 local selectedStage: string? = nil
 -- メンバーの UserId から引く、選んだキャラクター
 local characters: { [number]: string } = {}
@@ -59,27 +67,45 @@ function SelectionService.getCharacter(player: Player): string?
 	return characters[player.UserId]
 end
 
--- 新しいステージで選べなくなったキャラクターの選択を外す
+-- 選んでいるステージ（選んでいなければストーリー）で選べなくなったキャラクターの選択を外す
 local function releaseInvalidCharacters()
 	local stage = if selectedStage then Stages.get(selectedStage) else nil
-	if not stage then
-		return
-	end
 	for userId, characterId in characters do
-		if not SelectionRules.keepsCharacter(characterId, stage) then
+		if not SelectionRules.keepsCharacter(characterId, stage, selectedStory) then
 			characters[userId] = nil
 		end
 	end
 end
 
--- ステージを選ぶ。受け付けたら nil、受け付けなければ拒否の理由を返す
+-- ストーリーを選ぶ。受け付けたら nil、受け付けなければ拒否の理由を返す。
+-- 別のストーリーを選んだら、ステージの選択と、そのストーリーで選べないキャラクターの選択を外す
+function SelectionService.selectStory(player: Player, clanId: string): SelectionRules.Reject?
+	local reject = SelectionRules.checkStory(requesterOf(player), clanId, leaderUnlocked())
+	if reject then
+		return reject
+	end
+	if selectedStory ~= clanId then
+		selectedStory = clanId :: Stages.ClanId
+		local stage = if selectedStage then Stages.get(selectedStage) else nil
+		if stage and stage.clan ~= clanId then
+			selectedStage = nil
+		end
+		releaseInvalidCharacters()
+		PartyService.refresh()
+	end
+	return nil
+end
+
+-- ステージを選ぶ。受け付けたら nil、受け付けなければ拒否の理由を返す。ストーリーもステージのクランにする
 function SelectionService.selectStage(player: Player, stageId: string): SelectionRules.Reject?
 	local reject = SelectionRules.checkStage(requesterOf(player), stageId, leaderUnlocked())
 	if reject then
 		return reject
 	end
-	if selectedStage ~= stageId then
+	local stage = Stages.get(stageId) :: Stages.Stage
+	if selectedStage ~= stageId or selectedStory ~= stage.clan then
 		selectedStage = stageId
+		selectedStory = stage.clan
 		releaseInvalidCharacters()
 		PartyService.refresh()
 	end
@@ -131,7 +157,8 @@ function SelectionService.selectHikei(player: Player, hikeiId: string, selected:
 	return nil
 end
 
--- ステージ・キャラクター・秘計の選択を全部外し、全員に送り直す（リザルトからロビーへ戻ったとき）
+-- ステージ・キャラクター・秘計の選択を外し、全員に送り直す（リザルトからロビーへ戻ったとき）。
+-- 続けて同じストーリーを遊べるよう、ストーリーは残す
 function SelectionService.clear()
 	selectedStage = nil
 	table.clear(characters)
@@ -139,11 +166,20 @@ function SelectionService.clear()
 	PartyService.refresh()
 end
 
--- 今のリーダーが開放していないステージの選択を外し、全員に送り直す
-local function recheckStage()
-	if not SelectionRules.keepsStage(selectedStage, leaderUnlocked()) then
+-- 今のリーダーが開放していないステージの選択と、開放したステージの無いストーリーの選択を外す
+local function releaseLockedSelection()
+	local unlocked = leaderUnlocked()
+	if not SelectionRules.keepsStage(selectedStage, unlocked) then
 		selectedStage = nil
 	end
+	if not SelectionRules.keepsStory(selectedStory, unlocked) then
+		selectedStory = nil
+	end
+end
+
+-- 今のリーダーでストーリーとステージの選択を確かめ直し、全員に送り直す
+local function recheckSelection()
+	releaseLockedSelection()
 	PartyService.refresh()
 end
 
@@ -159,13 +195,11 @@ local function releaseLeftMembers()
 end
 
 -- リトライでロビーへ戻ったときに、残した選択を確かめ直して全員に送り直す。
--- 抜けた人の選択を外し、今のリーダーが開放していないステージの選択と、そのステージで選べないキャラクターの選択を外す
+-- 抜けた人の選択を外し、今のリーダーが開放していないステージとストーリーの選択と、選べなくなったキャラクターの選択を外す
 function SelectionService.revalidate()
 	releaseLeftMembers()
 	lastLeader = PartyService.getLeader()
-	if not SelectionRules.keepsStage(selectedStage, leaderUnlocked()) then
-		selectedStage = nil
-	end
+	releaseLockedSelection()
 	releaseInvalidCharacters()
 	PartyService.refresh()
 end
@@ -176,12 +210,22 @@ local function onPartyChanged()
 	local leader = PartyService.getLeader()
 	if leader ~= lastLeader then
 		lastLeader = leader
-		recheckStage()
+		recheckSelection()
 	end
 end
 
 local function reject(player: Player, reason: SelectionRules.Reject)
 	rejectedRemote:FireClient(player, reason)
+end
+
+local function onSelectStory(player: Player, clanId: unknown)
+	if not RemoteSchema.validate.SelectStory(clanId) then
+		return
+	end
+	local reason = SelectionService.selectStory(player, clanId :: string)
+	if reason then
+		reject(player, reason)
+	end
 end
 
 local function onSelectStage(player: Player, stageId: unknown)
@@ -216,9 +260,25 @@ end
 
 local function registerDebugCommands()
 	DebugCommand.register(
+		"SelectStory",
+		"<プレイヤー名> <クラン ID>",
+		"Remotes.SelectStory と同じ処理でストーリーを選ぶ",
+		function(name, clanId)
+			local player = DebugCommand.findPlayer(name)
+			if not RemoteSchema.validate.SelectStory(clanId) then
+				error(`クラン ID の形が正しくない（{tostring(clanId)}）`, 0)
+			end
+			local reason = SelectionService.selectStory(player, clanId)
+			if reason then
+				return `{player.Name} の {clanId} のストーリーの選択を拒否した（{reason}）`
+			end
+			return `{player.Name} が {clanId} のストーリーを選んだ（ステージ {selectedStage or "未選択"}）`
+		end
+	)
+	DebugCommand.register(
 		"SelectStage",
 		"<プレイヤー名> <ステージ ID>",
-		"Remotes.SelectStage と同じ処理でステージを選ぶ",
+		"Remotes.SelectStage と同じ処理でステージを選ぶ（ストーリーもステージのクランになる）",
 		function(name, stageId)
 			local player = DebugCommand.findPlayer(name)
 			if not RemoteSchema.validate.SelectStage(stageId) then
@@ -228,7 +288,7 @@ local function registerDebugCommands()
 			if reason then
 				return `{player.Name} の {stageId} の選択を拒否した（{reason}）`
 			end
-			return `{player.Name} が {stageId} を選んだ`
+			return `{player.Name} が {stageId} を選んだ（ストーリー {tostring(selectedStory)}）`
 		end
 	)
 	DebugCommand.register(
@@ -272,6 +332,8 @@ end
 function SelectionService.start()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	rejectedRemote = remotes:WaitForChild("SelectionRejected") :: RemoteEvent
+	local selectStory = remotes:WaitForChild("SelectStory") :: RemoteEvent
+	selectStory.OnServerEvent:Connect(onSelectStory)
 	local selectStage = remotes:WaitForChild("SelectStage") :: RemoteEvent
 	selectStage.OnServerEvent:Connect(onSelectStage)
 	local selectCharacter = remotes:WaitForChild("SelectCharacter") :: RemoteEvent
@@ -281,6 +343,7 @@ function SelectionService.start()
 
 	PartyService.setExtraProvider(function(): Party.Extra
 		return {
+			story = selectedStory,
 			stage = selectedStage,
 			unlockedStages = leaderUnlocked(),
 			characterOf = function(userId: number): string?
@@ -295,7 +358,7 @@ function SelectionService.start()
 	-- リーダーの進行を読み終えたときや、クリアで開放済みが増えたとき
 	ProgressService.changed:Connect(function(player: Player)
 		if player == PartyService.getLeader() then
-			recheckStage()
+			recheckSelection()
 		end
 	end)
 	registerDebugCommands()

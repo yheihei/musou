@@ -23,7 +23,7 @@ local extraProvider: (() -> Party.Extra)? = nil
 -- パーティーが変わったとき（入退室とフェーズの変化）に発火する
 PartyService.changed = changed.Event
 
--- PartyState に載せる状態（ステージ・開放済みのステージ・キャラクター・秘計）を返す関数を登録する
+-- PartyState に載せる状態（ストーリー・ステージ・開放済みのステージ・キャラクター・秘計）を返す関数を登録する
 function PartyService.setExtraProvider(provider: () -> Party.Extra)
 	extraProvider = provider
 end

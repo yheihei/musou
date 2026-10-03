@@ -9,7 +9,7 @@ test("表の全 Remote が ReplicatedStorage.Remotes に RemoteEvent として�
 	local remotes = project.tree.ReplicatedStorage.Remotes
 	local names = table.clone(RemoteSchema.clientToServer)
 	table.move(RemoteSchema.serverToClient, 1, #RemoteSchema.serverToClient, #names + 1, names)
-	expect(#names).toBe(14)
+	expect(#names).toBe(15)
 	local missing = {}
 	for _, name in names do
 		local node = remotes[name]
@@ -42,7 +42,10 @@ test("ID の型違い・空・長すぎる文字列・記号入りを拒否す�
 	expect(RemoteSchema.isId("../Iga1")).toBe(false)
 end)
 
-test("SelectStage と SelectCharacter は ID を1つ受け取る", function()
+test("SelectStory・SelectStage・SelectCharacter は ID を1つ受け取る", function()
+	expect(RemoteSchema.validate.SelectStory("Koga")).toBe(true)
+	expect(RemoteSchema.validate.SelectStory()).toBe(false)
+	expect(RemoteSchema.validate.SelectStory(42)).toBe(false)
 	expect(RemoteSchema.validate.SelectStage("Iga1")).toBe(true)
 	expect(RemoteSchema.validate.SelectStage()).toBe(false)
 	expect(RemoteSchema.validate.SelectCharacter("Jin")).toBe(true)

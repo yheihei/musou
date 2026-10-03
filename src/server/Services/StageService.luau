@@ -19,9 +19,9 @@
 -- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
 -- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
 --   新しく開放したステージを StageResult のメンバーごとに書く
--- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、選択を外して全員をロビーへ戻す
+-- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、ストーリー以外の選択を外して全員をロビーへ戻す
 -- - リザルトのフェーズでリーダーが Remotes.Retry を送ると、ステージと選択を残して全員をロビーへ戻す。
---   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらステージを判定し直す）
+--   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらストーリーとステージを判定し直す）
 -- - 出撃したメンバーが全員抜けたら、ロビーのフェーズに戻す
 -- - 片付けは各サービスが started・finished・phaseChanged を受けて行う
 
@@ -434,7 +434,7 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	return true
 end
 
--- リザルトからロビーへ戻る。リーダーがリザルトのフェーズで送ったときだけ受け付け、選択を外して全員をロビーへ戻す
+-- リザルトからロビーへ戻る。リーダーがリザルトのフェーズで送ったときだけ受け付け、ストーリー以外の選択を外して全員をロビーへ戻す
 function StageService.returnToLobby(player: Player): boolean
 	if phase ~= "Result" or PartyService.getLeader() ~= player then
 		return false

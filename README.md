@@ -142,7 +142,7 @@ src/
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
-      SelectionService  出撃前の選択（ステージ・キャラクター・秘計）の受け付けと PartyState への反映
+      SelectionService  出撃前の選択（ストーリー・ステージ・キャラクター・秘計）の受け付けと PartyState への反映
       StageService  出撃からロビー帰還までのステージの進行（フェーズ、出撃地点への移動、イベントシーンの同期とスキップ、勝敗の結果）
       ButaiService  戦場の部隊のデータ（位置・兵数・士気）と部隊どうしの交戦。配置から作り、目的地へ位置だけを進め、ReplicatedStorage.Butai の Attribute で複製する
       KyotenService  戦場の拠点の耐久と所属と守備。範囲の中で拠点の軍の下忍が倒れると耐久を減らし、0 で相手の軍に制圧させる。守備を補充し、守備のいない拠点は攻める軍がいる間に耐久を減らす。ReplicatedStorage.Kyoten の Attribute で複製する
@@ -155,7 +155,7 @@ src/
       CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定と仮エフェクト
   client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面・BGM
-    Selection/  出撃前の画面（ステージ・キャラクター・秘計の選択と出撃ボタン）の欄
+    Selection/  出撃前の画面（ストーリーとステージ・キャラクター・秘計の選択と出撃ボタン）の欄
     Dialogue    イベントシーンの会話窓
 assets/
   weapons/  武器の仮のモデル（Rojo の JSON モデル）。ReplicatedStorage.Weapons に置く
@@ -186,7 +186,8 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、SaishutsugekiService が出現し直させる。戦闘中の出撃メンバーは、兵站線につながった味方の拠点のうち倒れた位置に一番近い拠点から出て、パーティーで共有する兵力を1使う（計算は `src/shared/Saishutsugeki.luau`）。兵力0で倒れたら負ける。戦闘の外の出撃メンバーは出撃地点から、ほかの人はロビーから出る。兵力は workspace の Attribute `Heiryoku` で複製し、窓口の `SetHeiryoku`・`DumpHeiryoku` で確かめる
 - イベントシーンは、サーバーが出撃メンバーに `PlayEventScene` で流し、長さが過ぎるか全員がスキップを押すと次のフェーズへ進める。シーンの ID と長さは `src/shared/EventScenes.luau`、スキップの集計は `src/shared/SkipVote.luau` にある。窓口の `StartEventScene Shiken` で、試験用のシーンを流して出撃する
-- 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送ると選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
+- 出撃前は、リーダーがストーリー（クラン）を選び、そのストーリーのステージを選ぶ（`SelectStory`・`SelectStage`）。選べるのはリーダーが開放したステージのあるストーリーだけで、判定は `src/shared/SelectionRules.luau` の `checkStory`。ステージを選ぶとストーリーもそのクランになり、別のストーリーを選ぶとステージの選択が外れる。窓口の `SelectStory <プレイヤー名> <クラン ID>` で確かめる
+- 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送るとストーリー以外の選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
 - リザルト画面（ResultController）は、`StageResult` を受けた人にだけ、勝敗と理由・経過時間・全員の撃破数・本人が開放したステージを出す。`Retry` と `ReturnToLobby` のボタンはリーダーにだけ出し、ほかの人には待ちの文を出す。文は `src/shared/ResultMessage.luau` にある。窓口の `SendStageResult Iga1` で、開放したステージを差し替えた結果を送り直して確かめる
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
