@@ -716,6 +716,14 @@ local SNAPSHOT = {
 			},
 		},
 	},
+	Kyoten = {
+		Taikyu = {
+			Kyoten = 30,
+			Honjin = 50,
+		},
+		SeiatsuRate = 0.5,
+		GeninGekiha = 1,
+	},
 	Shiki = {
 		Initial = 50,
 		Min = 0,

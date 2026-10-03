@@ -16,6 +16,8 @@
 --   相手は1部隊ずつで、交戦中の敵の部隊に近づいた部隊はその手前で待つ（組み方は ReplicatedStorage.Shared.Kosen の match）。
 --   交戦中は部隊を進める間隔ごとに Kosen.step で押し合わせて兵数を減らし、兵数 0 の部隊は消す。
 --   決着したら残った部隊は目的地へ向けて動き出す。交戦の相手は Attribute の Kosen（相手の部隊 ID）で複製する
+-- - 兵数が減ったら（交戦と changeHeisu）、heisuLost で部隊 ID・軍・減った兵数・その時の位置を知らせる。
+--   拠点の耐久（KyotenService）はこれを受けて減る
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -89,6 +91,10 @@ local kosenSettledEvent = Instance.new("BindableEvent")
 -- 交戦が決着したときに、2つの部隊 ID と勝者（Kosen.Winner の A・B・Draw）で発火する。
 -- 兵数 0 の部隊は同じ間隔のうちに消すので、受け取った時点で ButaiService.get が nil を返すことがある
 ButaiService.kosenSettled = kosenSettledEvent.Event
+local heisuLostEvent = Instance.new("BindableEvent")
+-- 部隊の兵数が減ったときに、部隊 ID・軍・減った兵数・減ったときの位置（Butai.Point）で発火する。
+-- 兵数 0 になった部隊は同じ間隔のうちに消すので、受け取った時点で ButaiService.get が nil を返すことがある
+ButaiService.heisuLost = heisuLostEvent.Event
 
 local function find(id: string): (Butai.Butai?, number?)
 	for index, butai in butaiList do
@@ -298,14 +304,23 @@ function ButaiService.list(): { Butai.Butai }
 	return table.clone(butaiList)
 end
 
--- 兵数を delta だけ増減する。増減した後の兵数を返す。部隊がいなければ nil
+-- 兵数が減ったことを知らせる
+local function notifyLost(butai: Butai.Butai, loss: number)
+	if loss > 0 then
+		heisuLostEvent:Fire(butai.id, butai.gun, loss, { x = butai.position.x, z = butai.position.z })
+	end
+end
+
+-- 兵数を delta だけ増減する。増減した後の兵数を返す。部隊がいなければ nil。減ったら heisuLost で知らせる
 function ButaiService.changeHeisu(id: string, delta: number): number?
 	local butai = find(id)
 	if not butai then
 		return nil
 	end
+	local before = butai.heisu
 	local heisu = Butai.changeHeisu(butai, delta)
 	publish(butai)
+	notifyLost(butai, before - heisu)
 	return heisu
 end
 
@@ -409,9 +424,11 @@ local function sideOf(butai: Butai.Butai, fraction: number): Kosen.Side
 	}
 end
 
--- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせ、一覧を回し終えてから知らせる
+-- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせ、
+-- 兵数の減少と決着は一覧を回し終えてから知らせる
 local function fightAll(dt: number)
 	local settled: { { a: string, b: string, winner: Kosen.Winner? } } = {}
+	local losses: { { butai: Butai.Butai, loss: number } } = {}
 	for _, state in table.clone(kosenList) do
 		local a, b = find(state.a), find(state.b)
 		if not a or not b then
@@ -420,6 +437,8 @@ local function fightAll(dt: number)
 		local result = Kosen.step(sideOf(a, state.fractionA), sideOf(b, state.fractionB), dt)
 		a.heisu = result.a.heisu
 		b.heisu = result.b.heisu
+		table.insert(losses, { butai = a, loss = result.a.loss })
+		table.insert(losses, { butai = b, loss = result.b.loss })
 		state.fractionA = result.a.fraction
 		state.fractionB = result.b.fraction
 		if result.settled then
@@ -433,6 +452,9 @@ local function fightAll(dt: number)
 		end
 		publish(a)
 		publish(b)
+	end
+	for _, item in losses do
+		notifyLost(item.butai, item.loss)
 	end
 	for _, item in settled do
 		kosenSettledEvent:Fire(item.a, item.b, item.winner)

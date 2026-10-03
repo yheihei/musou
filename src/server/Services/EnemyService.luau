@@ -3,6 +3,8 @@
 -- 戦闘のフェーズの間だけ、出撃したステージの区画にいるメンバーの周りに、下忍を部隊単位で湧かせ続け、
 -- 一定部隊ごとに上忍を混ぜる。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）敵を片付ける。
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
+-- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
+-- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,6 +13,7 @@ local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
+local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
@@ -34,6 +37,8 @@ local ENEMY_COLORS: { [string]: Color3 } = {
 }
 
 type Enemy = {
+	-- 種類（Genin・Jonin）
+	kind: string,
 	model: Model,
 	humanoid: Humanoid,
 	root: BasePart,
@@ -45,6 +50,14 @@ type Enemy = {
 }
 
 local EnemyService = {}
+
+-- 湧かせる敵の軍
+local ENEMY_GUN: Gun.Gun = "Tekigun"
+
+local gekihaEvent = Instance.new("BindableEvent")
+-- プレイヤーが敵を倒したときに、種類（Genin・Jonin）・軍・倒れた位置（Vector3）・倒したプレイヤーで発火する。
+-- 拠点の耐久（KyotenService）はこれを受けて減る
+EnemyService.gekiha = gekihaEvent.Event
 
 local enemiesFolder: Folder
 local templates: { [string]: Model } = {}
@@ -137,8 +150,10 @@ local function onEnemyDied(enemy: Enemy)
 	enemies[enemy.model] = nil
 	aliveCount -= 1
 
-	if enemy.lastHitBy and enemy.lastHitBy.Parent then
-		PlayerService.addGekihasu(enemy.lastHitBy)
+	local attacker = enemy.lastHitBy
+	if attacker and attacker.Parent then
+		PlayerService.addGekihasu(attacker)
+		gekihaEvent:Fire(enemy.kind, ENEMY_GUN, enemy.root.Position, attacker)
 	end
 
 	task.delay(Config.Spawner.CorpseLifetime, function()
@@ -162,6 +177,7 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 	root:SetNetworkOwner(nil)
 
 	local enemy: Enemy = {
+		kind = kind,
 		model = model,
 		humanoid = humanoid,
 		root = root,
@@ -333,6 +349,29 @@ function EnemyService.start()
 				end
 			end
 			return `敵を {count} 体倒した`
+		end
+	)
+
+	DebugCommand.register(
+		"DefeatEnemies",
+		"<プレイヤー名> [半径]",
+		"プレイヤーの周り（既定は半径 30 スタッド）の生きている敵を倒し、そのプレイヤーの撃破に数える（確認用）",
+		function(name, radius)
+			local player = DebugCommand.findPlayer(name)
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not root then
+				return `{player.Name} のキャラクターがいない`
+			end
+			local range = if radius ~= nil then DebugCommand.toNumber(radius, "半径") else 30
+			local count = 0
+			for _, enemy in enemies do
+				if enemy.humanoid.Health > 0 and (enemy.root.Position - root.Position).Magnitude <= range then
+					enemy.lastHitBy = player
+					enemy.humanoid.Health = 0
+					count += 1
+				end
+			end
+			return `{player.Name} の周り {range} スタッドの敵を {count} 体倒した`
 		end
 	)
 

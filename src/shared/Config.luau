@@ -192,6 +192,16 @@ export type ButaiSection = {
 	JoninGekihaShiki: number,
 }
 
+export type KyotenSection = {
+	-- 耐久の上限。通常拠点と本陣で分ける
+	Taikyu: {
+		Kyoten: number,
+		Honjin: number,
+	},
+	SeiatsuRate: number,
+	GeninGekiha: number,
+}
+
 -- 出来事1種類ぶんの士気の上下の量
 export type DekigotoShiki = {
 	-- 軍全体の士気。得をする軍は上がり、相手の軍は下がる
@@ -262,6 +272,7 @@ export type Config = {
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
+	Kyoten: KyotenSection,
 	Shiki: ShikiSection,
 	Hikei: HikeiSection,
 	Serifu: SerifuSection,
@@ -1055,6 +1066,16 @@ local Config: Config = {
 				Teki3 = 40,
 			},
 		},
+	},
+
+	-- 拠点の耐久と制圧。範囲の中でその拠点の軍の下忍が倒れると耐久が減り、0 で相手の軍に制圧される。計算は Kyoten.luau にある
+	Kyoten = {
+		Taikyu = {
+			Kyoten = 30, -- 通常拠点の耐久の上限。守備の下忍30体ほどを倒しきると制圧できる
+			Honjin = 50, -- 本陣の耐久の上限
+		},
+		SeiatsuRate = 0.5, -- 制圧した直後の耐久。上限に掛ける割合
+		GeninGekiha = 1, -- 範囲の中でその拠点の軍の下忍が1人倒れたときに減る耐久
 	},
 
 	-- 士気。軍全体の士気を軍ごとに1本持ち、部隊の士気はそれに近くの出来事の補正を足して決める。計算は Shiki.luau にある。
