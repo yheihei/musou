@@ -263,6 +263,11 @@ export type SoundSection = {
 	HitInterval: number,
 }
 
+export type BgmSection = {
+	Volume: { [string]: number },
+	FadeTime: number,
+}
+
 export type Config = {
 	Party: PartySection,
 	Stage: StageSection,
@@ -286,6 +291,7 @@ export type Config = {
 	Hikei: HikeiSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
+	Bgm: BgmSection,
 }
 
 local Config: Config = {
@@ -1156,6 +1162,19 @@ local Config: Config = {
 		RollOffMinDistance = 10, -- 戦闘の効果音が小さくなり始める距離（スタッド）
 		RollOffMaxDistance = 150, -- 戦闘の効果音が聞こえなくなる距離（スタッド）
 		HitInterval = 0.06, -- 1人の攻撃の命中の音を続けて鳴らす最短の間隔（秒）。まとめて当てたときに重ならないように
+	},
+
+	-- BGM。曲は Bgm.luau の登録表にあり、クライアントの BgmController が場面に合わせて流す
+	Bgm = {
+		-- 場面ごとの音量（Sound.Volume）。登録表の場面ごとに置く。曲を聞いて合わせる前の仮の値
+		Volume = {
+			Lobby = 0.3,
+			EventScene = 0.25, -- 会話窓を読む間なので少し下げる
+			Battle = 0.3, -- 戦闘の効果音（Sound 節の 0.5〜0.8）が聞こえるよう、効果音より下げる
+			Victory = 0.35,
+			Defeat = 0.3,
+		},
+		FadeTime = 1.5, -- 場面が変わったときに、前の曲を下げきって次の曲を上げきるまでの秒数（両方を同時に進める）
 	},
 }
 

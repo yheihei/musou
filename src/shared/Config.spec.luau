@@ -780,6 +780,16 @@ local SNAPSHOT = {
 		RollOffMaxDistance = 150,
 		HitInterval = 0.06,
 	},
+	Bgm = {
+		Volume = {
+			Lobby = 0.3,
+			EventScene = 0.25,
+			Battle = 0.3,
+			Victory = 0.35,
+			Defeat = 0.3,
+		},
+		FadeTime = 1.5,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }

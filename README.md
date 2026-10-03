@@ -152,7 +152,7 @@ src/
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定と仮エフェクト
-  client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面
+  client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面・BGM
     Selection/  出撃前の画面（ステージ・キャラクター・秘計の選択と出撃ボタン）の欄
     Dialogue    イベントシーンの会話窓
 assets/
@@ -186,6 +186,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送ると選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
+- BGM は `src/shared/Bgm.luau` の登録表に場面（ロビー・イベントシーン・戦闘・勝利・敗北）ごとに置き、クライアントの BgmController が本人にだけ流す。場面は `Bgm.sceneFor` が PartyState のフェーズと StageResult の勝敗から決め、待機中の人はロビーの曲にする。切り替えはフェードで、音量とフェードの長さは `Config.luau` の Bgm 節。流している場面は `SoundService.Bgm` の Attribute `Scene` で確かめる
 - 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない
 - モーションの ID は `src/shared/Motions.luau` の一覧に置く。待機と移動は Roblox 公式の Ninja パックで、仮の見た目の HumanoidDescription に入れて当てる
 - 行動のモーションは、クライアントの MotionController が自分のキャラクターの Attribute（`Action`・`ActionStep`・`ActionDuration`・`ActionStartedAt`）を見て、行動の長さに合わせた速さで再生する。判定の時刻と移動量は `Config.luau` のままで、モーションには左右されない
