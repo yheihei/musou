@@ -533,6 +533,18 @@ local function registerDebugCommands()
 		end
 	)
 	DebugCommand.register(
+		"DispelKyoka",
+		"<打ち消す側の軍>",
+		"相手の軍がかけた強化の秘計の効果を打ち消す（大喝の打ち消しだけ。確認用）",
+		function(gun)
+			if not Gun.isGun(gun) then
+				error("打ち消す側の軍は Mikatagun か Tekigun で指定する", 0)
+			end
+			local taken = HikeiService.dispelKyoka(gun :: Gun.Gun)
+			return `強化の秘計の効果を {#taken} 個打ち消した`
+		end
+	)
+	DebugCommand.register(
 		"DumpHikei",
 		"",
 		"秘計の持ち込み・使用済み・効果・登録済みの処理を JSON で返す",
