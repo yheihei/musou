@@ -619,6 +619,17 @@ local function registerDebugCommands()
 			return HttpService:JSONEncode({ kosen = list, taiki = taiki })
 		end
 	)
+	DebugCommand.register(
+		"RemoveButai",
+		"<部隊 ID>",
+		"部隊を外す。兵数の減少には数えないので、拠点の耐久は変わらない（確認用）",
+		function(id)
+			if type(id) ~= "string" or not ButaiService.remove(id) then
+				return `部隊 {tostring(id)} がいない`
+			end
+			return `部隊 {id} を外した`
+		end
+	)
 	DebugCommand.register("DumpButai", "", "部隊の一覧を JSON で返す", function()
 		local result = {}
 		for _, butai in butaiList do

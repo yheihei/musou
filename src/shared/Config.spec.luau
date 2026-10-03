@@ -723,6 +723,14 @@ local SNAPSHOT = {
 		},
 		SeiatsuRate = 0.5,
 		GeninGekiha = 1,
+		Shubi = {
+			Kyoten = 30,
+			Honjin = 40,
+		},
+		HojuInterval = 10,
+		HojuHeisu = 2,
+		MushubiGensho = 1,
+		TickInterval = 0.5,
 	},
 	Shiki = {
 		Initial = 50,

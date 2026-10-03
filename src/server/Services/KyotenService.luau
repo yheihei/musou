@@ -12,7 +12,13 @@
 --   置き換えたら EnemyService.gekiha の購読を外し、兵数の減少だけで数える
 -- - 守備の部隊は、拠点の軍の部隊のうち範囲の中にいるもの。部隊を方針に沿って動かす処理（#102）が来るまでは、
 --   配置の部隊は開始時の拠点にとどまる
--- - 耐久が 0 になったら相手の軍が制圧する。範囲の中にいた元の軍の部隊は敗走して消え、耐久は制圧直後の値になる
+-- - 耐久が 0 になったら相手の軍が制圧する。範囲の中にいた元の軍の部隊は敗走して消え、耐久は制圧直後の値になる。
+--   制圧は拠点の陥落の出来事として、拠点の中心で、制圧した軍が得をする形で士気に知らせる（ShikiService.notify）
+-- - 戦闘のフェーズの間、守備の兵数が上限より少なければ、間隔ごとに補充する（値は Config.luau の Kyoten 節）。
+--   補充を受けるのは、拠点の守備の部隊（配置で方針が防衛のその拠点から始まる部隊か、補充で作った部隊）。
+--   その部隊が範囲の中にいなければ、拠点の中心に守備の部隊（Shubi<拠点 ID>）を作る
+-- - 守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間、
+--   時間に比例して耐久が減る。仮の湧き処理の敵は攻める軍に数えない
 -- - 拠点ごとに ReplicatedStorage.Kyoten の下へ拠点 ID の名前で Configuration を置き、Attribute で
 --   軍（Gun）・耐久（Taikyu）・耐久の上限（MaxTaikyu）・本陣か（Honjin）・
 --   中心（Position。Vector2 の X と Y にワールドの X と Z）・範囲の大きさ（Size。Vector2 の X と Y に大きさの X と Z）を
@@ -25,6 +31,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Butai = require(ReplicatedStorage.Shared.Butai)
 local Colors = require(ReplicatedStorage.Shared.Colors)
+local Config = require(ReplicatedStorage.Shared.Config)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
@@ -34,6 +41,7 @@ local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local EnemyService = require(script.Parent.EnemyService)
 local HaichiService = require(script.Parent.HaichiService)
+local ShikiService = require(script.Parent.ShikiService)
 local StageService = require(script.Parent.StageService)
 
 -- 戦場の拠点。計算の状態に、範囲（拠点の目印のパーツの中心・向き・大きさ）を添える
@@ -54,6 +62,10 @@ local LABEL_HEIGHT = 12
 
 -- 配置の順の拠点
 local entries: { Entry } = {}
+-- 拠点 ID から引く、補充を受ける守備の部隊の ID
+local hojuButai: { [string]: string } = {}
+-- 拠点 ID から引く、前に補充してからの秒数
+local hojuElapsed: { [string]: number } = {}
 local folder: Folder
 local markerFolder: Folder? = nil
 local showMarkers = false
@@ -214,13 +226,91 @@ function KyotenService.shubiOf(id: string): { string }
 	return result
 end
 
--- 制圧した後の片付け。範囲の中にいた元の軍の部隊を敗走させて（消して）、制圧を知らせる
+-- 拠点の守備の兵数（拠点の軍の部隊のうち、範囲の中にいるものの兵数の和）
+local function shubiHeisuOf(entry: Entry): number
+	local total = 0
+	for _, butai in ButaiService.list() do
+		if butai.gun == entry.state.gun and contains(entry, butai.position.x, butai.position.z) then
+			total += butai.heisu
+		end
+	end
+	return total
+end
+
+-- 範囲の中にいる攻める軍の数。相手の軍の部隊と、敵軍の拠点では生きている出撃したプレイヤー
+local function kogekiCountOf(entry: Entry): number
+	local count = 0
+	local opponent = Gun.opponentOf(entry.state.gun)
+	for _, butai in ButaiService.list() do
+		if butai.gun == opponent and butai.heisu > 0 and contains(entry, butai.position.x, butai.position.z) then
+			count += 1
+		end
+	end
+	if entry.state.gun == "Tekigun" then
+		for _, member in StageService.getMembers() do
+			local character = member.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if humanoid and root and humanoid.Health > 0 and contains(entry, root.Position.X, root.Position.Z) then
+				count += 1
+			end
+		end
+	end
+	return count
+end
+
+-- 補充を受ける守備の部隊。範囲の中にいる拠点の軍の部隊でなければ nil
+local function hojuTargetOf(entry: Entry): string?
+	local id = hojuButai[entry.state.id]
+	local butai = if id then ButaiService.get(id) else nil
+	if butai and butai.gun == entry.state.gun and contains(entry, butai.position.x, butai.position.z) then
+		return butai.id
+	end
+	return nil
+end
+
+-- 守備の兵数が上限より少なければ補充する。補充を受ける部隊がいなければ、拠点の中心に守備の部隊を作る
+local function hoju(entry: Entry)
+	local amount = Kyoten.hojuHeisu(shubiHeisuOf(entry), entry.state.honjin)
+	if amount <= 0 then
+		return
+	end
+	local target = hojuTargetOf(entry)
+	if target then
+		ButaiService.changeHeisu(target, amount)
+		return
+	end
+	local id = `Shubi{entry.state.id}`
+	local suffix = 1
+	while ButaiService.get(id) do
+		suffix += 1
+		id = `Shubi{entry.state.id}{suffix}`
+	end
+	local center = entry.cframe.Position
+	local created = ButaiService.add({
+		id = id,
+		gun = entry.state.gun,
+		heisu = amount,
+		position = { x = center.X, z = center.Z },
+		kyoten = entry.state.id,
+	})
+	if created then
+		hojuButai[entry.state.id] = created.id
+	end
+end
+
+-- 制圧した後の片付け。範囲の中にいた元の軍の部隊を敗走させて（消して）、補充をやり直し、
+-- 拠点の陥落を士気と seiatsu で知らせる
 local function afterSeiatsu(entry: Entry, previous: Gun.Gun)
 	for _, butai in ButaiService.list() do
 		if butai.gun == previous and contains(entry, butai.position.x, butai.position.z) then
 			ButaiService.remove(butai.id)
 		end
 	end
+	hojuButai[entry.state.id] = nil
+	hojuElapsed[entry.state.id] = 0
+	local center = entry.cframe.Position
+	ShikiService.notify("KyotenKanraku", { x = center.X, z = center.Z }, entry.state.gun)
 	seiatsuEvent:Fire(entry.state.id, entry.state.gun, previous)
 end
 
@@ -294,9 +384,31 @@ local function onGekiha(kind: string, gun: Gun.Gun, position: Vector3)
 	end
 end
 
+-- 戦闘のフェーズの間、守備を補充し、守備のいない拠点の耐久を減らす
+local function tick(dt: number)
+	if StageService.getPhase() ~= "Battle" then
+		return
+	end
+	for _, entry in table.clone(entries) do
+		local id = entry.state.id
+		local elapsed = (hojuElapsed[id] or 0) + dt
+		if elapsed >= Config.Kyoten.HojuInterval then
+			elapsed -= Config.Kyoten.HojuInterval
+			hoju(entry)
+		end
+		hojuElapsed[id] = elapsed
+		local amount = Kyoten.mushubiDamage(shubiHeisuOf(entry), kogekiCountOf(entry), dt)
+		if amount > 0 then
+			KyotenService.damage(id, amount)
+		end
+	end
+end
+
 -- 拠点をすべて片付ける
 local function clear()
 	table.clear(entries)
+	table.clear(hojuButai)
+	table.clear(hojuElapsed)
 	folder:ClearAllChildren()
 	local container = markerFolder
 	if container then
@@ -321,7 +433,14 @@ local function onStarted(info: StageService.StartInfo)
 			size = kyoten.size,
 		}
 		table.insert(entries, entry)
+		hojuElapsed[kyoten.id] = 0
 		publish(entry)
+	end
+	-- 配置で方針が防衛の、その拠点から始まる部隊が守備の補充を受ける（1拠点に1部隊）
+	for _, butai in loaded.butai do
+		if butai.hoshin == "Boei" and find(butai.kyoten) and not hojuButai[butai.kyoten] then
+			hojuButai[butai.kyoten] = butai.id
+		end
 	end
 end
 
@@ -338,6 +457,11 @@ local function describe(entry: Entry): { [string]: any }
 		center = { round(center.X), round(center.Z) },
 		size = { round(entry.size.X), round(entry.size.Z) },
 		shubi = KyotenService.shubiOf(state.id),
+		shubiHeisu = shubiHeisuOf(entry),
+		shubiMax = Kyoten.shubiMax(state.honjin),
+		hojuButai = hojuTargetOf(entry),
+		hojuIn = round(math.max(Config.Kyoten.HojuInterval - (hojuElapsed[state.id] or 0), 0)),
+		kogeki = kogekiCountOf(entry),
 	}
 end
 
@@ -431,6 +555,20 @@ function KyotenService.start()
 	ButaiService.heisuLost:Connect(onHeisuLost)
 	EnemyService.gekiha:Connect(onGekiha)
 	registerDebugCommands()
+
+	task.spawn(function()
+		local last = os.clock()
+		while true do
+			task.wait(Config.Kyoten.TickInterval)
+			local now = os.clock()
+			-- 1回の失敗で補充が止まらないよう、失敗は警告にして次の間隔で続ける
+			local ok, err = pcall(tick, now - last)
+			if not ok then
+				warn(`KyotenService: 拠点の補充と減少を進められなかった: {err}`)
+			end
+			last = now
+		end
+	end)
 end
 
 return KyotenService

@@ -10,6 +10,11 @@ local PARAMS: Kyoten.Params = {
 	Taikyu = { Kyoten = 20, Honjin = 40 },
 	SeiatsuRate = 0.5,
 	GeninGekiha = 1,
+	Shubi = { Kyoten = 10, Honjin = 25 },
+	HojuInterval = 10,
+	HojuHeisu = 3,
+	MushubiGensho = 2,
+	TickInterval = 0.5,
 }
 
 test("開始時の耐久は上限で、本陣は通常拠点より高い", function()
@@ -89,4 +94,33 @@ test("画面に出す耐久は端数を切り上げ、0 は制圧した瞬間だ
 	expect(Kyoten.displayTaikyu(19.2)).toBe(20)
 	expect(Kyoten.displayTaikyu(0.01)).toBe(1)
 	expect(Kyoten.displayTaikyu(0)).toBe(0)
+end)
+
+test("守備は上限まで1回に決まった兵数ずつ補充し、上限を超えない", function()
+	expect(Kyoten.hojuHeisu(0, false, PARAMS)).toBe(3)
+	expect(Kyoten.hojuHeisu(8, false, PARAMS)).toBe(2)
+	expect(Kyoten.hojuHeisu(10, false, PARAMS)).toBe(0)
+	expect(Kyoten.hojuHeisu(15, false, PARAMS)).toBe(0)
+	expect(Kyoten.hojuHeisu(20, true, PARAMS)).toBe(3)
+	expect(Kyoten.shubiMax(true, PARAMS)).toBe(25)
+end)
+
+test("守備のいない拠点は、攻める軍がいる間だけ時間に比例して耐久が減る", function()
+	expect(Kyoten.mushubiDamage(0, 1, 0.5, PARAMS)).toBe(1)
+	expect(Kyoten.mushubiDamage(0, 3, 2, PARAMS)).toBe(4)
+	expect(Kyoten.mushubiDamage(0, 0, 2, PARAMS)).toBe(0)
+	expect(Kyoten.mushubiDamage(1, 3, 2, PARAMS)).toBe(0)
+end)
+
+test("守備のいない拠点の減少でも、耐久が 0 になれば攻めた軍が制圧する", function()
+	local kyoten = Kyoten.new("Chuo", false, "Tekigun", PARAMS)
+	local captured = false
+	for _ = 1, 20 do
+		captured = Kyoten.damage(kyoten, Kyoten.mushubiDamage(0, 1, 0.5, PARAMS), PARAMS)
+		if captured then
+			break
+		end
+	end
+	expect(captured).toBe(true)
+	expect(kyoten.gun).toBe("Mikatagun")
 end)

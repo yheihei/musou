@@ -6,6 +6,8 @@
 -- - 耐久は 0 から上限までの数で持つ。時間とともに減らすときのために端数も持つ
 -- - 制圧したら所属を相手の軍に変え、耐久を上限 × 制圧直後の割合にする。減らしきって余った分は持ち越さない
 -- - 画面と窓口に出す耐久は端数を切り上げる
+-- - 守備（範囲の中にいるその拠点の軍の部隊）は、上限まで間隔ごとに補充する
+-- - 守備のいない拠点は、攻める軍が範囲の中にいる間、時間に比例して耐久が減る
 
 local Config = require("./Config")
 local Gun = require("./Gun")
@@ -76,6 +78,29 @@ end
 function Kyoten.gekihaDamage(count: number, params: Params?): number
 	local p = params or Config.Kyoten
 	return math.max(count, 0) * p.GeninGekiha
+end
+
+-- 守備の兵数の上限
+function Kyoten.shubiMax(honjin: boolean, params: Params?): number
+	local p = params or Config.Kyoten
+	return if honjin then p.Shubi.Honjin else p.Shubi.Kyoten
+end
+
+-- 1回の補充で守備に足す兵数。今の守備の兵数 shubiHeisu が上限に届いていれば 0。上限は超えない
+function Kyoten.hojuHeisu(shubiHeisu: number, honjin: boolean, params: Params?): number
+	local p = params or Config.Kyoten
+	local room = Kyoten.shubiMax(honjin, p) - math.max(shubiHeisu, 0)
+	return math.clamp(math.floor(room), 0, p.HojuHeisu)
+end
+
+-- 守備のいない拠点で dt 秒のあいだに減る耐久。守備の兵数 shubiHeisu が 1 以上か、
+-- 範囲の中に攻める軍（相手の軍の部隊とプレイヤー）が kogeki 人もいなければ 0
+function Kyoten.mushubiDamage(shubiHeisu: number, kogeki: number, dt: number, params: Params?): number
+	local p = params or Config.Kyoten
+	if shubiHeisu > 0 or kogeki <= 0 then
+		return 0
+	end
+	return p.MushubiGensho * math.max(dt, 0)
 end
 
 -- 画面と窓口に出す耐久。端数は切り上げる（残りがわずかでも 0 とは出さない）

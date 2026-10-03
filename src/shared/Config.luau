@@ -200,6 +200,15 @@ export type KyotenSection = {
 	},
 	SeiatsuRate: number,
 	GeninGekiha: number,
+	-- 守備の兵数の上限。通常拠点と本陣で分ける
+	Shubi: {
+		Kyoten: number,
+		Honjin: number,
+	},
+	HojuInterval: number,
+	HojuHeisu: number,
+	MushubiGensho: number,
+	TickInterval: number,
 }
 
 -- 出来事1種類ぶんの士気の上下の量
@@ -1076,6 +1085,15 @@ local Config: Config = {
 		},
 		SeiatsuRate = 0.5, -- 制圧した直後の耐久。上限に掛ける割合
 		GeninGekiha = 1, -- 範囲の中でその拠点の軍の下忍が1人倒れたときに減る耐久
+		-- 守備の補充。耐久が残る間、守備の兵数が上限より少なければ、間隔ごとに守備の部隊へ足す
+		Shubi = {
+			Kyoten = 30, -- 通常拠点の守備の兵数の上限
+			Honjin = 40, -- 本陣の守備の兵数の上限
+		},
+		HojuInterval = 10, -- 守備を補充する間隔（秒）
+		HojuHeisu = 2, -- 1回に補充する兵数
+		MushubiGensho = 1, -- 守備のいない拠点で、攻める軍が範囲の中にいる間に1秒あたり減る耐久
+		TickInterval = 0.5, -- 補充と守備のいない拠点の減少を進める間隔（秒）
 	},
 
 	-- 士気。軍全体の士気を軍ごとに1本持ち、部隊の士気はそれに近くの出来事の補正を足して決める。計算は Shiki.luau にある。
