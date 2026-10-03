@@ -246,6 +246,8 @@ export type PartySection = {
 export type StageSection = {
 	TimeLimit: number,
 	SaishutsugekiDelay: number,
+	Heiryoku: number,
+	SaishutsugekiSpacing: number,
 }
 
 export type SerifuSection = {
@@ -304,6 +306,8 @@ local Config: Config = {
 	Stage = {
 		TimeLimit = 2400, -- 戦闘のフェーズの制限時間（秒）。過ぎると時間切れで負ける
 		SaishutsugekiDelay = 5, -- 倒れてから再出撃するまでの秒数
+		Heiryoku = 10, -- 出撃したときの兵力（パーティーで共有する再出撃の残り回数）
+		SaishutsugekiSpacing = 6, -- 拠点から再出撃するときに、出撃した順に横へ並べる間隔（スタッド）
 	},
 
 	-- 能力値と与ダメージの計算。能力値の補正は Stats.luau が足す

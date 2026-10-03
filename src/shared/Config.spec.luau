@@ -13,6 +13,8 @@ local SNAPSHOT = {
 	Stage = {
 		TimeLimit = 2400,
 		SaishutsugekiDelay = 5,
+		Heiryoku = 10,
+		SaishutsugekiSpacing = 6,
 	},
 	Stats = {
 		Characters = {

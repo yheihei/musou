@@ -15,8 +15,7 @@
 -- - 戦闘のフェーズには制限時間（Config.luau の Stage 節）があり、終了予定の時刻（workspace:GetServerTimeNow の時刻）を
 --   workspace の Attribute の BattleDeadline に置いてクライアントへ複製する。過ぎたら時間切れで負けにする
 -- - 出撃すると、出撃するメンバーの撃破数と奥義ゲージを出撃したときの値に戻す
--- - 倒れた出撃メンバーは、出撃したステージの区画の出撃地点から再出撃する（暫定。兵站線に沿った再出撃は #103 で置き換える）。
---   ロビーのフェーズの人と待機中の人はロビーに出現する
+-- - 倒れた人の再出撃は SaishutsugekiService が行う。出撃したメンバーの出撃地点は shutsugekiCFrameOf で引く
 -- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
 -- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
 --   新しく開放したステージを StageResult のメンバーごとに書く
@@ -296,20 +295,16 @@ local function moveToShutsugekiChiten(members: { Player }, chiten: { KukakuServi
 	end
 end
 
--- 倒れた人を出現し直させる。出撃して残っているメンバーは、出撃したステージの区画の出撃地点から再出撃する
--- （暫定。兵站線に沿った再出撃は #103 で置き換える）。ロビーのフェーズの人と待機中の人はロビーに出す
-local function respawn(player: Player)
+-- 出撃したメンバーが立つ、出撃したステージの区画の出撃地点（出撃した順で決める）。
+-- ロビーのフェーズと、出撃したメンバーでない人（抜けて入り直した人を含む）と、地点が無いときは nil
+function StageService.shutsugekiCFrameOf(player: Player): CFrame?
 	local current = session
 	local index = if current and phase ~= "Lobby" then table.find(current.members, player) else nil
-	if current and index and PartyService.isMember(player.UserId) then
-		local stage = Stages.get(current.stageId) :: Stages.Stage
-		local cframe = chitenFor(KukakuService.shutsugekiChiten(stage.kukaku), index)
-		if cframe then
-			PlayerService.spawnAt(player, cframe)
-			return
-		end
+	if not current or not index or not PartyService.isMember(player.UserId) then
+		return nil
 	end
-	PlayerService.spawnInLobby(player)
+	local stage = Stages.get(current.stageId) :: Stages.Stage
+	return chitenFor(KukakuService.shutsugekiChiten(stage.kukaku), index)
 end
 
 -- 戦闘のフェーズで終了予定の時刻を過ぎていたら、時間切れで負けにする
@@ -715,7 +710,6 @@ function StageService.start()
 	local skipRemote = remotes:WaitForChild("SkipEventScene") :: RemoteEvent
 	skipRemote.OnServerEvent:Connect(onSkipEventScene)
 	PartyService.changed:Connect(onPartyChanged)
-	PlayerService.setRespawner(respawn)
 	registerDebugCommands()
 	task.spawn(function()
 		while true do
