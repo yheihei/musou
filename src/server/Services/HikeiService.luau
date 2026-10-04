@@ -554,6 +554,29 @@ local function registerDebugCommands()
 		end
 	)
 	DebugCommand.register(
+		"SetHikeiRemaining",
+		"<秘計 ID> <残り秒数>",
+		"その秘計の期限のある効果の残り時間を書き換える。0 にすると次の確かめで期限切れになる（確認用）",
+		function(hikeiId, value)
+			if type(hikeiId) ~= "string" or not Hikei.get(hikeiId) then
+				error(
+					`秘計 ID は {table.concat(Hikei.selectable(), "、")} のどれか（{tostring(hikeiId)}）`,
+					0
+				)
+			end
+			local seconds = math.max(DebugCommand.toNumber(value, "残り秒数"), 0)
+			local now = HikeiService.now()
+			local count = 0
+			for _, effect in effects do
+				if effect.hikei == hikeiId and effect.expiresAt ~= math.huge then
+					effect.expiresAt = now + seconds
+					count += 1
+				end
+			end
+			return `{hikeiId} の効果 {count} 個の残り時間を {seconds} 秒にした`
+		end
+	)
+	DebugCommand.register(
 		"DispelKyoka",
 		"<打ち消す側の軍>",
 		"相手の軍がかけた強化の秘計の効果を打ち消す（大喝の打ち消しだけ。確認用）",

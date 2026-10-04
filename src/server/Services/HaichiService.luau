@@ -630,6 +630,40 @@ local function registerDebugCommands()
 		end
 	)
 	DebugCommand.register(
+		"WarpToHikeiChiten",
+		"<プレイヤー名> <地点 ID>",
+		"プレイヤーを、出撃しているステージの落石地点か大火計地域の中心へ移す（秘計の確認用）",
+		function(name, id)
+			local player = DebugCommand.findPlayer(name)
+			local character = player.Character
+			if not character or not character:FindFirstChild("HumanoidRootPart") then
+				return `{player.Name} のキャラクターがいない`
+			end
+			local current = currentHikei
+			if not current then
+				return "出撃していないか、出撃したステージに配置の構成が無い"
+			end
+			local target: Vector3? = nil
+			for _, chiten in current.rakuseki do
+				if chiten.id == id then
+					target = chiten.position
+				end
+			end
+			for _, chiiki in current.daikakei do
+				if chiiki.id == id then
+					target = chiiki.cframe.Position
+				end
+			end
+			if not target then
+				return `地点 {tostring(id)} は出撃しているステージの落石地点にも大火計地域にも無い`
+			end
+			local point = target :: Vector3
+			local y = Ground.heightAt(point.X, point.Z) or point.Y
+			character:PivotTo(CFrame.new(point.X, y + 5, point.Z))
+			return `{player.Name} を {id} へ移した`
+		end
+	)
+	DebugCommand.register(
 		"PlaceShikenMejirushi",
 		"[ステージ ID]",
 		"試験用ステージの拠点・つながり・落石地点・大火計地域の目印を、構成の位置からテストプレイ中だけ作り直す（既定は Test）",
