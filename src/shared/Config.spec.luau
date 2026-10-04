@@ -792,6 +792,10 @@ local SNAPSHOT = {
 		},
 		FadeTime = 1.5,
 	},
+	BattleStatus = {
+		TimeWarning = 300,
+		TimeDanger = 60,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }

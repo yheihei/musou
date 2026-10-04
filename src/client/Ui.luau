@@ -11,6 +11,7 @@ local Ui = {}
 -- ScreenGui の重なり順（DisplayOrder）。後に書いたものほど上に重なる
 Ui.Layer = {
 	Hud = 10,
+	BattleStatus = 15,
 	Minimap = 20,
 	BattleSerifu = 30,
 	HikeiNotice = 40,

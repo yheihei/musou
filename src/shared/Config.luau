@@ -270,6 +270,11 @@ export type BgmSection = {
 	FadeTime: number,
 }
 
+export type BattleStatusSection = {
+	TimeWarning: number,
+	TimeDanger: number,
+}
+
 export type Config = {
 	Party: PartySection,
 	Stage: StageSection,
@@ -294,6 +299,7 @@ export type Config = {
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
+	BattleStatus: BattleStatusSection,
 }
 
 local Config: Config = {
@@ -1179,6 +1185,12 @@ local Config: Config = {
 			Defeat = 0.3,
 		},
 		FadeTime = 1.5, -- 場面が変わったときに、前の曲を下げきって次の曲を上げきるまでの秒数（両方を同時に進める）
+	},
+
+	-- 画面上部の戦況の表示（軍全体の士気・残り時間・兵力）。強調の判断は BattleStatus.luau にある
+	BattleStatus = {
+		TimeWarning = 300, -- 戦闘の残り時間がこの秒数以下になったら、残り時間を黄色で出す
+		TimeDanger = 60, -- 戦闘の残り時間がこの秒数以下になったら、残り時間を赤で出す
 	},
 }
 
