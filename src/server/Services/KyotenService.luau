@@ -10,8 +10,7 @@
 --   部隊の兵数の減少（交戦など。ButaiService.heisuLost）と、仮の湧き処理の下忍の撃破（EnemyService.gekiha）の両方で減らす
 -- - 仮の湧き処理の下忍は敵軍で、部隊に属さない。実体化圏の下忍の個体（#76）は撃破で部隊の兵数を減らすので、
 --   置き換えたら EnemyService.gekiha の購読を外し、兵数の減少だけで数える
--- - 守備の部隊は、拠点の軍の部隊のうち範囲の中にいるもの。部隊を方針に沿って動かす処理（#102）が来るまでは、
---   配置の部隊は開始時の拠点にとどまる
+-- - 守備の部隊は、拠点の軍の部隊のうち範囲の中にいるもの。配置の部隊は方針（HoshinService）に沿って拠点を出入りする
 -- - 耐久が 0 になったら相手の軍が制圧する。範囲の中にいた元の軍の部隊は敗走して消え、耐久は制圧直後の値になる。
 --   制圧は拠点の陥落の出来事として、拠点の中心で、制圧した軍が得をする形で士気に知らせる（ShikiService.notify）
 -- - 戦闘のフェーズの間、守備の兵数が上限より少なければ、間隔ごとに補充する（値は Config.luau の Kyoten 節）。
@@ -303,6 +302,12 @@ local function kogekiCountOf(entry: Entry): number
 		end
 	end
 	return count
+end
+
+-- 範囲の中にいる攻める軍の数（相手の軍の部隊と、敵軍の拠点では生きている出撃したプレイヤー）。拠点が無ければ 0
+function KyotenService.kogekiOf(id: string): number
+	local entry = find(id)
+	return if entry then kogekiCountOf(entry) else 0
 end
 
 -- 補充を受ける守備の部隊。範囲の中にいる拠点の軍の部隊でなければ nil

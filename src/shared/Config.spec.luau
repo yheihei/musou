@@ -719,6 +719,11 @@ local SNAPSHOT = {
 			},
 		},
 	},
+	Hoshin = {
+		Interval = 2,
+		GeigekiDistance = 120,
+		KyuenRate = 0.8,
+	},
 	Kyoten = {
 		Taikyu = {
 			Kyoten = 30,

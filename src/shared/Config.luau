@@ -193,6 +193,13 @@ export type ButaiSection = {
 	JoninGekihaShiki: number,
 }
 
+-- 上忍が部隊を率いて方針（攻略・防衛・救援）に沿って動くときの間隔と距離
+export type HoshinSection = {
+	Interval: number,
+	GeigekiDistance: number,
+	KyuenRate: number,
+}
+
 export type KyotenSection = {
 	-- 耐久の上限。通常拠点と本陣で分ける
 	Taikyu: {
@@ -302,6 +309,7 @@ export type Config = {
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
+	Hoshin: HoshinSection,
 	Kyoten: KyotenSection,
 	ShihaiArea: ShihaiAreaSection,
 	Shiki: ShikiSection,
@@ -1104,6 +1112,13 @@ local Config: Config = {
 				Teki3 = 40,
 			},
 		},
+	},
+
+	-- 方針。上忍が部隊を率いて、配置で決めた方針（攻略・防衛・救援）に沿って目的地を決める。判断は Hoshin.luau にある
+	Hoshin = {
+		Interval = 2, -- 方針を判断し直す間隔（秒）
+		GeigekiDistance = 120, -- 防衛の部隊が迎え撃つ相手の部隊の、担当の拠点の中心からの距離の上限（スタッド）
+		KyuenRate = 0.8, -- 救援の部隊が向かう、自分の軍の拠点の耐久の上限に対する割合の上限（攻める軍がいる拠点だけ）
 	},
 
 	-- 拠点の耐久と制圧。範囲の中でその拠点の軍の下忍が倒れると耐久が減り、0 で相手の軍に制圧される。計算は Kyoten.luau にある

@@ -4,7 +4,7 @@
 -- 移動の計算は ReplicatedStorage.Shared.Butai、速さ・間隔・士気の初期値は Config.luau の Butai 節にある。
 --
 -- - 出撃（StageService.started）で、配置の部隊を開始時の拠点の中心に作る。配置の構成が無いステージでは作らない。
---   目的地は持たせない（方針に沿って動かすのは #102）
+--   目的地は HoshinService が配置の方針に沿って決める
 -- - 決着（StageService.finished）とロビーのフェーズへの戻りで片付ける
 -- - 部隊ごとに ReplicatedStorage.Butai の下へ部隊 ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・軍（Gun）・兵数（Heisu）・士気（Shiki）・

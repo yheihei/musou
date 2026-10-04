@@ -80,6 +80,13 @@ function HeitansenService.isKoritsu(kyotenId: string): boolean
 	return current ~= nil and kyoten ~= nil and current[kyoten.gun].isolated[kyotenId] == true
 end
 
+-- つながりを通れない軍（落石で塞いだ軍）。出撃したステージにそのつながりが無いか、どの軍も通れるなら空
+function HeitansenService.blockedOf(kyotenA: string, kyotenB: string): { [Gun.Gun]: boolean }
+	local tsunagari = findTsunagari(kyotenA, kyotenB)
+	local blocked = tsunagari and tsunagari.blocked
+	return if blocked then table.clone(blocked) else {}
+end
+
 -- gun の軍の兵站線につながった拠点の ID を、配置の順に返す
 function HeitansenService.connectedOf(gun: Gun.Gun): { string }
 	local ids = {}

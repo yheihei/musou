@@ -6,6 +6,7 @@
 -- - 出撃（StageService.started）で作り、決着とロビーのフェーズへの戻りで片付ける。配置の構成が無いステージでは作らない
 -- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。
 --   戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
+-- - 首領は本陣の範囲にとどまる。setPosition で範囲の外の位置を渡されたら、範囲の縁へ寄せる（Hoshin.clampToRange）
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）
 -- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
 --   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
@@ -22,6 +23,7 @@ local Butai = require(ReplicatedStorage.Shared.Butai)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
+local Hoshin = require(ReplicatedStorage.Shared.Hoshin)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
 local Kosen = require(ReplicatedStorage.Shared.Kosen)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
@@ -39,6 +41,8 @@ JoninService.FOLDER = "Jonin"
 -- 出撃したステージの上忍と首領（配置の構成の順）
 local joninList: { Jonin.Jonin } = {}
 local folder: Folder
+-- 首領のキャラクター ID から引く、とどまる本陣の範囲（目印のパーツの中心・向き・大きさ）
+local honjinRangeOf: { [string]: { cframe: CFrame, size: Vector3 } } = {}
 
 -- 軍と位置を受け、その軍の支配エリアの中かを返す関数（ShihaiAreaService が渡す）
 local shihaiAreaProvider: ((gun: Gun.Gun, position: Jonin.Point) -> boolean)? = nil
@@ -110,8 +114,28 @@ function JoninService.setHealth(id: string, value: number): boolean
 	return true
 end
 
+-- 位置を書き換えて複製する。首領は本陣の範囲の外へ出さず、範囲の縁へ寄せる。いなければ false
+function JoninService.setPosition(id: string, position: Jonin.Point): boolean
+	local jonin = find(id)
+	if not jonin then
+		return false
+	end
+	local x, z = position.x, position.z
+	local range = if jonin.shuryo then honjinRangeOf[jonin.id] else nil
+	if range then
+		local offset = range.cframe:PointToObjectSpace(Vector3.new(x, range.cframe.Position.Y, z))
+		local localX, localZ = Hoshin.clampToRange(offset.X, offset.Z, range.size.X, range.size.Z)
+		local world = range.cframe:PointToWorldSpace(Vector3.new(localX, 0, localZ))
+		x, z = world.X, world.Z
+	end
+	jonin.position = { x = x, z = z }
+	publish(jonin)
+	return true
+end
+
 local function clear()
 	table.clear(joninList)
+	table.clear(honjinRangeOf)
 	folder:ClearAllChildren()
 end
 
@@ -128,9 +152,11 @@ local function onStarted(info: StageService.StartInfo)
 		return
 	end
 	local centers: { [string]: Jonin.Point } = {}
+	local ranges: { [string]: { cframe: CFrame, size: Vector3 } } = {}
 	for _, kyoten in loaded.kyoten do
 		local position = kyoten.cframe.Position
 		centers[kyoten.id] = { x = position.X, z = position.Z }
+		ranges[kyoten.id] = { cframe = kyoten.cframe, size = kyoten.size }
 	end
 	for _, entry in Jonin.entriesOf(haichi, stage) do
 		local position = centers[entry.kyoten]
@@ -140,6 +166,9 @@ local function onStarted(info: StageService.StartInfo)
 		end
 		local jonin = Jonin.new(entry, position)
 		table.insert(joninList, jonin)
+		if entry.shuryo then
+			honjinRangeOf[entry.id] = ranges[entry.kyoten]
+		end
 		publish(jonin)
 	end
 end
@@ -245,6 +274,19 @@ local function registerDebugCommands()
 				})
 			end
 			return HttpService:JSONEncode(result)
+		end
+	)
+	DebugCommand.register(
+		"SetJoninPosition",
+		"<キャラクター ID> <x> <z>",
+		"上忍か首領の位置を書き換える。首領は本陣の範囲の外へ出さず、範囲の縁へ寄せる。上忍は次の間隔で率いる部隊の位置へ戻る（確認用）",
+		function(id, x, z)
+			local position = { x = DebugCommand.toNumber(x, "x"), z = DebugCommand.toNumber(z, "z") }
+			if type(id) ~= "string" or not JoninService.setPosition(id, position) then
+				return `{tostring(id)} は出撃したステージの上忍と首領にいない`
+			end
+			local jonin = find(id) :: Jonin.Jonin
+			return `{jonin.displayName} の位置を ({round(jonin.position.x)}, {round(jonin.position.z)}) にした`
 		end
 	)
 	DebugCommand.register(
