@@ -687,6 +687,7 @@ local SNAPSHOT = {
 		AggroRange = 80,
 		AITickInterval = 0.25,
 		CorpseLifetime = 2,
+		PlayerGap = 2,
 	},
 	Kosen = {
 		StartDistance = 30,

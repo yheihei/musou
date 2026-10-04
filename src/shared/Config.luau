@@ -165,6 +165,7 @@ export type SpawnerSection = {
 	AggroRange: number,
 	AITickInterval: number,
 	CorpseLifetime: number,
+	PlayerGap: number,
 }
 
 export type KosenSection = {
@@ -1054,6 +1055,9 @@ local Config: Config = {
 		AggroRange = 80,
 		AITickInterval = 0.25,
 		CorpseLifetime = 2,
+		-- 敵がプレイヤーの手前で止まるときの、敵の体の縁からプレイヤーの中心までの距離（スタッド）。
+		-- 敵はプレイヤーと重ならずに周りを囲む（攻撃が届く距離より手前で止まる）
+		PlayerGap = 2,
 	},
 
 	-- 交戦。部隊どうしの押し合いの損害を Kosen.luau で計算する

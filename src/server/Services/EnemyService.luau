@@ -5,6 +5,7 @@
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 -- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
 -- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
+-- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 
 local Players = game:GetService("Players")
@@ -13,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
 local Config = require(ReplicatedStorage.Shared.Config)
+local EnemySpacing = require(ReplicatedStorage.Shared.EnemySpacing)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
@@ -70,6 +72,8 @@ local aliveCount = 0
 local spawning = true
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
 local BUTAI_CENTER_TRIES = 8
+-- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
+local STAND_OFF_MARGIN = 0.5
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -118,6 +122,22 @@ local function findNearestTarget(position: Vector3): (Player?, BasePart?)
 	return bestPlayer, bestRoot
 end
 
+-- 立ち位置を決めるときの近くの敵（体が重なりうる距離にいる、生きている敵）
+local function neighborsOf(enemy: Enemy): { EnemySpacing.Neighbor }
+	local list = {}
+	local position = enemy.root.Position
+	for _, other in enemies do
+		if other ~= enemy and other.humanoid.Health > 0 then
+			local p = other.root.Position
+			local reach = enemy.radius + other.radius
+			if math.abs(p.X - position.X) < reach and math.abs(p.Z - position.Z) < reach then
+				table.insert(list, { x = p.X, z = p.Z, radius = other.radius })
+			end
+		end
+	end
+	return list
+end
+
 local function updateEnemy(enemy: Enemy, now: number)
 	local targetPlayer, targetRoot = findNearestTarget(enemy.root.Position)
 	if not targetPlayer or not targetRoot then
@@ -125,13 +145,26 @@ local function updateEnemy(enemy: Enemy, now: number)
 		return
 	end
 
-	local offset = targetRoot.Position - enemy.root.Position
-	if offset.Magnitude > enemy.def.AttackRange then
-		enemy.humanoid:MoveTo(targetRoot.Position)
-		return
+	-- プレイヤーの手前で止まり、ほかの敵とも重ならない位置へ向かう
+	local standOff = math.min(enemy.radius + Config.Spawner.PlayerGap, enemy.def.AttackRange - STAND_OFF_MARGIN)
+	local position = enemy.root.Position
+	local target = targetRoot.Position
+	local goal = EnemySpacing.goal(
+		{ x = position.X, z = position.Z },
+		enemy.radius,
+		{ x = target.X, z = target.Z },
+		standOff,
+		neighborsOf(enemy)
+	)
+	if EnemySpacing.shouldMove(goal, standOff) then
+		enemy.humanoid:MoveTo(Vector3.new(goal.point.x, position.Y, goal.point.z))
+	else
+		enemy.humanoid:Move(Vector3.zero)
 	end
 
-	enemy.humanoid:Move(Vector3.zero)
+	if goal.distance > enemy.def.AttackRange then
+		return
+	end
 	if now - enemy.lastAttack < enemy.def.AttackCooldown then
 		return
 	end
