@@ -5,6 +5,8 @@
 -- - 敵はプレイヤーの中心から手前の距離（standOff）で止まる。プレイヤーの中まで入らない
 -- - 止まる位置は、プレイヤーから見て今の敵の側。プレイヤーが近づいてきたら、敵は下がって間をあける
 -- - 近くの敵と体（半径の和）が重なっていたら、重なった分だけ離れる向きへずらす
+-- - ずらした位置がプレイヤーの中心から手前の距離より近ければ、手前の距離まで外へ押し戻す
+--   （周りの敵に押されて、プレイヤーの中へ入り込まないように）
 -- - 位置は水平の (x, z) で扱う
 
 export type Point = { x: number, z: number }
@@ -54,7 +56,17 @@ function EnemySpacing.goal(enemy: Point, radius: number, target: Point, standOff
 		end
 	end
 	local shifted = shiftX ~= 0 or shiftZ ~= 0
-	return { point = { x = x + shiftX, z = z + shiftZ }, distance = distance, shifted = shifted }
+	local gx, gz = x + shiftX, z + shiftZ
+	local rx, rz = gx - target.x, gz - target.z
+	local reach = math.sqrt(rx * rx + rz * rz)
+	if reach < standOff then
+		if reach > 1e-6 then
+			gx, gz = target.x + rx / reach * standOff, target.z + rz / reach * standOff
+		else
+			gx, gz = x, z
+		end
+	end
+	return { point = { x = gx, z = gz }, distance = distance, shifted = shifted }
 end
 
 -- 向かう位置へ歩くか。止まる位置の近くにいて、ほかの敵とも重なっていなければ歩かない

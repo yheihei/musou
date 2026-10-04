@@ -51,3 +51,26 @@ test("同じ位置に重なった敵どうしは、プレイヤーの周りを�
 	expect(goal.point.x).toBeNear(4, 1e-9)
 	expect(math.abs(goal.point.z)).toBeNear(4, 1e-9)
 end)
+
+test(
+	"ほかの敵に内側へ押されても、プレイヤーの中心から手前の距離より内側へは行かない",
+	function()
+		-- 外側の敵が、プレイヤーの方へ押す位置にいる
+		local goal = EnemySpacing.goal({ x = 4, z = 0 }, 2, PLAYER, 4, { { x = 6, z = 0, radius = 2 } })
+		expect(goal.shifted).toBe(true)
+		local dx, dz = goal.point.x, goal.point.z
+		expect(math.sqrt(dx * dx + dz * dz) >= 4 - 1e-9).toBe(true)
+	end
+)
+
+test("プレイヤーの中の敵が周りの敵に押されても、手前の距離まで外へ出る", function()
+	local goal = EnemySpacing.goal(
+		{ x = 1, z = 0 },
+		2,
+		PLAYER,
+		4,
+		{ { x = 3, z = 0, radius = 2 }, { x = 1, z = 2, radius = 2 } }
+	)
+	local dx, dz = goal.point.x, goal.point.z
+	expect(math.sqrt(dx * dx + dz * dz) >= 4 - 1e-9).toBe(true)
+end)
