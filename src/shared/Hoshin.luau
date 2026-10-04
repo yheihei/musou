@@ -9,8 +9,14 @@
 -- - 救援は、耐久が上限の KyuenRate 以下に減り、攻める軍が範囲の中にいる自分の軍の拠点のうち、
 --   道のりが一番近い拠点へ向かう。なければ担当の拠点へ戻ってとどまる
 -- - 攻略で目指せる相手の拠点が無いときも、担当の拠点へ戻ってとどまる
--- - 道のりは、今いる拠点からつながりに沿って測る。たどれるのは自分の軍の拠点と、自分の軍が通れるつながり
---   （落石で塞がれたつながりは通らない）。相手の軍の拠点には入れるが、その先へは進まない（落としてから次を目指す）
+-- - 担当の拠点へたどれない（道が塞がれた、相手の拠点の先にある）ときは、道のりが一番近い自分の軍の拠点へ向かう。
+--   それも無ければその場にとどまる
+-- - 道のりは、部隊の今の位置からつながりに沿って測る。拠点の中にとどまっている部隊はその拠点から、
+--   拠点の間を進んでいる部隊（迎え撃っている部隊も）は、最後にいた拠点・向かっている拠点・一番近い拠点のそれぞれへ
+--   まっすぐ戻るか進んでから、つながりをたどる
+-- - たどれるのは自分の軍の拠点と、自分の軍が通れるつながり（落石で塞がれたつながりは通らない）。
+--   相手の軍の拠点には入れるが、その先へは進まない（落としてから次を目指す）。中にとどまっている拠点からは、
+--   相手の軍の拠点でも先へ進める
 -- - 目指す拠点までの道筋の、次に向かう拠点（next）も返す。部隊はつながりの経由点をたどって次の拠点へ向かう
 -- - 首領は本陣の範囲にとどまる。範囲の外の位置は範囲の縁へ寄せる（clampToRange）
 
@@ -54,8 +60,12 @@ export type Butai = {
 	hoshin: Haichi.Hoshin,
 	-- 担当の拠点（配置で始まる拠点）
 	tanto: string,
-	-- 今いる拠点（最後に着いた拠点）。無ければ位置に一番近い拠点から測る
+	-- 最後に着いた拠点
 	kyoten: string?,
+	-- 向かっている拠点。拠点へ向かっていなければ nil
+	mokutekiKyoten: string?,
+	-- 最後に着いた拠点の範囲の中にとどまっているか
+	atKyoten: boolean,
 }
 
 -- 迎え撃つ候補の部隊（潜んでいる伏兵部隊は入れない）
@@ -110,21 +120,12 @@ function Hoshin.nearestKyoten(kyotenList: { Kyoten }, position: Point): string?
 	return best
 end
 
--- 軍 gun の部隊が拠点 from からつながりをたどって行ける拠点ごとの、道のりと次の拠点を返す。
--- from 自身は道のり 0 で次の拠点は nil。from 以外では、gun の拠点からだけ先へ進む（相手の軍と無所属の拠点には入れるが、
--- その先へは進まない）。gun が通れないつながりは通らない。表に無い拠点を指すつながりは無視する
-function Hoshin.reach(
-	kyotenList: { Kyoten },
+-- 拠点 ID から、gun が通れるつながりでつながった先の拠点 ID とその道のりの一覧を引く。表に無い拠点を指すつながりは無視する
+local function neighborsOf(
+	byId: { [string]: Kyoten },
 	tsunagariList: { Tsunagari },
-	gun: Gun.Gun,
-	from: string
-): { [string]: Reach }
-	local byId = indexById(kyotenList)
-	local result: { [string]: Reach } = {}
-	if not byId[from] then
-		return result
-	end
-	-- 拠点 ID から、つながった先の拠点 ID とその道のりの一覧を引く
+	gun: Gun.Gun
+): { [string]: { { id: string, length: number } } }
 	local neighbors: { [string]: { { id: string, length: number } } } = {}
 	for _, tsunagari in tsunagariList do
 		local a, b = byId[tsunagari.kyotenA], byId[tsunagari.kyotenB]
@@ -137,9 +138,20 @@ function Hoshin.reach(
 			table.insert(neighbors[b.id], { id = a.id, length = length })
 		end
 	end
+	return neighbors
+end
 
-	-- 拠点の数は少ないので、道のりの一番短い拠点を毎回探して確定する（ダイクストラ法）
-	result[from] = { distance = 0, next = nil }
+-- initial の拠点から始めて、道のりの一番短い拠点を毎回探して確定する（ダイクストラ法。拠点の数は少ない）。
+-- gun の拠点からだけ先へ進む。start を渡すと、その拠点は軍に関係なく先へ進める（中にとどまっている拠点）。
+-- 先へ進むとき、start から出る最初の一歩はその隣の拠点、ほかは最初の一歩を受け継ぐ
+local function search(
+	byId: { [string]: Kyoten },
+	neighbors: { [string]: { { id: string, length: number } } },
+	gun: Gun.Gun,
+	initial: { [string]: Reach },
+	start: string?
+): { [string]: Reach }
+	local result: { [string]: Reach } = table.clone(initial)
 	local done: { [string]: boolean } = {}
 	while true do
 		local current: string? = nil
@@ -155,16 +167,14 @@ function Hoshin.reach(
 		end
 		local id = current :: string
 		done[id] = true
-		local passable = id == from or byId[id].gun == gun
-		if not passable then
+		if id ~= start and byId[id].gun ~= gun then
 			continue
 		end
 		for _, neighbor in neighbors[id] or {} do
 			local total = currentDistance + neighbor.length
 			local known = result[neighbor.id]
 			if not done[neighbor.id] and (not known or total < known.distance) then
-				-- from から出る最初の一歩は、その隣の拠点。そこから先は最初の一歩を受け継ぐ
-				local first = if id == from then neighbor.id else result[id].next
+				local first = if id == start then neighbor.id else result[id].next
 				result[neighbor.id] = { distance = total, next = first }
 			end
 		end
@@ -172,11 +182,45 @@ function Hoshin.reach(
 	return result
 end
 
--- 拠点 target を目指す判断。道筋の上で着いていれば next は nil。つながりでたどれなければ、まっすぐ向かう（next は target）
-local function toward(reach: { [string]: Reach }, start: string, target: string): Decision
+-- 軍 gun の部隊が拠点 from の中にとどまっているとき、つながりをたどって行ける拠点ごとの、道のりと次の拠点を返す。
+-- from 自身は道のり 0 で次の拠点は nil。from は相手の軍の拠点でも先へ進める。from 以外では gun の拠点からだけ先へ進む
+-- （相手の軍と無所属の拠点には入れるが、その先へは進まない）。gun が通れないつながりは通らない
+function Hoshin.reach(
+	kyotenList: { Kyoten },
+	tsunagariList: { Tsunagari },
+	gun: Gun.Gun,
+	from: string
+): { [string]: Reach }
+	local byId = indexById(kyotenList)
+	if not byId[from] then
+		return {}
+	end
+	return search(byId, neighborsOf(byId, tsunagariList, gun), gun, { [from] = { distance = 0, next = nil } }, from)
+end
+
+-- 軍 gun の部隊が拠点の外（拠点の間）にいるとき、つながりをたどって行ける拠点ごとの、道のりと次の拠点を返す。
+-- sources は、部隊がまっすぐ向かえる拠点と、そこまでの距離。その拠点へ向かってから、gun の拠点からだけ先へ進む。
+-- 次の拠点は、最初にまっすぐ向かう拠点
+function Hoshin.reachFrom(
+	kyotenList: { Kyoten },
+	tsunagariList: { Tsunagari },
+	gun: Gun.Gun,
+	sources: { [string]: number }
+): { [string]: Reach }
+	local byId = indexById(kyotenList)
+	local initial: { [string]: Reach } = {}
+	for id, length in sources do
+		if byId[id] then
+			initial[id] = { distance = length, next = id }
+		end
+	end
+	return search(byId, neighborsOf(byId, tsunagariList, gun), gun, initial, nil)
+end
+
+-- たどれる拠点 target を目指す判断。中にとどまっている拠点なら next は nil
+local function toward(reach: { [string]: Reach }, target: string): Decision
 	local entry = reach[target]
-	local next = if entry then entry.next elseif target == start then nil else target
-	return { kind = "Kyoten", kyoten = target, next = next, butai = nil, position = nil }
+	return { kind = "Kyoten", kyoten = target, next = if entry then entry.next else target, butai = nil, position = nil }
 end
 
 -- 候補の拠点のうち、道のりが一番近いもの。同じ道のりなら一覧の先の拠点。たどれる候補が無ければ nil
@@ -193,6 +237,27 @@ local function closest(kyotenList: { Kyoten }, reach: { [string]: Reach }, accep
 	return best
 end
 
+-- 部隊の今の位置からの道のり。拠点の中にとどまっていればその拠点から、拠点の外なら、最後にいた拠点・
+-- 向かっている拠点・一番近い拠点へまっすぐ向かってから測る
+local function reachOf(butai: Butai, kyotenList: { Kyoten }, tsunagariList: { Tsunagari }): { [string]: Reach }
+	local byId = indexById(kyotenList)
+	local kyoten = butai.kyoten
+	if kyoten and byId[kyoten] and butai.atKyoten and not butai.mokutekiKyoten then
+		return Hoshin.reach(kyotenList, tsunagariList, butai.gun, kyoten)
+	end
+	local sources: { [string]: number } = {}
+	local function add(id: string?)
+		local item = if id then byId[id] else nil
+		if item then
+			sources[item.id] = distance(butai.position.x, butai.position.z, item.x, item.z)
+		end
+	end
+	add(butai.kyoten)
+	add(butai.mokutekiKyoten)
+	add(Hoshin.nearestKyoten(kyotenList, butai.position))
+	return Hoshin.reachFrom(kyotenList, tsunagariList, butai.gun, sources)
+end
+
 -- 部隊の方針から、目指す拠点か迎え撃つ相手の部隊を決める
 function Hoshin.decide(
 	butai: Butai,
@@ -203,15 +268,7 @@ function Hoshin.decide(
 ): Decision
 	local p = params or Config.Hoshin
 	local byId = indexById(kyotenList)
-	local start = butai.kyoten
-	if not start or not byId[start] then
-		start = Hoshin.nearestKyoten(kyotenList, butai.position)
-	end
-	if not start then
-		return { kind = "Stay", kyoten = nil, next = nil, butai = nil, position = nil }
-	end
-	local origin = start :: string
-	local reach = Hoshin.reach(kyotenList, tsunagariList, butai.gun, origin)
+	local reach = reachOf(butai, kyotenList, tsunagariList)
 	local opponent = Gun.opponentOf(butai.gun)
 
 	if butai.hoshin == "Koryaku" then
@@ -219,7 +276,7 @@ function Hoshin.decide(
 			return kyoten.gun == opponent
 		end)
 		if target then
-			return toward(reach, origin, target)
+			return toward(reach, target)
 		end
 	elseif butai.hoshin == "Boei" then
 		local tanto = byId[butai.tanto]
@@ -251,13 +308,19 @@ function Hoshin.decide(
 			return kyoten.gun == butai.gun and kyoten.kogeki and kyoten.taikyuRate <= p.KyuenRate
 		end)
 		if target then
-			return toward(reach, origin, target)
+			return toward(reach, target)
 		end
 	end
 
-	-- 目指す先が無ければ担当の拠点へ戻ってとどまる
-	if byId[butai.tanto] then
-		return toward(reach, origin, butai.tanto)
+	-- 目指す先が無ければ担当の拠点へ戻ってとどまる。たどれなければ、道のりが一番近い自分の軍の拠点へ向かう
+	if reach[butai.tanto] then
+		return toward(reach, butai.tanto)
+	end
+	local fallback = closest(kyotenList, reach, function(kyoten)
+		return kyoten.gun == butai.gun
+	end)
+	if fallback then
+		return toward(reach, fallback)
 	end
 	return { kind = "Stay", kyoten = nil, next = nil, butai = nil, position = nil }
 end

@@ -15,7 +15,8 @@
 --   制圧は拠点の陥落の出来事として、拠点の中心で、制圧した軍が得をする形で士気に知らせる（ShikiService.notify）
 -- - 戦闘のフェーズの間、守備の兵数が上限より少なければ、間隔ごとに補充する（値は Config.luau の Kyoten 節）。
 --   補充を受けるのは、拠点の守備の部隊（配置で方針が防衛のその拠点から始まる部隊か、補充で作った部隊）。
---   その部隊が範囲の中にいなければ、拠点の中心に守備の部隊（Shubi<拠点 ID>）を作る
+--   その部隊がいなくなっていたら、拠点の中心に守備の部隊（Shubi<拠点 ID>）を作る。
+--   生きていて範囲の外にいる（迎え撃ちに出ている）間は、戻るまで補充しない
 -- - 守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間、
 --   時間に比例して耐久が減る。仮の湧き処理の敵は攻める軍に数えない
 -- - 孤立した拠点は守備を補充しない。孤立は HeitansenService が setKoritsuProvider で渡す関数で引く
@@ -328,7 +329,8 @@ local function hojuTargetOf(entry: Entry): string?
 	return nil
 end
 
--- 守備の兵数が上限より少なければ補充する。補充を受ける部隊がいなければ、拠点の中心に守備の部隊を作る
+-- 守備の兵数が上限より少なければ補充する。補充を受ける部隊がいなければ、拠点の中心に守備の部隊を作る。
+-- 補充を受ける部隊が生きていて範囲の外にいる（防衛の部隊が迎え撃ちに出ている）間は、戻るまで補充しない
 local function hoju(entry: Entry)
 	local amount = Kyoten.hojuHeisu(shubiHeisuOf(entry), entry.state.honjin)
 	if amount <= 0 then
@@ -337,6 +339,10 @@ local function hoju(entry: Entry)
 	local target = hojuTargetOf(entry)
 	if target then
 		ButaiService.changeHeisu(target, amount)
+		return
+	end
+	local designated = hojuButai[entry.state.id]
+	if designated and ButaiService.get(designated) then
 		return
 	end
 	local id = `Shubi{entry.state.id}`

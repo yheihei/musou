@@ -16,6 +16,7 @@ local function kyoten(id: string, gun: any, x: number, z: number): Hoshin.Kyoten
 	return { id = id, gun = gun, x = x, z = z, taikyuRate = 1, kogeki = false }
 end
 
+-- 拠点 kyotenId の中にとどまっている部隊
 local function butai(hoshin: Haichi.Hoshin, gun: any, kyotenId: string, tanto: string?): Hoshin.Butai
 	return {
 		id = "B",
@@ -24,6 +25,8 @@ local function butai(hoshin: Haichi.Hoshin, gun: any, kyotenId: string, tanto: s
 		hoshin = hoshin,
 		tanto = tanto or kyotenId,
 		kyoten = kyotenId,
+		mokutekiKyoten = nil,
+		atKyoten = true,
 	}
 end
 
@@ -229,15 +232,67 @@ test("救援の部隊は、向かう拠点が無ければ担当の拠点にと�
 	expect(decision).toEqual({ kind = "Kyoten", kyoten = "Home", next = nil, butai = nil, position = nil })
 end)
 
-test("今いる拠点が分からなければ、位置に一番近い拠点から測る", function()
-	local kyotenList, tsunagariList = shiken()
-	local item = butai("Koryaku", "Tekigun", "Chuo")
-	item.kyoten = nil
-	item.position = { x = 210, z = -50 }
-	local decision = Hoshin.decide(item, kyotenList, tsunagariList, {}, PARAMS)
-	-- 東から中央を通り、一番近い西を目指す
-	expect(decision.kyoten).toBe("Nishi")
-	expect(decision.next).toBe("Chuo")
+test(
+	"最後に着いた拠点が分からなければ、位置に一番近い拠点へ向かってから測る",
+	function()
+		local kyotenList, tsunagariList = shiken()
+		local item = butai("Koryaku", "Tekigun", "Chuo")
+		item.kyoten = nil
+		item.atKyoten = false
+		item.position = { x = 210, z = -50 }
+		local decision = Hoshin.decide(item, kyotenList, tsunagariList, {}, PARAMS)
+		-- 一番近い東へ戻ってから中央を通り、一番近い西を目指す
+		expect(decision.kyoten).toBe("Nishi")
+		expect(decision.next).toBe("Higashi")
+	end
+)
+
+test(
+	"拠点の間を進む部隊は、最後にいた拠点が落とされても、近い行き先へそのまま進む",
+	function()
+		local kyotenList, tsunagariList = shiken()
+		for _, item in kyotenList do
+			if item.id == "Chuo" then
+				item.gun = "Mikatagun"
+			end
+		end
+		local item = butai("Koryaku", "Tekigun", "Chuo")
+		item.atKyoten = false
+		item.mokutekiKyoten = "Nishi"
+		-- 中央（0, 0）から西（-220, 60）へ向かい、西の手前 20 スタッドにいる
+		item.position = { x = -201, z = 55 }
+		local decision = Hoshin.decide(item, kyotenList, tsunagariList, {}, PARAMS)
+		expect(decision).toEqual({ kind = "Kyoten", kyoten = "Nishi", next = "Nishi", butai = nil, position = nil })
+	end
+)
+
+test(
+	"担当の拠点へたどれなければ、塞がれた道を通らずに道のりが一番近い自分の軍の拠点にとどまる",
+	function()
+		local kyotenList, tsunagariList = shiken()
+		local blocked: { Hoshin.Tsunagari } = {}
+		for _, item in tsunagariList do
+			local copy = table.clone(item)
+			if Haichi.pairKey(item.kyotenA, item.kyotenB) == Haichi.pairKey("Chuo", "Higashi") then
+				copy.blocked = { Tekigun = true }
+			end
+			table.insert(blocked, copy)
+		end
+		local decision = Hoshin.decide(butai("Kyuen", "Tekigun", "Higashi", "Chuo"), kyotenList, blocked, {}, PARAMS)
+		expect(decision).toEqual({ kind = "Kyoten", kyoten = "Higashi", next = nil, butai = nil, position = nil })
+	end
+)
+
+test("迎え撃った帰りは、担当の拠点へまっすぐ戻る", function()
+	local kyotenList = {
+		kyoten("A", "Tekigun", 0, 0),
+		kyoten("B", "Tekigun", 300, 0),
+	}
+	local item = butai("Boei", "Tekigun", "A")
+	item.atKyoten = false
+	item.position = { x = 90, z = 40 }
+	local decision = Hoshin.decide(item, kyotenList, { { kyotenA = "A", kyotenB = "B" } }, {}, PARAMS)
+	expect(decision).toEqual({ kind = "Kyoten", kyoten = "A", next = "A", butai = nil, position = nil })
 end)
 
 test("範囲の外の位置は範囲の縁へ寄せ、中はそのまま", function()

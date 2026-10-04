@@ -7,13 +7,15 @@
 -- - 担当の拠点は、配置で部隊が始まる拠点
 -- - 戦闘のフェーズの間、Config.luau の Hoshin 節の Interval ごとに判断し直す
 -- - 拠点を目指すときは、つながりの経由点をたどって道筋の次の拠点へ向かう（ButaiService.moveToKyoten）。
---   着いたら判断し直して、その次の拠点へ向かう。道筋の上で着いていても拠点の範囲の外にいれば、拠点の中心へ戻る
+--   着いたら判断し直して、その次の拠点へ向かう。道のりは部隊の今の位置から測る（拠点の間を進んでいる部隊は、
+--   最後にいた拠点・向かっている拠点・一番近い拠点へまっすぐ向かってから、つながりをたどる）
 -- - 迎え撃つときは、相手の部隊の今の位置へまっすぐ向かう。判断し直すたびに向かう先を相手の位置に合わせる
 -- - 交戦中と、交戦中の敵の手前で待っている間、部隊は動かない（ButaiService）。目的地だけを決めておく
 -- - 道のりはつながりの経由点を含めた長さで測る。その軍が通れないつながり（落石）は通らない
 -- - 外から目的地を差し替えた部隊（override）は、差し替えている間は判断で目的地を変えない（挑発などに使う）
 -- - 首領は動かさない。本陣の範囲にとどまる（JoninService.setPosition）
--- - 窓口の SetHoshinAI で判断を止められる（確認用）。止めても部隊は今の目的地へ進む
+-- - 窓口の SetHoshinAI で判断を止められる（確認用）。止めると方針で動く部隊はその場で止まる。
+--   方針で動く部隊を窓口で動かすときは OverrideMokutekichi を使う（MoveButai は次の判断で目的地が戻る）
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -176,21 +178,24 @@ local function think()
 	local tekiList = tekiInputs()
 	local now = os.clock()
 	for _, butai in ButaiService.list() do
-		local entry = entries[butai.id]
-		if not entry then
-			continue
-		end
 		local override = overrides[butai.id]
 		if override and applyOverride(butai, override, now) then
 			continue
 		end
+		local entry = entries[butai.id]
+		if not entry then
+			continue
+		end
+		local kyoten = butai.kyoten
 		local decision = Hoshin.decide({
 			id = butai.id,
 			gun = butai.gun,
 			position = butai.position,
 			hoshin = entry.hoshin,
 			tanto = entry.tanto,
-			kyoten = butai.kyoten,
+			kyoten = kyoten,
+			mokutekiKyoten = butai.mokutekiKyoten,
+			atKyoten = kyoten ~= nil and KyotenService.contains(kyoten, butai.position),
 		}, kyotenList, tsunagariList, tekiList)
 		decisions[butai.id] = decision
 		apply(butai, decision)
@@ -308,10 +313,20 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"SetHoshinAI",
 		"<true|false>",
-		"方針の判断を止めるか、再開するかを切り替える。止めても部隊は今の目的地へ進む（確認用）",
+		"方針の判断を止めるか、再開するかを切り替える。止めると方針で動く部隊はその場で止まる（目的地を差し替えた部隊は除く。確認用）",
 		function(value)
 			enabled = value == true or value == "true"
-			return if enabled then "方針の判断を再開した" else "方針の判断を止めた"
+			if enabled then
+				return "方針の判断を再開した"
+			end
+			local stopped = 0
+			for _, butai in ButaiService.list() do
+				if entries[butai.id] and not overrides[butai.id] and butai.mokutekichi then
+					ButaiService.setMokutekichi(butai.id, nil)
+					stopped += 1
+				end
+			end
+			return `方針の判断を止め、動いていた部隊 {stopped} 個をその場で止めた`
 		end
 	)
 	DebugCommand.register(
