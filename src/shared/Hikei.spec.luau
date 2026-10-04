@@ -230,7 +230,7 @@ test("失敗の理由の一覧は重ならない", function()
 		expect(seen[failure]).toBe(nil)
 		seen[failure] = true
 	end
-	expect(#Hikei.useFailures).toBe(6)
+	expect(#Hikei.useFailures).toBe(7)
 end)
 
 local function request(hikei: string, target: string, now: number): Hikei.EffectRequest
@@ -402,3 +402,18 @@ test("落石と大火計には対象の地点までの距離の上限がある",
 	expect(Hikei.targetRangeOf("Daikakei")).toBe(Config.Hikei.TargetRange.Daikakei)
 	expect(Hikei.targetRangeOf("Kishinka")).toBe(nil)
 end)
+
+test(
+	"兵糧庫の対象は自分の軍の通常拠点だけで、本陣・相手の拠点・拠点の外・重ねがけは失敗",
+	function()
+		expect(Hikei.checkHyoroko({ gun = "Mikatagun", honjin = false, active = false }, "Mikatagun")).toBe(nil)
+		expect(Hikei.checkHyoroko({ gun = "Mikatagun", honjin = true, active = false }, "Mikatagun")).toBe("NoTarget")
+		expect(Hikei.checkHyoroko({ gun = "Tekigun", honjin = false, active = false }, "Mikatagun")).toBe("NoTarget")
+		expect(Hikei.checkHyoroko(nil, "Mikatagun")).toBe("NoTarget")
+		expect(Hikei.checkHyoroko({ gun = "Mikatagun", honjin = false, active = true }, "Mikatagun")).toBe(
+			"AlreadyActive"
+		)
+		-- 敵軍の上忍と首領も、自分の軍（敵軍）の通常拠点に使える
+		expect(Hikei.checkHyoroko({ gun = "Tekigun", honjin = false, active = false }, "Tekigun")).toBe(nil)
+	end
+)

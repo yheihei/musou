@@ -26,6 +26,7 @@
 --   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
+-- - 窓口の WarpToKyoten で、プレイヤーを拠点の中心へ移す（秘計の確認用）
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,6 +34,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Butai = require(ReplicatedStorage.Shared.Butai)
 local Colors = require(ReplicatedStorage.Shared.Colors)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
@@ -566,6 +568,26 @@ local function registerDebugCommands()
 				return `{id} はすでに {gun} の拠点`
 			end
 			return `{id} を {gun} に制圧させた（{labelOf(find(id) :: Entry)}）`
+		end
+	)
+	DebugCommand.register(
+		"WarpToKyoten",
+		"<プレイヤー名> <拠点 ID>",
+		"プレイヤーを拠点の中心へ移す（中にいる拠点を対象にする秘計の確認用）",
+		function(name, id)
+			local player = DebugCommand.findPlayer(name)
+			local entry = if type(id) == "string" then find(id) else nil
+			if not entry then
+				return `拠点 {tostring(id)} が出撃したステージに無い（出撃してから使う）`
+			end
+			local character = player.Character
+			if not character or not character:FindFirstChild("HumanoidRootPart") then
+				return `{player.Name} のキャラクターがいない`
+			end
+			local center = entry.cframe.Position
+			local y = Ground.heightAt(center.X, center.Z) or center.Y
+			character:PivotTo(CFrame.new(center.X, y + 5, center.Z))
+			return `{player.Name} を {entry.state.id} の中心へ移した`
 		end
 	)
 	DebugCommand.register(

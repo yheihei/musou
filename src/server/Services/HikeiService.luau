@@ -10,6 +10,7 @@
 -- - 発動したら使用済みにし、発動者の位置で、発動者の軍が得をする士気の出来事を知らせる（ShikiService）
 -- - 効果は処理が addEffect で足す。期限切れは Config.luau の Hikei 節の TickInterval ごとに確かめ、
 --   処理の finish を効果ごとに1回呼ぶ。打ち消し（dispelKyoka）とステージの終わりでも1回呼ぶ
+-- - 秘計の見た目は workspace.Hikei の下の秘計ごとのフォルダ（folderOf）に置く
 -- - 出撃（StageService.started）で、ロビーで選んだ秘計を出撃メンバーの持ち込みとして決め、ステージの終わりまで変えない。
 --   1枚も選んでいない人には、誰も選んでいない秘計を配る（Hikei.assignMochikomi）。上限より少なくても出撃できる
 -- - 出撃で効果と使用記録を空にする。決着とロビーのフェーズへの戻りで残った効果を全部解除し、
@@ -98,6 +99,26 @@ HikeiService.dispelled = dispelledEvent.Event
 -- 効果の時刻。クライアントと同じ時計を使う
 function HikeiService.now(): number
 	return workspace:GetServerTimeNow()
+end
+
+-- 秘計の見た目（兵糧庫の米俵や落石の岩など）を置く workspace のフォルダ。workspace.Hikei の下に秘計 ID の名前で作る
+function HikeiService.folderOf(hikeiId: string): Folder
+	local root = workspace:FindFirstChild("Hikei")
+	if not root then
+		local created = Instance.new("Folder")
+		created.Name = "Hikei"
+		created.Parent = workspace
+		root = created
+	end
+	local container = root :: Instance
+	local folder = container:FindFirstChild(hikeiId)
+	if folder and folder:IsA("Folder") then
+		return folder
+	end
+	local created = Instance.new("Folder")
+	created.Name = hikeiId
+	created.Parent = container
+	return created
 end
 
 -- 秘計の処理を登録する。同じ秘計は1回だけ（窓口の仮の処理は本物の処理で置き換えられる）

@@ -38,6 +38,7 @@ export type UseFailure =
 	| "Down" -- 発動者が倒れている
 	| "NotReady" -- その秘計の処理がまだ無い
 	| "NoTarget" -- 対象（近くの落石地点、中にいる味方の拠点など）が無い
+	| "AlreadyActive" -- 対象にもう同じ秘計の効果が出ている（重ねがけはできない）
 
 -- 秘計の効果。1つの対象に1つずつ持つ
 export type Effect = {
@@ -65,7 +66,7 @@ Hikei.MOCHIKOMI_MAX = 3
 Hikei.MOCHIKOMI_ATTRIBUTE = "HikeiMochikomi"
 Hikei.USED_ATTRIBUTE = "HikeiUsed"
 
-Hikei.useFailures = { "NoSlot", "Used", "NotBattle", "Down", "NotReady", "NoTarget" } :: { UseFailure }
+Hikei.useFailures = { "NoSlot", "Used", "NotBattle", "Down", "NotReady", "NoTarget", "AlreadyActive" } :: { UseFailure }
 
 -- 設計の表の順。選択画面もこの順に並べる
 local ORDER = { "Fukuhei", "Rakuseki", "Daikakei", "Hyoroko", "Bakuhawana", "Chohatsu", "Kishinka", "Daikatsu" }
@@ -339,6 +340,27 @@ end
 -- 発動者から対象の地点までの距離の上限（Config.luau の Hikei 節の TargetRange）。上限の無い秘計は nil
 function Hikei.targetRangeOf(hikeiId: string): number?
 	return Config.Hikei.TargetRange[hikeiId]
+end
+
+-- 兵糧庫の対象にする拠点。発動者が範囲の中にいる拠点の、今の所属と本陣か、もう兵糧庫か
+export type HyorokoTarget = {
+	gun: Gun.Gun,
+	honjin: boolean,
+	-- もう兵糧庫にした拠点か
+	active: boolean,
+}
+
+-- 兵糧庫を発動できるか。kyoten は発動者が範囲の中にいる拠点（どの拠点の範囲にもいなければ nil）、gun は発動者の軍。
+-- 発動できるなら nil、できなければ失敗の理由を返す。対象は自分の軍の通常拠点だけで、本陣と拠点の外は NoTarget、
+-- もう兵糧庫の拠点は AlreadyActive
+function Hikei.checkHyoroko(kyoten: HyorokoTarget?, gun: Gun.Gun): UseFailure?
+	if not kyoten or kyoten.gun ~= gun or kyoten.honjin then
+		return "NoTarget"
+	end
+	if kyoten.active then
+		return "AlreadyActive"
+	end
+	return nil
 end
 
 -- 効果時間（秒）。期限の無い秘計は math.huge

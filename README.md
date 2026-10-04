@@ -139,7 +139,7 @@ src/
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -154,6 +154,8 @@ src/
       MinimapService  ミニマップに出す区画の範囲と、出撃メンバーの位置と向きを Attribute で複製する
       ShihaiAreaService  支配エリア。兵站線につながった拠点の周りを支配エリアとし、その軍の部隊の交戦の押す力と、上忍と首領の攻撃と防御を上げる。ReplicatedStorage.ShihaiArea の Attribute で複製する
       SerifuService  戦闘中の台詞を全員の画面の端に出す
+      HikeiService  秘計の発動の入口（持ち込み・使用記録・効果の時間管理）。秘計ごとの処理は各サービスが register で登録する
+      HyorokoService  秘計の兵糧庫。中にいる味方の通常拠点を、兵站線が切れても孤立しない拠点にする
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
@@ -200,6 +202,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - ミニマップ（MinimapController）は、戦闘のフェーズの出撃メンバーにだけ、画面の右上に出撃したステージの区画を北を上にして出す（出す条件は戦況の表示と同じ）。拠点と本陣を軍の色で、自分（黄色）と仲間（白）の位置と向きを針付きの丸で描く。範囲は workspace の Attribute（`MinimapCenter`・`MinimapSize`）、仲間の位置と向きは Player の Attribute（`MinimapPosition`・`MinimapFacing`）から読む。StreamingEnabled のため、どちらもサーバーの MinimapService が書く。描き直す間隔は `Config.luau` の Minimap 節、計算は `src/shared/Minimap.luau`、大きさは `Ui.Minimap`。秘計の知らせはミニマップの下に積む
 - リザルト画面（ResultController）は、`StageResult` を受けた人にだけ、勝敗と理由・経過時間・全員の撃破数・本人が開放したステージを出す。`Retry` と `ReturnToLobby` のボタンはリーダーにだけ出し、ほかの人には待ちの文を出す。文は `src/shared/ResultMessage.luau` にある。窓口の `SendStageResult Iga1` で、開放したステージを差し替えた結果を送り直して確かめる
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
+- 秘計の中身は秘計ごとのサービスが `HikeiService.register` で登録する（兵糧庫は HyorokoService）。発動できないとき（対象が無い、重ねがけなど）は失敗の理由を返し、枚は使わずに残る。見た目は `workspace.Hikei` の下の秘計ごとのフォルダ（`HikeiService.folderOf`）に置く。兵糧庫は、発動者が中にいる味方の通常拠点を孤立しない拠点にし（`HeitansenService.setNeverIsolated`）、拠点の中心に米俵と札を置く。制圧されると効果を終える。窓口の `SetHikeiMochikomi`・`UseHikei`・`WarpToKyoten` で確かめる
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
 - BGM は `src/shared/Bgm.luau` の登録表に場面（ロビー・イベントシーン・戦闘・勝利・敗北）ごとに置き、クライアントの BgmController が本人にだけ流す。場面は `Bgm.sceneFor` が PartyState のフェーズと StageResult の勝敗から決め、待機中の人はロビーの曲にする。切り替えはフェードで、音量とフェードの長さは `Config.luau` の Bgm 節。流している場面は `SoundService.Bgm` の Attribute `Scene` で確かめる
 - 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない

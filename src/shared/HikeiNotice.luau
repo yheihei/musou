@@ -34,6 +34,7 @@ local failureMessages: { [Hikei.UseFailure]: string } = {
 	Down = "倒れている間は使えません",
 	NotReady = "この秘計はまだ使えません",
 	NoTarget = "近くに対象がありません",
+	AlreadyActive = "すでに効果が出ています",
 }
 
 HikeiNotice.failureMessages = failureMessages
