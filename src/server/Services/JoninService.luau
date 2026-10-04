@@ -195,14 +195,11 @@ local function follow()
 	end
 end
 
--- 倒れていない上忍と首領が自分の軍の支配エリアの中かを確かめ、変わったら能力値を求め直す
+-- 上忍と首領が自分の軍の支配エリアの中かを確かめ、変わったら能力値を求め直す。倒れた上忍は外にいるものとする
 local function refreshShihaiArea()
 	local provider = shihaiAreaProvider
 	for _, jonin in joninList do
-		if Jonin.isDefeated(jonin) then
-			continue
-		end
-		local inside = provider ~= nil and provider(jonin.gun, jonin.position)
+		local inside = not Jonin.isDefeated(jonin) and provider ~= nil and provider(jonin.gun, jonin.position)
 		Jonin.setShihaiArea(jonin, inside)
 	end
 end

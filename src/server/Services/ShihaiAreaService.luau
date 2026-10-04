@@ -33,9 +33,10 @@ local ShihaiAreaService = {}
 -- 支配エリアの Attribute を置くフォルダ（ReplicatedStorage の下）の名前
 ShihaiAreaService.FOLDER = "ShihaiArea"
 
--- 確認用の円の厚みと、地面から浮かせる高さ（スタッド）
+-- 確認用の円の厚みと、地面から浮かせる高さ（スタッド）。重なった円がちらつかないよう、拠点ごとに少しずつ高さをずらす
 local DISC_THICKNESS = 0.4
 local DISC_LIFT = 0.3
+local DISC_STEP = 0.1
 
 -- 支配エリアを持つ拠点（配置の順）
 local sources: { ShihaiArea.Kyoten } = {}
@@ -61,7 +62,7 @@ local function drawDiscs()
 	end
 	container:ClearAllChildren()
 	local radius = Config.ShihaiArea.Radius
-	for _, kyoten in sources do
+	for index, kyoten in sources do
 		local gun = kyoten.gun :: Gun.Gun
 		local y = Ground.heightAt(kyoten.x, kyoten.z) or 0
 		local disc = Instance.new("Part")
@@ -77,7 +78,8 @@ local function drawDiscs()
 		disc.Transparency = 0.75
 		disc.Size = Vector3.new(DISC_THICKNESS, radius * 2, radius * 2)
 		-- 円柱の軸（X）を縦にして地面に寝かせる
-		disc.CFrame = CFrame.new(kyoten.x, y + DISC_LIFT, kyoten.z) * CFrame.Angles(0, 0, math.rad(90))
+		disc.CFrame = CFrame.new(kyoten.x, y + DISC_LIFT + index * DISC_STEP, kyoten.z)
+			* CFrame.Angles(0, 0, math.rad(90))
 		disc.Parent = container
 	end
 end
@@ -182,7 +184,7 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"ShowShihaiArea",
 		"<true|false>",
-		"支配エリアを軍の色の薄い円で地面に出すか、消すかを切り替える（重なる地点は中心が近い拠点の軍のもの）",
+		"支配エリアを拠点ごとに軍の色の薄い円で地面に出すか、消すかを切り替える。重なりは円が重なって見えるだけなので、重なる地点の軍は DumpShihaiArea <x> <z> の at で確かめる",
 		function(value)
 			showDiscs = value == true or value == "true"
 			if showDiscs then
