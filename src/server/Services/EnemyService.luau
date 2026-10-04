@@ -49,6 +49,8 @@ type Enemy = {
 	def: EnemyDef,
 	-- 攻撃判定で使う水平の半径
 	radius: number,
+	-- 同じ位置に重なったほかの敵からずらす向き（ラジアン）。敵ごとに出したときに決める
+	spin: number,
 	lastAttack: number,
 	lastHitBy: Player?,
 }
@@ -74,6 +76,10 @@ local spawning = true
 local BUTAI_CENTER_TRIES = 8
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
 local STAND_OFF_MARGIN = 0.5
+-- プレイヤーの中心からこの距離（スタッド）より近くにいるときは、1回の判断で進む距離を STEP に抑え、
+-- 囲みの輪の上を回り込む
+local NEAR_RANGE = 10
+local STEP = 3
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -149,15 +155,15 @@ local function updateEnemy(enemy: Enemy, now: number)
 	local standOff = math.min(enemy.radius + Config.Spawner.PlayerGap, enemy.def.AttackRange - STAND_OFF_MARGIN)
 	local position = enemy.root.Position
 	local target = targetRoot.Position
-	local goal = EnemySpacing.goal(
-		{ x = position.X, z = position.Z },
-		enemy.radius,
-		{ x = target.X, z = target.Z },
-		standOff,
-		neighborsOf(enemy)
-	)
+	local here = { x = position.X, z = position.Z }
+	local center = { x = target.X, z = target.Z }
+	local goal = EnemySpacing.goal(here, enemy.radius, center, standOff, neighborsOf(enemy), enemy.spin)
 	if EnemySpacing.shouldMove(goal, standOff) then
-		enemy.humanoid:MoveTo(Vector3.new(goal.point.x, position.Y, goal.point.z))
+		local point = goal.point
+		if goal.distance < NEAR_RANGE then
+			point = EnemySpacing.stepToward(here, point, center, standOff, STEP)
+		end
+		enemy.humanoid:MoveTo(Vector3.new(point.x, position.Y, point.z))
 	else
 		enemy.humanoid:Move(Vector3.zero)
 	end
@@ -218,6 +224,7 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 		root = root,
 		def = def,
 		radius = radii[kind],
+		spin = math.random() * math.pi * 2,
 		lastAttack = 0,
 		lastHitBy = nil,
 	}

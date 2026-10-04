@@ -74,3 +74,28 @@ test("プレイヤーの中の敵が周りの敵に押されても、手前の�
 	local dx, dz = goal.point.x, goal.point.z
 	expect(math.sqrt(dx * dx + dz * dz) >= 4 - 1e-9).toBe(true)
 end)
+
+test("同じ位置に重なった2体は、敵ごとの向きが違えば違う向きへずれる", function()
+	local a = EnemySpacing.goal({ x = 4, z = 0 }, 2, PLAYER, 4, { { x = 4, z = 0, radius = 2 } }, 0)
+	local b = EnemySpacing.goal({ x = 4, z = 0 }, 2, PLAYER, 4, { { x = 4, z = 0, radius = 2 } }, math.pi)
+	local dx, dz = a.point.x - b.point.x, a.point.z - b.point.z
+	expect(math.sqrt(dx * dx + dz * dz) > 1).toBe(true)
+end)
+
+test(
+	"輪の上を回り込むときは少しずつ進み、途中でもプレイヤーの中へ入らない",
+	function()
+		-- 輪の上の (4, 0) から (0, 4) へ向かう。まっすぐ歩くと中心から 2.83 まで近づく
+		local step = EnemySpacing.stepToward({ x = 4, z = 0 }, { x = 0, z = 4 }, PLAYER, 4, 1.5)
+		local reach = math.sqrt(step.x * step.x + step.z * step.z)
+		expect(reach >= 4 - 1e-9).toBe(true)
+		local moved = math.sqrt((step.x - 4) ^ 2 + step.z ^ 2)
+		expect(moved > 0.5 and moved <= 1.5 + 1e-9).toBe(true)
+	end
+)
+
+test("向かう位置が近ければ、その位置へそのまま向かう", function()
+	local step = EnemySpacing.stepToward({ x = 10, z = 0 }, { x = 9, z = 0 }, PLAYER, 4, 3)
+	expect(step.x).toBeNear(9, 1e-9)
+	expect(step.z).toBeNear(0, 1e-9)
+end)
