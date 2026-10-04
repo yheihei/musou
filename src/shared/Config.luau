@@ -297,6 +297,10 @@ export type BattleStatusSection = {
 	TimeDanger: number,
 }
 
+export type MinimapSection = {
+	UpdateInterval: number,
+}
+
 export type Config = {
 	Party: PartySection,
 	PartySize: PartySizeSection,
@@ -325,6 +329,7 @@ export type Config = {
 	Sound: SoundSection,
 	Bgm: BgmSection,
 	BattleStatus: BattleStatusSection,
+	Minimap: MinimapSection,
 }
 
 local Config: Config = {
@@ -1242,6 +1247,11 @@ local Config: Config = {
 	BattleStatus = {
 		TimeWarning = 300, -- 戦闘の残り時間がこの秒数以下になったら、残り時間を黄色で出す
 		TimeDanger = 60, -- 戦闘の残り時間がこの秒数以下になったら、残り時間を赤で出す
+	},
+
+	-- ミニマップ。描き方の計算は Minimap.luau にある
+	Minimap = {
+		UpdateInterval = 0.25, -- 自分と仲間の位置を描き直す間隔（秒）。サーバーが出撃メンバーの位置を複製する間隔も同じ
 	},
 }
 

@@ -24,6 +24,13 @@ Ui.Layer = {
 	Result = 100,
 }
 
+-- 右上のミニマップの一辺と、画面の上端・右端からの余白（ピクセル）。右上に出すほかの画面（秘計の知らせ）はこの下に置く
+Ui.Minimap = {
+	Size = 200,
+	Top = 8,
+	Right = 24,
+}
+
 -- 書体の段階
 Ui.Font = {
 	Body = Enum.Font.Gotham,

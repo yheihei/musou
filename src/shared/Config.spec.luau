@@ -812,6 +812,9 @@ local SNAPSHOT = {
 		TimeWarning = 300,
 		TimeDanger = 60,
 	},
+	Minimap = {
+		UpdateInterval = 0.25,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }
