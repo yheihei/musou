@@ -13,7 +13,8 @@
 --   拠点の Attribute の Koritsu・NeverIsolated で複製する
 -- - つながりごとに ReplicatedStorage.Tsunagari の下へ Haichi.pairKey の名前（拠点A-拠点B）で Configuration を置き、
 --   Attribute で両端（KyotenA・KyotenB）・入っている兵站線の軍（Heitansen。どちらにも入っていなければ無し）・
---   通れない軍（BlockedMikatagun・BlockedTekigun）を複製する
+--   通れない軍（BlockedMikatagun・BlockedTekigun）・KyotenA から KyotenB へたどる経由点（KeiyutenCount と
+--   Keiyuten1、Keiyuten2…。Vector2 の X と Y にワールドの X と Z）を複製する
 -- - 求め直したら changed で知らせる
 -- - 窓口の ShowHeitansen で、つながりの道筋を、入っている兵站線の軍の色の線で出す（確認用）
 
@@ -174,6 +175,11 @@ local function publishTsunagari(tsunagari: Heitansen.Tsunagari, gun: Gun.Gun?)
 	config:SetAttribute("Heitansen", gun)
 	config:SetAttribute("BlockedMikatagun", blocked.Mikatagun == true)
 	config:SetAttribute("BlockedTekigun", blocked.Tekigun == true)
+	local keiyuten = keiyutenOf[key] or {}
+	config:SetAttribute("KeiyutenCount", #keiyuten)
+	for index, point in keiyuten do
+		config:SetAttribute(`Keiyuten{index}`, Vector2.new(point.X, point.Z))
+	end
 	if showLines then
 		drawLine(tsunagari, gun)
 	end

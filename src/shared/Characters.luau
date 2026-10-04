@@ -20,6 +20,8 @@ export type Character = {
 	ougi: string?,
 	-- 試験用ステージにだけ出る試験用の NPC か
 	shiken: boolean?,
+	-- ミニマップで上忍と首領に添える頭文字。省くと表示名の1文字目
+	initial: string?,
 }
 
 local Characters = {}
@@ -88,13 +90,14 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = false,
 	},
-	-- 試験用ステージの敵軍の首領と上忍、味方軍の上忍
+	-- 試験用ステージの敵軍の首領と上忍、味方軍の上忍。表示名の1文字目がそろって「試」になるので、ミニマップの頭文字を分ける
 	ShikenShuryo = {
 		id = "ShikenShuryo",
 		displayName = "試験の首領",
 		clan = "Fuma",
 		playable = false,
 		shiken = true,
+		initial = "首",
 	},
 	ShikenJonin1 = {
 		id = "ShikenJonin1",
@@ -102,6 +105,7 @@ local definitions: { [string]: Character } = {
 		clan = "Fuma",
 		playable = false,
 		shiken = true,
+		initial = "一",
 	},
 	ShikenJonin2 = {
 		id = "ShikenJonin2",
@@ -109,6 +113,7 @@ local definitions: { [string]: Character } = {
 		clan = "Fuma",
 		playable = false,
 		shiken = true,
+		initial = "二",
 	},
 	ShikenJonin3 = {
 		id = "ShikenJonin3",
@@ -116,6 +121,7 @@ local definitions: { [string]: Character } = {
 		clan = "Iga",
 		playable = false,
 		shiken = true,
+		initial = "三",
 	},
 }
 
@@ -137,6 +143,17 @@ function Characters.playableOf(clan: ClanId): { Character }
 		return a.id < b.id
 	end)
 	return result
+end
+
+-- ミニマップで上忍と首領に添える頭文字。定義に initial が無ければ表示名の1文字目、定義に無い ID は ID の1文字目
+function Characters.initialOf(id: string): string
+	local character = definitions[id]
+	if character and character.initial then
+		return character.initial
+	end
+	local name = if character then character.displayName else id
+	local second = utf8.offset(name, 2)
+	return if second then string.sub(name, 1, second - 1) else name
 end
 
 return Characters

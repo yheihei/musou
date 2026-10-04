@@ -100,3 +100,11 @@ test("操作キャラクターの武器と奥義には画面に出す名前が�
 	expect(Buki.names.Oodenta).toBe("大典太")
 	expect(Characters.ougiNames.MutoDori).toBe("無刀取り")
 end)
+
+test("ミニマップの頭文字は、定義の頭文字か表示名の1文字目", function()
+	expect(Characters.initialOf("Hayate")).toBe("ハ")
+	expect(Characters.initialOf("Jin")).toBe("刃")
+	expect(Characters.initialOf("ShikenJonin1")).toBe("一")
+	expect(Characters.initialOf("ShikenShuryo")).toBe("首")
+	expect(Characters.initialOf("Nobody")).toBe("N")
+end)
