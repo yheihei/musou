@@ -220,6 +220,14 @@ export type DekigotoShiki = {
 	Butai: number,
 }
 
+-- 支配エリアの中で、その軍の部隊と上忍・首領に掛ける倍率
+export type ShihaiAreaSection = {
+	Radius: number,
+	Push: number,
+	Attack: number,
+	Defense: number,
+}
+
 export type ShikiSection = {
 	Initial: number,
 	Min: number,
@@ -295,6 +303,7 @@ export type Config = {
 	Kosen: KosenSection,
 	Butai: ButaiSection,
 	Kyoten: KyotenSection,
+	ShihaiArea: ShihaiAreaSection,
 	Shiki: ShikiSection,
 	Hikei: HikeiSection,
 	Serifu: SerifuSection,
@@ -1114,6 +1123,15 @@ local Config: Config = {
 		HojuHeisu = 2, -- 1回に補充する兵数
 		MushubiGensho = 1, -- 守備のいない拠点で、攻める軍が範囲の中にいる間に1秒あたり減る耐久
 		TickInterval = 0.5, -- 補充と守備のいない拠点の減少を進める間隔（秒）
+	},
+
+	-- 支配エリア。兵站線でつながった拠点の周りは、その拠点の軍の支配エリアになり、その軍の部隊と上忍・首領の能力が上がる。
+	-- 判定は ShihaiArea.luau にある
+	ShihaiArea = {
+		Radius = 120, -- 拠点の中心からこの距離（スタッド）までが、その拠点の軍の支配エリア
+		Push = 1.2, -- 支配エリアの中の部隊の、交戦の押す力の倍率（Kosen.luau の押す力に掛ける）
+		Attack = 1.2, -- 支配エリアの中の上忍と首領の攻撃の倍率
+		Defense = 1.2, -- 支配エリアの中の上忍と首領の防御の倍率
 	},
 
 	-- 士気。軍全体の士気を軍ごとに1本持ち、部隊の士気はそれに近くの出来事の補正を足して決める。計算は Shiki.luau にある。

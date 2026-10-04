@@ -139,7 +139,7 @@ src/
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -150,6 +150,7 @@ src/
       HeitansenService  兵站線と孤立。拠点の所属とつながりから軍ごとの兵站線を求め直し、孤立した拠点の補充を止める。つながりを通れなくする API と、孤立しない拠点の指定の API を持つ。ReplicatedStorage.Tsunagari の Attribute で複製する
       SaishutsugekiService  兵力と再出撃。倒れた出撃メンバーを兵站線につながった最寄りの味方の拠点から再出撃させ、兵力を1使う。兵力0で倒れたら負けにする
       JoninService  上忍と首領のデータ（能力値・体力・率いる部隊）。上忍は部隊とともに動き、首領は本陣にとどまる。ReplicatedStorage.Jonin の Attribute で複製する
+      ShihaiAreaService  支配エリア。兵站線につながった拠点の周りを支配エリアとし、その軍の部隊の交戦の押す力と、上忍と首領の攻撃と防御を上げる。ReplicatedStorage.ShihaiArea の Attribute で複製する
       SerifuService  戦闘中の台詞を全員の画面の端に出す
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
@@ -183,6 +184,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 拠点の守備（範囲の中にいるその拠点の軍の部隊）は、耐久が残る間、`Config.luau` の Kyoten 節の上限まで間隔ごとに補充する。守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間に耐久が減る。制圧は拠点の陥落として `ShikiService.notify` で士気に知らせる。窓口の `RemoveButai` で守備を外して確かめる
 - 兵站線は HeitansenService が、拠点の制圧・つながりを通れなくしたとき・戻したとき・孤立しない拠点の指定のたびに求め直す（計算は `src/shared/Heitansen.luau`）。孤立した拠点は守備を補充しない。落石は `HeitansenService.block`、兵糧庫は `setNeverIsolated` を使う。クライアントは拠点の Attribute の `Koritsu`・`NeverIsolated` と、`ReplicatedStorage.Tsunagari` のつながりごとの Configuration の Attribute（`KyotenA`・`KyotenB`・`Heitansen`・`BlockedMikatagun`・`BlockedTekigun`）を読む。窓口の `DumpHeitansen`・`BlockTsunagari`・`UnblockTsunagari`・`SetNeverIsolated`・`ShowHeitansen` で確かめる
 - 落石地点と大火計地域は、区画の目印（`Mejirushi.RakusekiChiten`・`DaikakeiChiiki`）だけで完結させる。出撃したときに HaichiService が読み、構成の拠点とつながりと突き合わせて警告を出す。秘計の発動者から `Config.luau` の Hikei 節の `TargetRange` 以内で一番近い地点は `HaichiService.nearestRakusekiChiten`・`nearestDaikakeiChiiki` で引く。クライアントは仮の目印（旗と地面の枠）を出す。窓口の `DumpHikeiMejirushi`・`FindHikeiChiten` で確かめる
+- 支配エリアは ShihaiAreaService が、兵站線を求め直すたびに求め直す（判定は `src/shared/ShihaiArea.luau`、半径と倍率は `Config.luau` の ShihaiArea 節）。兵站線につながった拠点の中心から半径以内がその拠点の軍の支配エリアで、重なる地点は中心が近い拠点の軍のものにする。孤立した拠点は持たない。自分の軍の支配エリアの中では、部隊の交戦の押す力と、上忍と首領の攻撃と防御が上がる。クライアントは `ReplicatedStorage.ShihaiArea` の拠点ごとの Configuration の Attribute（`Gun`・`Position`・`Radius`）を読む。窓口の `DumpShihaiArea`・`ShowShihaiArea` で確かめる。交戦の押す力と倍率は `DumpKosen`、上忍の攻撃と防御は `DumpJonin` に出る
 - 上忍と首領は JoninService がデータで持つ（計算は `src/shared/Jonin.luau`）。上忍は率いる部隊の位置に合わせ、首領は本陣の中心に置く。能力値は `Config.luau` の Stats 節の Jonin・Shuryo。クライアントは `ReplicatedStorage.Jonin` のキャラクター ID ごとの Configuration の Attribute（`Position`・`Health`・`MaxHealth`・`Gun`・`Butai`・`Shuryo`・`DisplayName`）を読む。窓口の `DumpJonin`・`SetJoninHealth` で確かめる
 - 敵味方の部隊が近づくと交戦を始め、決着までその場にとどまる。相手は1部隊ずつで、交戦中の敵の手前に来た部隊は待つ。組み方と損害の計算は `src/shared/Kosen.luau`、距離と係数は `Config.luau` の Kosen 節
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる

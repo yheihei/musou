@@ -80,3 +80,33 @@ test("味方軍の上忍と首領は、体力・攻撃・防御に味方軍の�
 	expect(hayate.stats.MaxHealth).toBeNear(Config.Stats.Shuryo.MaxHealth * scale)
 	expect(#Jonin.modifiersOf("Tekigun")).toBe(0)
 end)
+
+test(
+	"支配エリアの中では攻撃と防御が上がり、外へ出ると戻る。体力はそのまま",
+	function()
+		local area = Config.ShihaiArea
+		local jonin = Jonin.new(entry("ShikenJonin1", false), { x = 0, z = 0 })
+		Jonin.setHealth(jonin, 300)
+		expect(jonin.shihaiArea).toBe(false)
+		expect(Jonin.setShihaiArea(jonin, true)).toBe(true)
+		expect(jonin.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * area.Attack)
+		expect(jonin.stats.Defense).toBeNear(Config.Stats.Jonin.Defense * area.Defense)
+		expect(jonin.stats.MaxHealth).toBe(Config.Stats.Jonin.MaxHealth)
+		expect(jonin.health).toBe(300)
+		expect(Jonin.setShihaiArea(jonin, true)).toBe(false)
+		expect(Jonin.setShihaiArea(jonin, false)).toBe(true)
+		expect(jonin.stats.Attack).toBe(Config.Stats.Jonin.Attack)
+		expect(jonin.stats.Defense).toBe(Config.Stats.Jonin.Defense)
+	end
+)
+
+test("味方軍の上忍は、味方軍の倍率に支配エリアの倍率を重ねる", function()
+	local mikata = Jonin.new(
+		{ id = "ShikenJonin3", gun = "Mikatagun", butai = "Mikata1", shuryo = false, kyoten = "Nishi" },
+		{ x = 0, z = 0 }
+	)
+	Jonin.setShihaiArea(mikata, true)
+	local scale = Config.Stats.MikatagunScale
+	expect(mikata.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * scale * Config.ShihaiArea.Attack)
+	expect(mikata.stats.MaxHealth).toBeNear(Config.Stats.Jonin.MaxHealth * scale)
+end)

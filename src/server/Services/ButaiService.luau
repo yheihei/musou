@@ -18,6 +18,8 @@
 --   決着したら残った部隊は目的地へ向けて動き出す。交戦の相手は Attribute の Kosen（相手の部隊 ID）で複製する
 -- - 兵数が減ったら（交戦と changeHeisu）、heisuLost で部隊 ID・軍・減った兵数・その時の位置を知らせる。
 --   拠点の耐久（KyotenService）はこれを受けて減る
+-- - 交戦の押す力には、部隊のいる地点の支配エリアの倍率を掛ける。倍率は ShihaiAreaService が
+--   setShihaiAreaProvider で渡す関数で引き、関数が無ければ 1
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -83,6 +85,8 @@ local aiteOf: { [string]: string } = {}
 local waiting: { [string]: boolean } = {}
 -- 部隊の今の士気を返す関数（ShikiService が渡す）
 local shikiProvider: ((Butai.Butai) -> number)? = nil
+-- 部隊の交戦の押す力に掛ける支配エリアの倍率を返す関数（ShihaiAreaService が渡す）
+local shihaiAreaProvider: ((Butai.Butai) -> number)? = nil
 
 local kosenStartedEvent = Instance.new("BindableEvent")
 -- 交戦を始めたときに、2つの部隊 ID で発火する
@@ -261,6 +265,17 @@ function ButaiService.setShikiProvider(provider: (Butai.Butai) -> number)
 	shikiProvider = provider
 end
 
+-- 部隊の交戦の押す力に掛ける支配エリアの倍率を返す関数を登録する
+function ButaiService.setShihaiAreaProvider(provider: (Butai.Butai) -> number)
+	shihaiAreaProvider = provider
+end
+
+-- 部隊の交戦の押す力に掛ける支配エリアの倍率。関数が無ければ 1
+function ButaiService.shihaiAreaOf(butai: Butai.Butai): number
+	local provider = shihaiAreaProvider
+	return if provider then provider(butai) else 1
+end
+
 -- 部隊 ID の交戦をやめさせる。相手の部隊は交戦していない状態に戻す
 local function stopKosen(id: string)
 	for index = #kosenList, 1, -1 do
@@ -419,8 +434,7 @@ local function sideOf(butai: Butai.Butai, fraction: number): Kosen.Side
 		fraction = fraction,
 		shiki = butai.shiki,
 		strength = Config.Kosen.GunStrength[butai.gun],
-		-- 支配エリアの倍率は #101 で足す
-		shihaiArea = 1,
+		shihaiArea = ButaiService.shihaiAreaOf(butai),
 	}
 end
 
@@ -536,6 +550,7 @@ end
 
 local function describe(butai: Butai.Butai): { [string]: any }
 	local mokutekichi = butai.mokutekichi
+	local shihaiArea = ButaiService.shihaiAreaOf(butai)
 	return {
 		id = butai.id,
 		gun = butai.gun,
@@ -550,6 +565,8 @@ local function describe(butai: Butai.Butai): { [string]: any }
 		keiyuten = #butai.keiyuten,
 		kosen = aiteOf[butai.id],
 		taiki = if waiting[butai.id] then true else nil,
+		-- 交戦の押す力に掛ける支配エリアの倍率。1 のときは出さない
+		shihaiArea = if shihaiArea ~= 1 then round(shihaiArea) else nil,
 	}
 end
 
@@ -597,17 +614,25 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpKosen",
 		"",
-		"交戦中の組（両部隊の兵数と端数、経過秒数）と、手前で待っている部隊を JSON で返す",
+		"交戦中の組（両部隊の兵数と端数、押す力、支配エリアの倍率、経過秒数）と、手前で待っている部隊を JSON で返す",
 		function()
 			local now = os.clock()
 			local list = {}
 			for _, state in kosenList do
 				local a, b = find(state.a), find(state.b)
+				local push, shihaiArea = nil, nil
+				if a and b then
+					local sideA, sideB = sideOf(a, state.fractionA), sideOf(b, state.fractionB)
+					push = { round(Kosen.push(sideA, sideB)), round(Kosen.push(sideB, sideA)) }
+					shihaiArea = { round(sideA.shihaiArea or 1), round(sideB.shihaiArea or 1) }
+				end
 				table.insert(list, {
 					a = state.a,
 					b = state.b,
 					heisu = { if a then a.heisu else 0, if b then b.heisu else 0 },
 					fraction = { round(state.fractionA), round(state.fractionB) },
+					push = push,
+					shihaiArea = shihaiArea,
 					elapsed = round(now - state.startedAt),
 				})
 			end

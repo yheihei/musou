@@ -735,6 +735,12 @@ local SNAPSHOT = {
 		MushubiGensho = 1,
 		TickInterval = 0.5,
 	},
+	ShihaiArea = {
+		Radius = 120,
+		Push = 1.2,
+		Attack = 1.2,
+		Defense = 1.2,
+	},
 	Shiki = {
 		Initial = 50,
 		Min = 0,

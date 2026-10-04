@@ -9,6 +9,8 @@
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）
 -- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
 --   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
+-- - 部隊を進める間隔ごとに、上忍と首領が自分の軍の支配エリアの中かを確かめ、中なら攻撃と防御を上げる（Jonin.setShihaiArea）。
+--   中かどうかは ShihaiAreaService が setShihaiAreaProvider で渡す関数で引き、関数が無ければ外とみなす
 -- - 上忍と首領ごとに ReplicatedStorage.Jonin の下へキャラクター ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・体力（Health・MaxHealth）・軍（Gun）・
 --   率いる部隊（Butai）・首領か（Shuryo）・名前（DisplayName）をクライアントへ複製する
@@ -18,6 +20,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Butai = require(ReplicatedStorage.Shared.Butai)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
 local Kosen = require(ReplicatedStorage.Shared.Kosen)
@@ -36,6 +39,9 @@ JoninService.FOLDER = "Jonin"
 -- 出撃したステージの上忍と首領（配置の構成の順）
 local joninList: { Jonin.Jonin } = {}
 local folder: Folder
+
+-- 軍と位置を受け、その軍の支配エリアの中かを返す関数（ShihaiAreaService が渡す）
+local shihaiAreaProvider: ((gun: Gun.Gun, position: Jonin.Point) -> boolean)? = nil
 
 local defeatedEvent = Instance.new("BindableEvent")
 -- 上忍か首領が倒れたときに、そのキャラクター ID で発火する
@@ -76,6 +82,11 @@ local function publish(jonin: Jonin.Jonin)
 	instance:SetAttribute("Position", Vector2.new(jonin.position.x, jonin.position.z))
 	instance:SetAttribute("Health", jonin.health)
 	instance:SetAttribute("MaxHealth", jonin.stats.MaxHealth)
+end
+
+-- 軍と位置を受け、その軍の支配エリアの中かを返す関数を登録する
+function JoninService.setShihaiAreaProvider(provider: (gun: Gun.Gun, position: Jonin.Point) -> boolean)
+	shihaiAreaProvider = provider
 end
 
 -- 体力を書き換える。倒れたら、率いていた部隊は残して士気だけ下げる。いなければ false
@@ -154,6 +165,18 @@ local function follow()
 	end
 end
 
+-- 倒れていない上忍と首領が自分の軍の支配エリアの中かを確かめ、変わったら能力値を求め直す
+local function refreshShihaiArea()
+	local provider = shihaiAreaProvider
+	for _, jonin in joninList do
+		if Jonin.isDefeated(jonin) then
+			continue
+		end
+		local inside = provider ~= nil and provider(jonin.gun, jonin.position)
+		Jonin.setShihaiArea(jonin, inside)
+	end
+end
+
 local function joninSide(jonin: Jonin.Jonin, butai: Butai.Butai): Kosen.JoninSide
 	return {
 		gun = jonin.gun,
@@ -199,23 +222,31 @@ local function round(value: number): number
 end
 
 local function registerDebugCommands()
-	DebugCommand.register("DumpJonin", "", "出撃したステージの上忍と首領を JSON で返す", function()
-		local result = {}
-		for _, jonin in joninList do
-			table.insert(result, {
-				id = jonin.id,
-				name = jonin.displayName,
-				gun = jonin.gun,
-				shuryo = jonin.shuryo,
-				butai = jonin.butai,
-				kyoten = jonin.kyoten,
-				health = round(jonin.health),
-				maxHealth = round(jonin.stats.MaxHealth),
-				position = { round(jonin.position.x), round(jonin.position.z) },
-			})
+	DebugCommand.register(
+		"DumpJonin",
+		"",
+		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・位置）を JSON で返す",
+		function()
+			local result = {}
+			for _, jonin in joninList do
+				table.insert(result, {
+					id = jonin.id,
+					name = jonin.displayName,
+					gun = jonin.gun,
+					shuryo = jonin.shuryo,
+					butai = jonin.butai,
+					kyoten = jonin.kyoten,
+					health = round(jonin.health),
+					maxHealth = round(jonin.stats.MaxHealth),
+					attack = round(jonin.stats.Attack),
+					defense = round(jonin.stats.Defense),
+					shihaiArea = jonin.shihaiArea,
+					position = { round(jonin.position.x), round(jonin.position.z) },
+				})
+			end
+			return HttpService:JSONEncode(result)
 		end
-		return HttpService:JSONEncode(result)
-	end)
+	)
 	DebugCommand.register(
 		"SetJoninHealth",
 		"<キャラクター ID> <体力>",
@@ -256,6 +287,10 @@ function JoninService.start()
 			local ok, err = pcall(follow)
 			if not ok then
 				warn(`JoninService: 上忍を部隊に合わせられなかった: {err}`)
+			end
+			local areaOk, areaErr = pcall(refreshShihaiArea)
+			if not areaOk then
+				warn(`JoninService: 支配エリアの補正を求め直せなかった: {areaErr}`)
 			end
 			local fightOk, fightErr = pcall(fightJonin, now - last)
 			if not fightOk then

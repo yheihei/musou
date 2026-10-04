@@ -3,6 +3,7 @@
 -- 開始時の顔ぶれは、配置の構成（Haichi.luau の部隊の上忍）とステージの定義（Stages.luau の両軍の首領）から決める。
 -- 能力値は Config.luau の Stats 節（上忍は Jonin、首領は Shuryo）に、補正を Stats.compute で足して求める。
 -- 味方軍の上忍と首領は、体力・攻撃・防御に Stats 節の MikatagunScale を掛けて敵軍よりやや弱くする。
+-- 自分の軍の支配エリアの中では、攻撃と防御が上がる（ShihaiArea.modifiersOf）。
 -- 体力が 0 になると倒れる。率いていた部隊は残し、士気だけを下げる（Butai.loseJonin）。
 -- 位置は水平の (x, z) で持つ。Roblox の API は使わない。
 
@@ -10,6 +11,7 @@ local Characters = require("./Characters")
 local Config = require("./Config")
 local Gun = require("./Gun")
 local Haichi = require("./Haichi")
+local ShihaiArea = require("./ShihaiArea")
 local Stages = require("./Stages")
 local Stats = require("./Stats")
 
@@ -32,7 +34,12 @@ export type Jonin = {
 	id: string,
 	displayName: string,
 	gun: Gun.Gun,
+	-- 今の能力値。軍の補正と、支配エリアの中なら支配エリアの補正を足したもの
 	stats: Stats.Values,
+	-- 支配エリアの補正を除いた補正（軍の補正など）
+	modifiers: { Stats.Modifier },
+	-- 自分の軍の支配エリアの中か
+	shihaiArea: boolean,
 	-- 今の体力。0 なら倒れている
 	health: number,
 	-- 率いる部隊の ID。首領と、部隊を失った上忍は nil
@@ -81,15 +88,27 @@ function Jonin.modifiersOf(gun: Gun.Gun): { Stats.Modifier }
 	}
 end
 
--- 開始時の上忍か首領を作る。体力は最大の体力から始める
+-- 能力値。modifiers は支配エリアの補正を除いた補正、shihaiArea は自分の軍の支配エリアの中か
+local function statsOf(shuryo: boolean, modifiers: { Stats.Modifier }, shihaiArea: boolean): Stats.Values
+	local list = table.clone(modifiers)
+	for _, modifier in ShihaiArea.modifiersOf(shihaiArea) do
+		table.insert(list, modifier)
+	end
+	return Stats.compute(Stats.npcBaseOf(shuryo), list)
+end
+
+-- 開始時の上忍か首領を作る。体力は最大の体力から始める。支配エリアの外にいるものとして作る
 function Jonin.new(entry: Entry, position: Point): Jonin
 	local character = Characters.get(entry.id)
-	local stats = Stats.compute(Stats.npcBaseOf(entry.shuryo), Jonin.modifiersOf(entry.gun))
+	local modifiers = Jonin.modifiersOf(entry.gun)
+	local stats = statsOf(entry.shuryo, modifiers, false)
 	return {
 		id = entry.id,
 		displayName = if character then character.displayName else entry.id,
 		gun = entry.gun,
 		stats = stats,
+		modifiers = modifiers,
+		shihaiArea = false,
 		health = stats.MaxHealth,
 		butai = entry.butai,
 		shuryo = entry.shuryo,
@@ -107,6 +126,17 @@ function Jonin.setHealth(jonin: Jonin, value: number): boolean
 	local wasDefeated = Jonin.isDefeated(jonin)
 	jonin.health = math.clamp(value, 0, jonin.stats.MaxHealth)
 	return not wasDefeated and Jonin.isDefeated(jonin)
+end
+
+-- 自分の軍の支配エリアの中かを書き換え、能力値を求め直す。変わったら true。
+-- 支配エリアの補正は体力の最大を変えないので、今の体力はそのまま
+function Jonin.setShihaiArea(jonin: Jonin, inside: boolean): boolean
+	if jonin.shihaiArea == inside then
+		return false
+	end
+	jonin.shihaiArea = inside
+	jonin.stats = statsOf(jonin.shuryo, jonin.modifiers, inside)
+	return true
 end
 
 return Jonin
