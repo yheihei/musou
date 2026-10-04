@@ -255,6 +255,13 @@ export type HikeiSection = {
 	NoticeTime: number,
 }
 
+-- 秘計の伏兵。潜ませる伏兵部隊の兵数と奇襲
+export type FukuheiSection = {
+	Heisu: number,
+	KishuRadius: number,
+	KishuShiki: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -325,6 +332,7 @@ export type Config = {
 	ShihaiArea: ShihaiAreaSection,
 	Shiki: ShikiSection,
 	Hikei: HikeiSection,
+	Fukuhei: FukuheiSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1201,6 +1209,14 @@ local Config: Config = {
 		},
 		TickInterval = 0.5, -- 効果の期限切れを確かめる間隔（秒）
 		NoticeTime = 4, -- 秘計の発動・打ち消し・期限切れ・失敗の知らせを画面に出しておく秒数
+	},
+
+	-- 秘計の伏兵。発動者の足元に潜ませる伏兵部隊と、近づいた相手への奇襲。判定は Fukuhei.luau にある。
+	-- 潜んでいられる時間は Hikei 節の Duration.Fukuhei
+	Fukuhei = {
+		Heisu = 20, -- 伏兵部隊の兵数
+		KishuRadius = 40, -- 相手の部隊かプレイヤーがこの距離（スタッド）まで近づくと奇襲する
+		KishuShiki = 15, -- 奇襲された相手の部隊の士気をずっと下げる量
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

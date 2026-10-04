@@ -109,11 +109,11 @@ local function tsunagariInputs(): { Hoshin.Tsunagari }
 	return result
 end
 
--- 迎え撃つ候補の部隊（兵数のある部隊）
+-- 迎え撃つ候補の部隊（兵数のある部隊。潜んでいる伏兵部隊は見つけられないので入れない）
 local function tekiInputs(): { Hoshin.Teki }
 	local result = {}
 	for _, butai in ButaiService.list() do
-		if butai.heisu > 0 then
+		if butai.heisu > 0 and not butai.fukuhei then
 			table.insert(result, { id = butai.id, gun = butai.gun, position = butai.position })
 		end
 	end

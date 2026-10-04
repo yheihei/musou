@@ -19,6 +19,7 @@
 -- - 守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間、
 --   時間に比例して耐久が減る。仮の湧き処理の敵は攻める軍に数えない
 -- - 孤立した拠点は守備を補充しない。孤立は HeitansenService が setKoritsuProvider で渡す関数で引く
+-- - 潜んでいる伏兵部隊（Butai.fukuhei）は、守備にも攻める軍にも数えず、制圧のときも敗走させない
 -- - 拠点を作り終えたら loaded で知らせる（HeitansenService が兵站線を求め始める）
 -- - 拠点ごとに ReplicatedStorage.Kyoten の下へ拠点 ID の名前で Configuration を置き、Attribute で
 --   軍（Gun）・耐久（Taikyu）・耐久の上限（MaxTaikyu）・本陣か（Honjin）・
@@ -258,6 +259,11 @@ function KyotenService.contains(id: string, position: Butai.Point): boolean
 	return entry ~= nil and contains(entry, position.x, position.z)
 end
 
+-- 部隊が拠点の範囲の中にいて、戦場に姿を見せているか（潜んでいる伏兵部隊は数えない）
+local function presentIn(entry: Entry, butai: Butai.Butai): boolean
+	return not butai.fukuhei and contains(entry, butai.position.x, butai.position.z)
+end
+
 -- 拠点の守備の部隊（拠点の軍の部隊のうち、範囲の中にいるもの）の ID を、部隊の一覧の順に返す
 function KyotenService.shubiOf(id: string): { string }
 	local result = {}
@@ -266,7 +272,7 @@ function KyotenService.shubiOf(id: string): { string }
 		return result
 	end
 	for _, butai in ButaiService.list() do
-		if butai.gun == entry.state.gun and contains(entry, butai.position.x, butai.position.z) then
+		if butai.gun == entry.state.gun and presentIn(entry, butai) then
 			table.insert(result, butai.id)
 		end
 	end
@@ -277,7 +283,7 @@ end
 local function shubiHeisuOf(entry: Entry): number
 	local total = 0
 	for _, butai in ButaiService.list() do
-		if butai.gun == entry.state.gun and contains(entry, butai.position.x, butai.position.z) then
+		if butai.gun == entry.state.gun and presentIn(entry, butai) then
 			total += butai.heisu
 		end
 	end
@@ -289,7 +295,7 @@ local function kogekiCountOf(entry: Entry): number
 	local count = 0
 	local opponent = Gun.opponentOf(entry.state.gun)
 	for _, butai in ButaiService.list() do
-		if butai.gun == opponent and butai.heisu > 0 and contains(entry, butai.position.x, butai.position.z) then
+		if butai.gun == opponent and butai.heisu > 0 and presentIn(entry, butai) then
 			count += 1
 		end
 	end
@@ -316,7 +322,7 @@ end
 local function hojuTargetOf(entry: Entry): string?
 	local id = hojuButai[entry.state.id]
 	local butai = if id then ButaiService.get(id) else nil
-	if butai and butai.gun == entry.state.gun and contains(entry, butai.position.x, butai.position.z) then
+	if butai and butai.gun == entry.state.gun and presentIn(entry, butai) then
 		return butai.id
 	end
 	return nil
@@ -356,7 +362,7 @@ end
 -- 拠点の陥落を士気と seiatsu で知らせる
 local function afterSeiatsu(entry: Entry, previous: Gun.Gun)
 	for _, butai in ButaiService.list() do
-		if butai.gun == previous and contains(entry, butai.position.x, butai.position.z) then
+		if butai.gun == previous and presentIn(entry, butai) then
 			ButaiService.remove(butai.id)
 		end
 	end

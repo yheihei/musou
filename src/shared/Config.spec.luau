@@ -777,6 +777,11 @@ local SNAPSHOT = {
 		TickInterval = 0.5,
 		NoticeTime = 4,
 	},
+	Fukuhei = {
+		Heisu = 20,
+		KishuRadius = 40,
+		KishuShiki = 15,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

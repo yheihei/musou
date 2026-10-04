@@ -133,3 +133,13 @@ test("率いる上忍を失った部隊は残り、士気だけが下がる", fu
 	expect(butai.shiki).toBe(0)
 	expect(butai.shikiHosei).toBe(-115)
 end)
+
+test("奇襲などで士気をずっと下げると、部隊ごとの補正にも残る", function()
+	local butai = newButai({ x = 0, z = 0 })
+	Butai.lowerShiki(butai, 15)
+	expect(butai.shiki).toBe(35)
+	expect(butai.shikiHosei).toBe(-15)
+	Butai.lowerShiki(butai, 100)
+	expect(butai.shiki).toBe(0)
+	expect(butai.shikiHosei).toBe(-115)
+end)

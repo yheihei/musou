@@ -30,6 +30,8 @@ export type Butai = {
 	kyoten: string?,
 	-- 目的地が拠点なら、その拠点 ID。着いたら kyoten に移す
 	mokutekiKyoten: string?,
+	-- 潜んでいる伏兵部隊か。奇襲するまでは交戦の相手を決める対象にも、拠点の守備と攻める軍にも数えない
+	fukuhei: boolean?,
 }
 
 export type Tsunagari = {
@@ -125,6 +127,13 @@ function Butai.loseJonin(butai: Butai, shikiLoss: number)
 	butai.jonin = nil
 	butai.shiki = math.max(butai.shiki - shikiLoss, 0)
 	butai.shikiHosei -= shikiLoss
+end
+
+-- 士気を amount だけずっと下げる（奇襲されたときなど）。下げた分は部隊ごとの補正にも残し、
+-- 軍全体の士気から士気を求め直しても下がったままにする。今の士気は 0 未満にはしない
+function Butai.lowerShiki(butai: Butai, amount: number)
+	butai.shiki = math.max(butai.shiki - amount, 0)
+	butai.shikiHosei -= amount
 end
 
 -- 兵数を delta だけ増減する。0 未満にはしない。増減した後の兵数を返す

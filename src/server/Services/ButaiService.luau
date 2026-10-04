@@ -18,6 +18,8 @@
 --   決着したら残った部隊は目的地へ向けて動き出す。交戦の相手は Attribute の Kosen（相手の部隊 ID）で複製する
 -- - 兵数が減ったら（交戦と changeHeisu）、heisuLost で部隊 ID・軍・減った兵数・その時の位置を知らせる。
 --   拠点の耐久（KyotenService）はこれを受けて減る
+-- - 潜んでいる伏兵部隊（Butai.fukuhei）は、交戦の相手を決める対象にしない。姿を現したら（reveal）対象にする。
+--   潜んでいる間は Attribute の Fukuhei を true にする
 -- - 交戦の押す力には、部隊のいる地点の支配エリアの倍率を掛ける。倍率は ShihaiAreaService が
 --   setShihaiAreaProvider で渡す関数で引き、関数が無ければ 1
 
@@ -46,6 +48,8 @@ export type AddSpec = {
 	jonin: string?,
 	-- 今いる拠点
 	kyoten: string?,
+	-- 潜んでいる伏兵部隊として足すか
+	fukuhei: boolean?,
 }
 
 -- 交戦中の組。端数は Kosen.step が次の計算へ持ち越す損害
@@ -206,6 +210,7 @@ local function publish(butai: Butai.Butai)
 	instance:SetAttribute("Shiki", butai.shiki)
 	instance:SetAttribute("Jonin", butai.jonin)
 	instance:SetAttribute("Kosen", aiteOf[butai.id])
+	instance:SetAttribute("Fukuhei", if butai.fukuhei then true else nil)
 	if showMarkers then
 		updateMarker(butai)
 	end
@@ -250,6 +255,7 @@ function ButaiService.add(spec: AddSpec): Butai.Butai?
 		keiyuten = {},
 		kyoten = spec.kyoten,
 		mokutekiKyoten = nil,
+		fukuhei = if spec.fukuhei then true else nil,
 	}
 	local provider = shikiProvider
 	if provider then
@@ -346,6 +352,28 @@ function ButaiService.loseJonin(id: string): boolean
 		return false
 	end
 	Butai.loseJonin(butai, Config.Butai.JoninGekihaShiki)
+	publish(butai)
+	return true
+end
+
+-- 士気を amount だけずっと下げる（奇襲されたときなど）。部隊がいなければ false
+function ButaiService.lowerShiki(id: string, amount: number): boolean
+	local butai = find(id)
+	if not butai then
+		return false
+	end
+	Butai.lowerShiki(butai, amount)
+	publish(butai)
+	return true
+end
+
+-- 潜んでいる伏兵部隊を姿を現した部隊にし、交戦の相手を決める対象に戻す。部隊がいないか、潜んでいなければ false
+function ButaiService.reveal(id: string): boolean
+	local butai = find(id)
+	if not butai or not butai.fukuhei then
+		return false
+	end
+	butai.fukuhei = nil
 	publish(butai)
 	return true
 end
@@ -503,11 +531,38 @@ local function refreshShiki()
 	end
 end
 
--- 交戦していない部隊どうしで、近づいた敵味方に交戦を始めさせ、交戦中の敵の手前の部隊を待たせる
+-- 2つの部隊に交戦を始めさせる
+local function beginKosen(a: Butai.Butai, b: Butai.Butai)
+	aiteOf[a.id] = b.id
+	aiteOf[b.id] = a.id
+	waiting[a.id] = nil
+	waiting[b.id] = nil
+	table.insert(kosenList, { a = a.id, b = b.id, fractionA = 0, fractionB = 0, startedAt = os.clock() })
+	publish(a)
+	publish(b)
+	kosenStartedEvent:Fire(a.id, b.id)
+end
+
+-- 距離に関係なく、2つの部隊にすぐ交戦を始めさせる（伏兵の奇襲）。敵味方でないか、どちらかが交戦中か潜んでいるか、
+-- 部隊がいなければ false
+function ButaiService.startKosen(idA: string, idB: string): boolean
+	local a, b = find(idA), find(idB)
+	if not a or not b or a.gun == b.gun or aiteOf[a.id] or aiteOf[b.id] or a.fukuhei or b.fukuhei then
+		return false
+	end
+	beginKosen(a, b)
+	return true
+end
+
+-- 交戦していない部隊どうしで、近づいた敵味方に交戦を始めさせ、交戦中の敵の手前の部隊を待たせる。
+-- 潜んでいる伏兵部隊は数えない
 local function matchAll()
 	local units: { Kosen.Unit } = {}
 	local engaged: { [string]: boolean } = {}
 	for _, butai in butaiList do
+		if butai.fukuhei then
+			continue
+		end
 		table.insert(units, { id = butai.id, gun = butai.gun, position = butai.position })
 		if aiteOf[butai.id] then
 			engaged[butai.id] = true
@@ -518,12 +573,7 @@ local function matchAll()
 	for _, pair in match.pairs do
 		local a, b = find(pair.a), find(pair.b)
 		if a and b then
-			aiteOf[a.id] = b.id
-			aiteOf[b.id] = a.id
-			table.insert(kosenList, { a = a.id, b = b.id, fractionA = 0, fractionB = 0, startedAt = os.clock() })
-			publish(a)
-			publish(b)
-			kosenStartedEvent:Fire(a.id, b.id)
+			beginKosen(a, b)
 		end
 	end
 end
@@ -567,6 +617,7 @@ local function describe(butai: Butai.Butai): { [string]: any }
 		taiki = if waiting[butai.id] then true else nil,
 		-- 交戦の押す力に掛ける支配エリアの倍率。1 のときは出さない
 		shihaiArea = if shihaiArea ~= 1 then round(shihaiArea) else nil,
+		fukuhei = butai.fukuhei,
 	}
 end
 
