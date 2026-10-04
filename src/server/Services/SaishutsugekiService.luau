@@ -3,8 +3,9 @@
 -- 倒れて Config.luau の Stage 節の秒数がたつと（PlayerService.setRespawner）、兵站線につながった味方軍の拠点のうち、
 -- 倒れた位置に一番近い拠点から再出撃させ、兵力を1使う。拠点の選び方は ReplicatedStorage.Shared.Saishutsugeki にある。
 --
--- - 出撃（StageService.started）で兵力を Config.luau の Stage 節の Heiryoku にし、workspace の Attribute の Heiryoku で
---   クライアントへ複製する。ロビーのフェーズに戻ったら消す
+-- - 出撃（StageService.started）で兵力を Config.luau の Stage 節の Heiryoku に人数の倍率を掛けた数にし
+--   （ReplicatedStorage.Shared.PartySize。人数は出撃したときの人数で、途中で抜けても変えない）、
+--   workspace の Attribute の Heiryoku でクライアントへ複製する。ロビーのフェーズに戻ったら消す
 -- - 兵力が0の状態で出撃メンバーが倒れたら、再出撃させずに heiryokuZero で知らせ、兵力0で負けにする
 --   （StageService.finish）。勝敗の判定をまとめる処理（#109）ができたら、負けにするのはそちらへ移す
 -- - 拠点の中では、出撃した順に東西へ並べ、倒れた位置の方を向かせる。高さは地面に合わせる（PlayerService.spawnAt）
@@ -21,6 +22,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local PartySize = require(ReplicatedStorage.Shared.PartySize)
 local Saishutsugeki = require(ReplicatedStorage.Shared.Saishutsugeki)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
@@ -37,6 +39,8 @@ local HUMANOID_TIMEOUT = 10
 
 -- 兵力。出撃していないときは nil
 local heiryoku: number? = nil
+-- 出撃したときの兵力（人数で増やした数）。出撃していないときは nil
+local initialHeiryoku: number? = nil
 -- このステージで兵力0の負けを知らせたか
 local zeroNotified = false
 
@@ -196,7 +200,7 @@ local function registerDebugCommands()
 			end
 			return HttpService:JSONEncode({
 				heiryoku = heiryoku,
-				initial = Config.Stage.Heiryoku,
+				initial = initialHeiryoku,
 				kyoten = kyoten,
 				zero = zeroNotified,
 			})
@@ -206,13 +210,15 @@ end
 
 function SaishutsugekiService.start()
 	PlayerService.setRespawner(respawn)
-	StageService.started:Connect(function()
+	StageService.started:Connect(function(info: StageService.StartInfo)
 		zeroNotified = false
 		table.clear(falls)
-		SaishutsugekiService.setHeiryoku(Config.Stage.Heiryoku)
+		initialHeiryoku = PartySize.heiryokuOf(Config.Stage.Heiryoku, info.partySize)
+		SaishutsugekiService.setHeiryoku(initialHeiryoku)
 	end)
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
 		if next == "Lobby" then
+			initialHeiryoku = nil
 			SaishutsugekiService.setHeiryoku(nil)
 		end
 	end)

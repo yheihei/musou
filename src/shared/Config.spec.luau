@@ -10,6 +10,10 @@ local SNAPSHOT = {
 	Party = {
 		MaxMembers = 4,
 	},
+	PartySize = {
+		JoninHealth = { 1, 1.5, 2, 2.5 },
+		Heiryoku = { 1, 1.5, 2, 2.5 },
+	},
 	Stage = {
 		TimeLimit = 2400,
 		SaishutsugekiDelay = 5,

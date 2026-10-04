@@ -4,6 +4,7 @@
 -- 能力値は Config.luau の Stats 節（上忍は Jonin、首領は Shuryo）に、補正を Stats.compute で足して求める。
 -- 味方軍の上忍と首領は、体力・攻撃・防御に Stats 節の MikatagunScale を掛けて敵軍よりやや弱くする。
 -- 自分の軍の支配エリアの中では、攻撃と防御が上がる（ShihaiArea.modifiersOf）。
+-- 敵軍の上忍と首領の体力は、出撃したときのパーティーの人数で上げる（PartySize.modifiersOf）。
 -- 体力が 0 になると倒れる。率いていた部隊は残し、士気だけを下げる（Butai.loseJonin）。
 -- 位置は水平の (x, z) で持つ。Roblox の API は使わない。
 
@@ -11,6 +12,7 @@ local Characters = require("./Characters")
 local Config = require("./Config")
 local Gun = require("./Gun")
 local Haichi = require("./Haichi")
+local PartySize = require("./PartySize")
 local ShihaiArea = require("./ShihaiArea")
 local Stages = require("./Stages")
 local Stats = require("./Stats")
@@ -36,7 +38,7 @@ export type Jonin = {
 	gun: Gun.Gun,
 	-- 今の能力値。軍の補正と、支配エリアの中なら支配エリアの補正を足したもの
 	stats: Stats.Values,
-	-- 支配エリアの補正を除いた補正（軍の補正など）
+	-- 支配エリアの補正を除いた補正（軍の補正と人数による調整）
 	modifiers: { Stats.Modifier },
 	-- 自分の軍の支配エリアの中か
 	shihaiArea: boolean,
@@ -97,10 +99,14 @@ local function statsOf(shuryo: boolean, modifiers: { Stats.Modifier }, shihaiAre
 	return Stats.compute(Stats.npcBaseOf(shuryo), list)
 end
 
--- 開始時の上忍か首領を作る。体力は最大の体力から始める。支配エリアの外にいるものとして作る
-function Jonin.new(entry: Entry, position: Point): Jonin
+-- 開始時の上忍か首領を作る。体力は最大の体力から始める。支配エリアの外にいるものとして作る。
+-- partySize は出撃したときのパーティーの人数（省くと 1）。敵軍は人数で体力の最大を上げる
+function Jonin.new(entry: Entry, position: Point, partySize: number?): Jonin
 	local character = Characters.get(entry.id)
 	local modifiers = Jonin.modifiersOf(entry.gun)
+	for _, modifier in PartySize.modifiersOf(entry.gun, partySize or 1) do
+		table.insert(modifiers, modifier)
+	end
 	local stats = statsOf(entry.shuryo, modifiers, false)
 	return {
 		id = entry.id,

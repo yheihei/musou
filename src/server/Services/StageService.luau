@@ -15,6 +15,8 @@
 -- - 戦闘のフェーズには制限時間（Config.luau の Stage 節）があり、終了予定の時刻（workspace:GetServerTimeNow の時刻）を
 --   workspace の Attribute の BattleDeadline に置いてクライアントへ複製する。過ぎたら時間切れで負けにする
 -- - 出撃すると、出撃するメンバーの撃破数と奥義ゲージを出撃したときの値に戻す
+-- - 人数による調整に使う人数は、出撃したときのメンバーの数。途中で抜けても変えない。
+--   窓口の SetPartySize で、次の出撃から使う人数を上書きできる（確認用）
 -- - 倒れた人の再出撃は SaishutsugekiService が行う。出撃したメンバーの出撃地点は shutsugekiCFrameOf で引く
 -- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
 -- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
@@ -67,6 +69,8 @@ type Session = {
 	scene: SceneRun?,
 	-- 決着したときに作った StageResult。終了のイベントシーンの後に送る
 	result: RemoteSchema.StageResult?,
+	-- 人数による調整に使う人数
+	partySize: number,
 }
 
 -- 開始の通知で渡す中身
@@ -74,6 +78,8 @@ export type StartInfo = {
 	stageId: string,
 	members: { Player },
 	count: number,
+	-- 人数による調整に使う人数。出撃したときのメンバーの数（窓口で上書きしていればその数）
+	partySize: number,
 }
 
 local StageService = {}
@@ -83,6 +89,8 @@ local DEADLINE_CHECK_INTERVAL = 0.25
 
 local phase: StagePhase.Phase = "Lobby"
 local session: Session? = nil
+-- 人数による調整に使う人数の上書き（窓口の SetPartySize）。nil ならメンバーの数を使う
+local partySizeOverride: number? = nil
 local rejectedRemote: RemoteEvent
 local resultRemote: RemoteEvent
 local playEventSceneRemote: RemoteEvent
@@ -356,6 +364,7 @@ function StageService.shutsugeki(player: Player, stageOverride: string?, startSc
 		deadline = nil,
 		scene = nil,
 		result = nil,
+		partySize = partySizeOverride or #members,
 	}
 	session = current
 	for _, member in members do
@@ -366,7 +375,9 @@ function StageService.shutsugeki(player: Player, stageOverride: string?, startSc
 		-- 移している間に全員が抜けた
 		return nil
 	end
-	startedEvent:Fire({ stageId = stage.id, members = members, count = #members } :: StartInfo)
+	startedEvent:Fire(
+		{ stageId = stage.id, members = members, count = #members, partySize = current.partySize } :: StartInfo
+	)
 	beginScene(current, startScene or StagePhase.sceneIdFor(stage.eventScenes, "StartScene"))
 	return nil
 end
@@ -663,6 +674,20 @@ local function registerDebugCommands()
 			return `戦闘のフェーズの残り時間を {seconds} 秒にした`
 		end
 	)
+	DebugCommand.register(
+		"SetPartySize",
+		"<人数|0>",
+		"次の出撃から、人数による調整（敵軍の上忍と首領の体力、兵力）に使う人数を上書きする。0 でメンバーの数に戻す（確認用）",
+		function(value)
+			local count = math.floor(DebugCommand.toNumber(value, "人数"))
+			if count <= 0 then
+				partySizeOverride = nil
+				return "人数による調整に使う人数を、出撃したときのメンバーの数に戻した（次の出撃から）"
+			end
+			partySizeOverride = count
+			return `人数による調整に使う人数を {count} にした（次の出撃から）`
+		end
+	)
 	DebugCommand.register("DumpStage", "", "ステージの進行の状態を JSON で返す", function()
 		local names = {}
 		for _, member in StageService.getMembers() do
@@ -688,6 +713,8 @@ local function registerDebugCommands()
 			phase = phase,
 			stage = StageService.getStage(),
 			members = names,
+			partySize = if current then current.partySize else nil,
+			partySizeOverride = partySizeOverride,
 			elapsed = elapsed,
 			remaining = if deadline then math.max(deadline - workspace:GetServerTimeNow(), 0) else nil,
 			scene = scene,

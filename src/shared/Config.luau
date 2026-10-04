@@ -259,6 +259,12 @@ export type PartySection = {
 	MaxMembers: number,
 }
 
+-- 人数による調整。パーティーの人数ごとの倍率を、1人から順に並べる
+export type PartySizeSection = {
+	JoninHealth: { number },
+	Heiryoku: { number },
+}
+
 export type StageSection = {
 	TimeLimit: number,
 	SaishutsugekiDelay: number,
@@ -293,6 +299,7 @@ export type BattleStatusSection = {
 
 export type Config = {
 	Party: PartySection,
+	PartySize: PartySizeSection,
 	Stage: StageSection,
 	Stats: StatsSection,
 	Combo: ComboSection,
@@ -324,6 +331,13 @@ local Config: Config = {
 	-- パーティー。1サーバーが1パーティーにあたる。Roblox のサーバーの最大人数も同じ値にする
 	Party = {
 		MaxMembers = 4,
+	},
+
+	-- 人数による調整。出撃したときのパーティーの人数で、敵軍の上忍と首領の体力と兵力を増やす。計算は PartySize.luau にある。
+	-- 倍率は1人から上限人数まで人数の順に並べる。味方軍の上忍と首領には掛けない
+	PartySize = {
+		JoninHealth = { 1, 1.5, 2, 2.5 }, -- 敵軍の上忍と首領の体力の倍率
+		Heiryoku = { 1, 1.5, 2, 2.5 }, -- 兵力の倍率。Stage 節の Heiryoku に掛け、端数は四捨五入する
 	},
 
 	-- ステージの進行。戦闘のフェーズの制限時間と、倒れたプレイヤーの再出撃

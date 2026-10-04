@@ -4,6 +4,7 @@
 -- 個体（モデル）と、攻撃による被ダメージと撃破は #91 で作る。
 --
 -- - 出撃（StageService.started）で作り、決着とロビーのフェーズへの戻りで片付ける。配置の構成が無いステージでは作らない
+-- - 敵軍の上忍と首領の体力は、出撃したときの人数（StartInfo.partySize）で上げる。途中で抜けても変えない
 -- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。
 --   戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
 -- - 首領は本陣の範囲にとどまる。setPosition で範囲の外の位置を渡されたら、範囲の縁へ寄せる（Hoshin.clampToRange）
@@ -164,7 +165,7 @@ local function onStarted(info: StageService.StartInfo)
 			warn(`JoninService: {entry.id} のいる拠点 {entry.kyoten} の目印が無いので出さない`)
 			continue
 		end
-		local jonin = Jonin.new(entry, position)
+		local jonin = Jonin.new(entry, position, info.partySize)
 		table.insert(joninList, jonin)
 		if entry.shuryo then
 			honjinRangeOf[entry.id] = ranges[entry.kyoten]

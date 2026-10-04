@@ -110,3 +110,28 @@ test("味方軍の上忍は、味方軍の倍率に支配エリアの倍率を�
 	expect(mikata.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * scale * Config.ShihaiArea.Attack)
 	expect(mikata.stats.MaxHealth).toBeNear(Config.Stats.Jonin.MaxHealth * scale)
 end)
+
+test(
+	"敵軍の上忍と首領は、出撃したときの人数で体力の最大が上がり、体力は最大から始まる",
+	function()
+		local scale = Config.PartySize.JoninHealth[4]
+		local jonin = Jonin.new(entry("ShikenJonin1", false), { x = 0, z = 0 }, 4)
+		expect(jonin.stats.MaxHealth).toBeNear(Config.Stats.Jonin.MaxHealth * scale)
+		expect(jonin.health).toBe(jonin.stats.MaxHealth)
+		expect(jonin.stats.Attack).toBe(Config.Stats.Jonin.Attack)
+		local shuryo = Jonin.new(entry("ShikenShuryo", true), { x = 0, z = 0 }, 4)
+		expect(shuryo.stats.MaxHealth).toBeNear(Config.Stats.Shuryo.MaxHealth * scale)
+		-- 支配エリアで能力値を求め直しても、人数による体力は残る
+		Jonin.setShihaiArea(jonin, true)
+		expect(jonin.stats.MaxHealth).toBeNear(Config.Stats.Jonin.MaxHealth * scale)
+	end
+)
+
+test("味方軍の上忍と首領は人数で体力が変わらない", function()
+	local mikata = Jonin.new(
+		{ id = "Hayate", gun = "Mikatagun", butai = nil, shuryo = true, kyoten = "MikataHonjin" },
+		{ x = 0, z = 0 },
+		4
+	)
+	expect(mikata.stats.MaxHealth).toBeNear(Config.Stats.Shuryo.MaxHealth * Config.Stats.MikatagunScale)
+end)
