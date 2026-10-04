@@ -3,6 +3,7 @@
 
 local Services = script:WaitForChild("Services")
 
+local CollisionGroups = require(script:WaitForChild("CollisionGroups"))
 local DebugCommand = require(script:WaitForChild("DebugCommand"))
 local KukakuService = require(Services:WaitForChild("KukakuService"))
 local HaichiService = require(Services:WaitForChild("HaichiService"))
@@ -25,6 +26,7 @@ local EnemyService = require(Services:WaitForChild("EnemyService"))
 local CombatService = require(Services:WaitForChild("CombatService"))
 local HikeiService = require(Services:WaitForChild("HikeiService"))
 
+CollisionGroups.setup()
 DebugCommand.start()
 KukakuService.start()
 HaichiService.start()

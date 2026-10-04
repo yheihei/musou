@@ -4,6 +4,7 @@
 -- 一定部隊ごとに上忍を混ぜる。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）敵を片付ける。
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 -- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
+-- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 
 local Players = game:GetService("Players")
@@ -23,6 +24,7 @@ local DamageService = require(script.Parent.DamageService)
 local KukakuService = require(script.Parent.KukakuService)
 local PlayerService = require(script.Parent.PlayerService)
 local StageService = require(script.Parent.StageService)
+local CollisionGroups = require(script.Parent.Parent.CollisionGroups)
 
 type EnemyDef = Config.EnemySection
 
@@ -302,6 +304,8 @@ function EnemyService.start()
 
 	for kind, def in ENEMY_DEFS do
 		local template = buildTemplate(kind, def)
+		-- 敵は体ではプレイヤーにもほかの敵にもぶつからない。複製した敵もこのグループになる
+		CollisionGroups.apply(template, CollisionGroups.ENEMY)
 		templates[kind] = template
 		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ）
 		local size = template:GetExtentsSize()

@@ -7,6 +7,7 @@
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
 --
 -- - Roblox の自動の出現（Players.CharacterAutoLoads）は止め、出現はここで行う
+-- - キャラクターは衝突のグループ Player にする。敵の体とはぶつからない（CollisionGroups）
 -- - 入室した人はロビーに出現する（出撃中に入った待機中の人も）
 -- - 倒れた人（キャラクターが無い人を含む）は、Config.luau の Stage 節の秒数がたつと、
 --   setRespawner で登録した関数で出現し直す。既定はロビー。出撃中のメンバーの行き先は StageService が決める
@@ -20,6 +21,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local OugiGauge = require(ReplicatedStorage.Shared.OugiGauge)
 local Stats = require(ReplicatedStorage.Shared.Stats)
+local CollisionGroups = require(script.Parent.Parent.CollisionGroups)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
 local PlayerService = {}
@@ -213,6 +215,8 @@ local function checkDown()
 end
 
 local function onCharacterAdded(player: Player, character: Model)
+	-- 敵の体とぶつからないグループにする（敵が上に乗って動けなくならないように）
+	CollisionGroups.apply(character, CollisionGroups.PLAYER)
 	local humanoid = character:WaitForChild("Humanoid") :: Humanoid
 	local stats = PlayerService.getStats(player)
 	humanoid.WalkSpeed = stats.WalkSpeed
