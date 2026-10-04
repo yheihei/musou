@@ -9,9 +9,12 @@
 --   （StageService.finish）。勝敗の判定をまとめる処理（#109）ができたら、負けにするのはそちらへ移す
 -- - 拠点の中では、出撃した順に東西へ並べ、倒れた位置の方を向かせる。高さは地面に合わせる（PlayerService.spawnAt）
 -- - 再出撃する拠点が無いとき（配置の構成の無いステージなど）は、出撃地点から出す。兵力は使う
--- - 戦闘のフェーズの外で倒れた出撃メンバーは、兵力を使わずに出撃地点から出す
+-- - 兵力を使うのは、戦闘のフェーズで倒れ、戦闘のフェーズのうちに再出撃するとき。倒れた1回につき1回だけ使い、
+--   出現し直しに失敗して呼び直されたときは使わない
+-- - 戦闘のフェーズの外で出現し直す出撃メンバーは、兵力を使わずに出撃地点から出す。
+--   兵力0の負けにした人も、すぐに出撃地点から出す
 -- - ロビーのフェーズの人と、出撃したメンバーでない人（待機中の人）はロビーに出す。仲間による蘇生は無い
--- - 倒れた位置は、倒れたときの HumanoidRootPart の位置。分からなければ出撃地点の位置で選ぶ
+-- - 倒れた位置とフェーズは、倒れたとき（Humanoid.Died）に覚える。位置が分からなければ出撃地点の位置で選ぶ
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -36,8 +39,15 @@ local HUMANOID_TIMEOUT = 10
 local heiryoku: number? = nil
 -- このステージで兵力0の負けを知らせたか
 local zeroNotified = false
--- 倒れたときの位置
-local downAt: { [Player]: Vector3 } = {}
+
+-- 倒れたときの記録。位置は倒れたときの HumanoidRootPart の位置（分からなければ nil）、フェーズは倒れたときのフェーズ
+type Fall = {
+	position: Vector3?,
+	phase: StagePhase.Phase,
+}
+
+-- 倒れて、まだ出現し直していない人の記録
+local falls: { [Player]: Fall } = {}
 
 local heiryokuZeroEvent = Instance.new("BindableEvent")
 -- 兵力が0の状態で出撃メンバーが倒れたときに、倒れた Player で発火する。1回のステージで1回だけ
@@ -70,11 +80,12 @@ local function kyotenCFrame(index: number, position: Vector3): (string?, CFrame?
 		end
 	end
 	local id = Saishutsugeki.chooseKyoten(candidates, "Mikatagun", position.X, position.Z)
-	local center = if id then KyotenService.centerOf(id) else nil
+	local center = if id then KyotenService.positionOf(id) else nil
 	if not id or not center then
 		return nil, nil
 	end
-	local spot = Vector3.new(center.x + Saishutsugeki.offsetOf(index), position.Y, center.z)
+	-- 高さは拠点の目印に合わせる（出現の前に周りを読み込ませる位置になる。足元は PlayerService.spawnAt が地面に合わせる）
+	local spot = Vector3.new(center.X + Saishutsugeki.offsetOf(index), center.Y, center.Z)
 	local facing = Vector3.new(position.X - spot.X, 0, position.Z - spot.Z)
 	if facing.Magnitude < 1e-3 then
 		facing = Vector3.new(0, 0, -1)
@@ -103,6 +114,9 @@ end
 
 -- 倒れた人を出現し直させる（PlayerService.setRespawner で登録する）
 local function respawn(player: Player)
+	-- 倒れた記録は1回だけ使う。出現し直しに失敗して呼び直されたときは記録が無いので、兵力を使わない
+	local fall = falls[player]
+	falls[player] = nil
 	local phase = StageService.getPhase()
 	local index = table.find(StageService.getMembers(), player)
 	if phase == "Lobby" or not index or PartyService.isWaiting(player) then
@@ -114,19 +128,25 @@ local function respawn(player: Player)
 		spawnAtOrLobby(player, shutsugekiChiten)
 		return
 	end
-	local ok, rest = Saishutsugeki.consume(heiryoku or 0)
-	if not ok then
-		onHeiryokuZero(player)
-		return
+	if fall and fall.phase == "Battle" then
+		local ok, rest = Saishutsugeki.consume(heiryoku or 0)
+		if not ok then
+			onHeiryokuZero(player)
+			-- 負けにしたらイベントシーンとリザルトに出られるよう、出撃地点から出す
+			if StageService.getPhase() ~= "Battle" then
+				spawnAtOrLobby(player, shutsugekiChiten)
+			end
+			return
+		end
+		SaishutsugekiService.setHeiryoku(rest)
 	end
-	SaishutsugekiService.setHeiryoku(rest)
-	local position = downAt[player] or (if shutsugekiChiten then shutsugekiChiten.Position else nil)
-	downAt[player] = nil
+	local position = (if fall then fall.position else nil)
+		or (if shutsugekiChiten then shutsugekiChiten.Position else nil)
 	local _, cframe = kyotenCFrame(index, position or Vector3.zero)
 	spawnAtOrLobby(player, cframe or shutsugekiChiten)
 end
 
--- 倒れたときの位置を覚える
+-- 倒れたときの位置とフェーズを覚える
 local function watchCharacter(player: Player, character: Model)
 	local humanoid = character:WaitForChild("Humanoid", HUMANOID_TIMEOUT) :: Humanoid?
 	if not humanoid then
@@ -134,9 +154,7 @@ local function watchCharacter(player: Player, character: Model)
 	end
 	humanoid.Died:Once(function()
 		local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if root then
-			downAt[player] = root.Position
-		end
+		falls[player] = { position = if root then root.Position else nil, phase = StageService.getPhase() }
 	end)
 end
 
@@ -190,7 +208,7 @@ function SaishutsugekiService.start()
 	PlayerService.setRespawner(respawn)
 	StageService.started:Connect(function()
 		zeroNotified = false
-		table.clear(downAt)
+		table.clear(falls)
 		SaishutsugekiService.setHeiryoku(Config.Stage.Heiryoku)
 	end)
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
@@ -203,7 +221,7 @@ function SaishutsugekiService.start()
 		onPlayerAdded(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
-		downAt[player] = nil
+		falls[player] = nil
 	end)
 	registerDebugCommands()
 end

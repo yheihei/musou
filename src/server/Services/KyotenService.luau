@@ -235,6 +235,12 @@ function KyotenService.centerOf(id: string): Butai.Point?
 	return { x = center.X, z = center.Z }
 end
 
+-- 拠点の目印の中心（高さも含む）。出撃したステージの拠点に無ければ nil
+function KyotenService.positionOf(id: string): Vector3?
+	local entry = find(id)
+	return if entry then entry.cframe.Position else nil
+end
+
 -- 位置が範囲の中にある拠点の ID。どの拠点の範囲にも無ければ nil
 function KyotenService.kyotenAt(position: Butai.Point): string?
 	for _, entry in entries do
