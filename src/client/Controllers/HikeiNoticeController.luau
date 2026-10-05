@@ -4,7 +4,8 @@
 -- 文は ReplicatedStorage.Shared.HikeiNotice、出しておく秒数は Config.luau の Hikei 節の NoticeTime にある。
 --
 -- - 戦闘中の台詞（左下、HUD の上）と重ならないよう、右端の上寄りに縦に積む。新しい知らせを上に出す
--- - 右上のミニマップ（Ui.Minimap）と重ならないよう、ミニマップの下から積む
+-- - 右上のミニマップ（Ui.Minimap）と重ならないよう、ミニマップの左に、ミニマップの上端から積む
+--   （ミニマップの下に積むと、低い画面で右下の HUD と重なるため）
 -- - 出しておけるのは MAX_NOTICES 件まで。超えたら古いものから消す
 -- - 入力を受け取らない表示だけなので、出している間も操作はそのまま
 
@@ -18,10 +19,8 @@ local Ui = require(script.Parent.Parent.Ui)
 
 local HikeiNoticeController = {}
 
--- 画面の端からの余白と、知らせ1件の大きさ（ピクセル）
-local MARGIN = 24
--- 画面の上端からの位置。ミニマップの下に余白をあける
-local TOP = Ui.Minimap.Top + Ui.Minimap.Size + 16
+-- 画面の右端からの位置（ミニマップの左に余白をあける）と、知らせ1件の大きさ（ピクセル）
+local RIGHT = Ui.Minimap.Right + Ui.Minimap.Size + 12
 local WIDTH = 320
 local HEIGHT = 56
 local STRIPE = 6
@@ -115,7 +114,7 @@ function HikeiNoticeController.start()
 	list = Ui.create("Frame", {
 		Name = "List",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -MARGIN, 0, TOP),
+		Position = UDim2.new(1, -RIGHT, 0, Ui.Minimap.Top),
 		Size = UDim2.fromOffset(WIDTH, (HEIGHT + GAP) * MAX_NOTICES),
 		BackgroundTransparency = 1,
 	}, {

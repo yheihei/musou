@@ -5,6 +5,7 @@
 -- - 北（ワールドの z の -）を上にする。地図の座標は左上が (0, 0) のピクセルで、右が x の +、下が y の +
 -- - 範囲は出撃したステージの区画の範囲の目印。長い辺を地図の一辺に合わせ、縦横の縮尺はそろえる
 -- - 範囲の外の位置は地図の縁に寄せて出す（clampToMap）
+-- - 範囲と拠点の目印は向きを持てる。範囲は、目印を囲むワールドの軸にそろえた四角にする（boundsOf）
 -- - 向きは北から時計回りの度（東が 90）
 
 local Minimap = {}
@@ -37,9 +38,30 @@ function Minimap.toMap(
 	return mapSize / 2 + (x - centerX) * scale, mapSize / 2 + (z - centerZ) * scale
 end
 
--- 地図のピクセルの位置を地図の中に収める。範囲の外にいる仲間を地図の縁に出すときに使う
-function Minimap.clampToMap(px: number, py: number, mapSize: number): (number, number)
-	return math.clamp(px, 0, mapSize), math.clamp(py, 0, mapSize)
+-- 地図のピクセルの位置を地図の中に収める。範囲の外にいる仲間を地図の縁に出すときに使う。
+-- margin を渡すと、縁から margin だけ内側に収める（丸が地図の外で切れないように、丸の半径を渡す）
+function Minimap.clampToMap(px: number, py: number, mapSize: number, margin: number?): (number, number)
+	local inset = math.clamp(margin or 0, 0, mapSize / 2)
+	return math.clamp(px, inset, mapSize - inset), math.clamp(py, inset, mapSize - inset)
+end
+
+-- 向きのある目印のパーツを囲む、ワールドの軸にそろえた四角の大きさ（X と Z）。
+-- rightX・rightZ、upX・upZ、backX・backZ はパーツの CFrame の XVector・YVector・ZVector の X と Z、
+-- sizeX・sizeY・sizeZ はパーツの Size
+function Minimap.boundsOf(
+	rightX: number,
+	rightZ: number,
+	upX: number,
+	upZ: number,
+	backX: number,
+	backZ: number,
+	sizeX: number,
+	sizeY: number,
+	sizeZ: number
+): (number, number)
+	local extentX = math.abs(rightX) * sizeX + math.abs(upX) * sizeY + math.abs(backX) * sizeZ
+	local extentZ = math.abs(rightZ) * sizeX + math.abs(upZ) * sizeY + math.abs(backZ) * sizeZ
+	return extentX, extentZ
 end
 
 -- 水平の向き (lookX, lookZ) を、北から時計回りの度（0 以上 360 未満）にする。向きが無ければ 0

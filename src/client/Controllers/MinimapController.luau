@@ -16,6 +16,8 @@
 --
 -- - 出すのは戦闘のフェーズの出撃メンバーだけ（画面上部の戦況と同じ条件。BattleStatus.isVisible）。
 --   ロビー・イベントシーン・リザルトのフェーズと、待機中の人と、イベントシーンの再生中には出さない
+-- - 画面上部の戦況の下に置く（Ui.Minimap）。出している間は、右上に重なる Roblox 標準のプレイヤー一覧を消し、
+--   隠したら戻す。隠すときに描いた中身を片付け、次のステージで前の見た目を使い回さない
 -- - 背景は単色で、区画の範囲を少し明るい色で塗る。北の印を上端に出す
 -- - 支配エリアは軍の色の薄い円で塗る。兵站線が切れて孤立した拠点の円は消える（支配エリアが縮む）
 -- - つながりは経由点をたどる線で、入っている兵站線の軍の色、どちらにも入っていなければ灰色で引く。
@@ -33,6 +35,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
 
 local BattleStatus = require(ReplicatedStorage.Shared.BattleStatus)
 local Characters = require(ReplicatedStorage.Shared.Characters)
@@ -305,9 +308,11 @@ local function drawKyoten(view: View)
 			return newKyoten(honjin)
 		end)
 		local px, py = mapPoint(view, position)
+		local yaw = config:GetAttribute("Yaw")
 		frame.Position = UDim2.fromOffset(px, py)
 		frame.Size =
 			UDim2.fromOffset(math.max(size.X * view.scale, KYOTEN_MIN), math.max(size.Y * view.scale, KYOTEN_MIN))
+		frame.Rotation = if type(yaw) == "number" then yaw else 0
 		frame.BackgroundColor3 = Colors.Gun[gun :: Gun.Gun]
 		frame.BackgroundTransparency = if koritsu then 0.55 else 0.1
 		local label = frame:FindFirstChild("Label") :: TextLabel?
@@ -460,7 +465,8 @@ local function drawMembers(view: View)
 			return newMember(isSelf)
 		end)
 		local px, py = Minimap.toMap(position.X, position.Y, view.centerX, view.centerZ, view.scale, MAP_SIZE)
-		px, py = Minimap.clampToMap(px, py, MAP_SIZE)
+		-- 縁に寄せた丸が地図の外で切れないよう、丸の半径だけ内側に収める
+		px, py = Minimap.clampToMap(px, py, MAP_SIZE, (if isSelf then SELF_DOT else MEMBER_DOT) / 2 + 1)
 		frame.Position = UDim2.fromOffset(px, py)
 		local needle = frame:FindFirstChild("Needle") :: Frame?
 		if needle then
@@ -473,12 +479,33 @@ local function drawMembers(view: View)
 	removeUnseen(layer, seen)
 end
 
+-- 描いた中身を片付ける
+local function clearDrawn()
+	for _, name in DRAWN_LAYERS do
+		gui.layers[name]:ClearAllChildren()
+	end
+end
+
+-- Roblox 標準のプレイヤー一覧を出すか消す。読み込み直後は失敗することがあるので、通るまでやり直す
+local function setPlayerList(enabled: boolean)
+	task.spawn(function()
+		for _ = 1, 20 do
+			local ok = pcall(function()
+				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, enabled)
+			end)
+			if ok then
+				return
+			end
+			task.wait(0.5)
+		end
+		warn("MinimapController: 標準のプレイヤー一覧を切り替えられなかった")
+	end)
+end
+
 local function redraw()
 	local view = viewOf()
 	if not view then
-		for _, name in DRAWN_LAYERS do
-			gui.layers[name]:ClearAllChildren()
-		end
+		clearDrawn()
 		return
 	end
 	drawField(view)
@@ -554,11 +581,20 @@ function MinimapController.start()
 			me == nil or me.waiting,
 			EventSceneController.isPlaying()
 		)
-		if visible and not gui.screen.Enabled then
-			-- 出す前に描き直し、前のステージの地図を一瞬でも見せない
-			redraw()
+		if visible == gui.screen.Enabled then
+			return
+		end
+		if visible then
+			-- 出す前に描き直し、前のステージの地図を一瞬でも見せない。失敗しても出し、次の間隔で描き直す
+			local ok, err = pcall(redraw)
+			if not ok then
+				warn(`MinimapController: ミニマップを描けなかった: {err}`)
+			end
+		else
+			clearDrawn()
 		end
 		gui.screen.Enabled = visible
+		setPlayerList(not visible)
 	end
 
 	PartyClient.changed:Connect(refreshVisible)

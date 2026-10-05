@@ -25,6 +25,7 @@
 -- - 拠点ごとに ReplicatedStorage.Kyoten の下へ拠点 ID の名前で Configuration を置き、Attribute で
 --   軍（Gun）・耐久（Taikyu）・耐久の上限（MaxTaikyu）・本陣か（Honjin）・
 --   中心（Position。Vector2 の X と Y にワールドの X と Z）・範囲の大きさ（Size。Vector2 の X と Y に大きさの X と Z）・
+--   範囲の向き（Yaw。北から時計回りの度）・
 --   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
@@ -41,6 +42,7 @@ local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
+local Minimap = require(ReplicatedStorage.Shared.Minimap)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
@@ -188,6 +190,8 @@ local function publish(entry: Entry)
 	config:SetAttribute("Honjin", state.honjin)
 	config:SetAttribute("Position", Vector2.new(center.X, center.Z))
 	config:SetAttribute("Size", Vector2.new(entry.size.X, entry.size.Z))
+	local look = entry.cframe.LookVector
+	config:SetAttribute("Yaw", Minimap.facingOf(look.X, look.Z))
 	local koritsu, neverIsolated = koritsuOf(state.id)
 	config:SetAttribute("Koritsu", koritsu)
 	config:SetAttribute("NeverIsolated", neverIsolated)
