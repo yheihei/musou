@@ -667,6 +667,21 @@ local function registerDebugCommands()
 		end
 	)
 	DebugCommand.register(
+		"SetButaiPosition",
+		"<部隊 ID> <x> <z>",
+		"部隊をワールドの (x, z) へ移し、目的地を外してその場で止める。率いる上忍も次の間隔で付いてくる（秘計の確認用。方針で動く部隊は SetHoshinAI false で判断を止めてから使う）",
+		function(id, x, z)
+			local butai = if type(id) == "string" then find(id) else nil
+			if not butai then
+				return `部隊 {tostring(id)} がいない`
+			end
+			butai.position = { x = DebugCommand.toNumber(x, "x"), z = DebugCommand.toNumber(z, "z") }
+			Butai.setMokutekichi(butai, nil)
+			publish(butai)
+			return `部隊 {butai.id} を ({round(butai.position.x)}, {round(butai.position.z)}) へ移した`
+		end
+	)
+	DebugCommand.register(
 		"MoveButai",
 		"<部隊 ID> <目的地の拠点 ID>",
 		"部隊を拠点へ向かわせる。今いる拠点とつながっていれば道の経由点をたどる（確認用）",

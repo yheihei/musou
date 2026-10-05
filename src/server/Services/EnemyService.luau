@@ -661,7 +661,13 @@ function EnemyService.start()
 				return "地面が見つからず出せなかった"
 			end
 			local position = model:GetPivot().Position
-			return string.format("%s を (%.1f, %.1f, %.1f) に出した", kind, position.X, position.Y, position.Z)
+			return string.format(
+				"%s を (%.1f, %.1f, %.1f) に出した",
+				model.Name,
+				position.X,
+				position.Y,
+				position.Z
+			)
 		end
 	)
 
