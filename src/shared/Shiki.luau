@@ -3,7 +3,8 @@
 -- 出来事は上忍の撃破・拠点の陥落・秘計の発動の3種類で、種類・位置・得をする軍・起きた時刻を持つ。
 --
 -- - 出来事が起きると、軍全体の士気は得をする軍が上がり、相手の軍が下がる（applyToGun）
--- - 部隊の士気 = 軍全体の士気 + 部隊ごとの補正（率いる上忍を失ったときの下げ幅）+ 出来事の補正の和（ofButai）
+-- - 部隊の士気 = 軍全体の士気 + 部隊ごとの補正（率いる上忍を失ったときの下げ幅）+ 出来事の補正の和
+--   - 大喝による動揺の下げ幅（ofButai）
 -- - 出来事の補正は、得をする軍の部隊では上げ、相手の軍の部隊では下げる。
 --   出来事の位置で最大になり、距離に比例して減って Radius で 0 になり、時間に比例して減って Duration で消える
 -- - 軍全体の士気と部隊の士気は Min から Max までに収める
@@ -39,6 +40,8 @@ export type ButaiInput = {
 	position: Point,
 	-- 部隊ごとの補正。軍全体の士気に足す
 	shikiHosei: number,
+	-- 大喝で動揺している間、士気から引く量。動揺していなければ nil
+	doyo: number?,
 }
 
 local Shiki = {}
@@ -84,7 +87,7 @@ function Shiki.hosei(dekigoto: Dekigoto, gun: Gun.Gun, position: Point, now: num
 	return if dekigoto.gun == gun then amount else -amount
 end
 
--- 部隊の士気。軍全体の士気に、部隊ごとの補正と出来事の補正の和を足し、下限と上限に収める
+-- 部隊の士気。軍全体の士気に、部隊ごとの補正と出来事の補正の和を足し、動揺の下げ幅を引いて、下限と上限に収める
 function Shiki.ofButai(
 	gunShiki: GunShiki,
 	butai: ButaiInput,
@@ -93,7 +96,7 @@ function Shiki.ofButai(
 	params: Params?
 ): number
 	local p = params or Config.Shiki
-	local total = gunShiki[butai.gun] + butai.shikiHosei
+	local total = gunShiki[butai.gun] + butai.shikiHosei - (butai.doyo or 0)
 	for _, dekigoto in dekigotoList do
 		total += Shiki.hosei(dekigoto, butai.gun, butai.position, now, p)
 	end

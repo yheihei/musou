@@ -23,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Butai = require(ReplicatedStorage.Shared.Butai)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Hoshin = require(ReplicatedStorage.Shared.Hoshin)
@@ -303,6 +304,26 @@ local function registerDebugCommands()
 			end
 			local jonin = find(id) :: Jonin.Jonin
 			return `{jonin.displayName} の位置を ({round(jonin.position.x)}, {round(jonin.position.z)}) にした`
+		end
+	)
+	DebugCommand.register(
+		"WarpToJonin",
+		"<プレイヤー名> <キャラクター ID>",
+		"プレイヤーを上忍か首領のいる位置（南へ 5 スタッドずらす）へ移す（上忍や首領が使う秘計の確認用）",
+		function(name, id)
+			local player = DebugCommand.findPlayer(name)
+			local jonin = if type(id) == "string" then find(id) else nil
+			if not jonin then
+				return `{tostring(id)} は出撃したステージの上忍と首領にいない`
+			end
+			local character = player.Character
+			if not character or not character:FindFirstChild("HumanoidRootPart") then
+				return `{player.Name} のキャラクターがいない`
+			end
+			local x, z = jonin.position.x, jonin.position.z + 5
+			local y = Ground.heightAt(x, z) or 0
+			character:PivotTo(CFrame.new(x, y + 5, z))
+			return `{player.Name} を {jonin.displayName} のいる ({round(x)}, {round(z)}) へ移した`
 		end
 	)
 	DebugCommand.register(

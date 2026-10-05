@@ -20,6 +20,8 @@ export type Butai = {
 	shiki: number,
 	-- 部隊ごとの士気の補正。軍全体の士気に足す（率いる上忍を失うと下がる）
 	shikiHosei: number,
+	-- 大喝で動揺している間、士気から引く量。動揺していなければ nil
+	doyo: number?,
 	-- 率いる上忍のキャラクター ID。率いる上忍のいない部隊は nil
 	jonin: string?,
 	-- 目指す位置。着いたか、目指す位置が無ければ nil

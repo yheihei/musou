@@ -48,6 +48,17 @@ test("出来事が無ければ、部隊の士気は軍全体の士気と同じ",
 	expect(Shiki.ofButai(gun, butai("Tekigun", 0, 0, -15), {}, 0, PARAMS)).toBe(35)
 end)
 
+test("大喝で動揺している部隊は、動揺の下げ幅だけ士気が下がる", function()
+	local gun = Shiki.newGun(PARAMS)
+	local shaken = butai("Tekigun", 0, 0, -15)
+	shaken.doyo = 15
+	expect(Shiki.ofButai(gun, shaken, {}, 0, PARAMS)).toBe(20)
+	shaken.doyo = 100
+	expect(Shiki.ofButai(gun, shaken, {}, 0, PARAMS)).toBe(0)
+	shaken.doyo = nil
+	expect(Shiki.ofButai(gun, shaken, {}, 0, PARAMS)).toBe(35)
+end)
+
 test("出来事の補正は近くの部隊だけにかかり、距離が離れるほど小さい", function()
 	local gun = Shiki.newGun(PARAMS)
 	local list = { dekigoto("JoninGekiha", "Mikatagun", 0, 0, 0) }

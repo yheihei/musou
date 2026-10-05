@@ -268,6 +268,14 @@ export type KishinkaSection = {
 	Defense: number,
 }
 
+-- 秘計の大喝。周りの相手の強化の秘計を打ち消し、動揺させる
+export type DaikatsuSection = {
+	Radius: number,
+	Attack: number,
+	Defense: number,
+	Shiki: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -340,6 +348,7 @@ export type Config = {
 	Hikei: HikeiSection,
 	Fukuhei: FukuheiSection,
 	Kishinka: KishinkaSection,
+	Daikatsu: DaikatsuSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1231,6 +1240,15 @@ local Config: Config = {
 	Kishinka = {
 		Attack = 1.5, -- 攻撃の倍率
 		Defense = 1.5, -- 防御の倍率。今の防御の値（10 前後）では、受けるダメージは 5% ほどしか減らない
+	},
+
+	-- 秘計の大喝。発動者から Radius 以内の相手の強化の秘計（鬼神化）を打ち消し、相手の上忍・首領・プレイヤー・部隊を動揺させる。
+	-- 動揺の時間は Hikei 節の Duration.Daikatsu。対象の選び方と補正は Daikatsu.luau にある
+	Daikatsu = {
+		Radius = 40, -- 発動者からこの距離（スタッド）までの相手が対象
+		Attack = 0.7, -- 動揺した上忍・首領・プレイヤーの攻撃の倍率
+		Defense = 0.7, -- 動揺した上忍・首領・プレイヤーの防御の倍率
+		Shiki = 15, -- 動揺した部隊の士気を下げる量（動揺の間だけ）
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

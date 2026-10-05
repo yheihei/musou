@@ -786,6 +786,12 @@ local SNAPSHOT = {
 		Attack = 1.5,
 		Defense = 1.5,
 	},
+	Daikatsu = {
+		Radius = 40,
+		Attack = 0.7,
+		Defense = 0.7,
+		Shiki = 15,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

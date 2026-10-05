@@ -20,6 +20,7 @@
 --   拠点の耐久（KyotenService）はこれを受けて減る
 -- - 潜んでいる伏兵部隊（Butai.fukuhei）は、交戦の相手を決める対象にしない。姿を現したら（reveal）対象にする。
 --   潜んでいる間は Attribute の Fukuhei を true にする
+-- - 大喝で動揺している部隊は、動揺の間だけ士気を下げる（setDoyo。Butai.doyo）。動揺の間は Attribute の Doyo を true にする
 -- - 交戦の押す力には、部隊のいる地点の支配エリアの倍率を掛ける。倍率は ShihaiAreaService が
 --   setShihaiAreaProvider で渡す関数で引き、関数が無ければ 1
 
@@ -211,6 +212,7 @@ local function publish(butai: Butai.Butai)
 	instance:SetAttribute("Jonin", butai.jonin)
 	instance:SetAttribute("Kosen", aiteOf[butai.id])
 	instance:SetAttribute("Fukuhei", if butai.fukuhei then true else nil)
+	instance:SetAttribute("Doyo", if butai.doyo then true else nil)
 	if showMarkers then
 		updateMarker(butai)
 	end
@@ -363,6 +365,21 @@ function ButaiService.lowerShiki(id: string, amount: number): boolean
 		return false
 	end
 	Butai.lowerShiki(butai, amount)
+	publish(butai)
+	return true
+end
+
+-- 大喝で動揺させる（amount だけ士気を下げる）か、動揺を解く（nil を渡す）。士気はすぐ求め直す。部隊がいなければ false
+function ButaiService.setDoyo(id: string, amount: number?): boolean
+	local butai = find(id)
+	if not butai then
+		return false
+	end
+	butai.doyo = amount
+	local provider = shikiProvider
+	if provider then
+		butai.shiki = provider(butai)
+	end
 	publish(butai)
 	return true
 end
@@ -618,6 +635,7 @@ local function describe(butai: Butai.Butai): { [string]: any }
 		-- 交戦の押す力に掛ける支配エリアの倍率。1 のときは出さない
 		shihaiArea = if shihaiArea ~= 1 then round(shihaiArea) else nil,
 		fukuhei = butai.fukuhei,
+		doyo = butai.doyo,
 	}
 end
 
