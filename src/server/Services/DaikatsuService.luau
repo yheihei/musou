@@ -10,7 +10,8 @@
 -- - 動揺した上忍と首領は攻撃と防御が下がる（JoninService.setHikeiHosei）。
 --   プレイヤーも攻撃と防御が下がり（PlayerService.addModifierProvider）、頭の上に「動揺」の札を出す。
 --   部隊は動揺の間だけ士気が下がる（ButaiService.setDoyo）
--- - 動揺は効果時間が過ぎるか、ステージが終わったら解く。上忍・首領・プレイヤーは倒れたときにも解く
+-- - 動揺は効果時間が過ぎるか、ステージが終わったら解く。上忍・首領・プレイヤーは倒れたときにも解く。
+--   プレイヤーは、生きたまま姿が入れ替わったとき（キャラクターの変更や出現し直し）にも解く
 -- - 実体化した下忍の個体（#76）はまだ無いので、部隊の動揺を個体の攻撃と防御に映すのは個体ができてから
 -- - 発動者の位置から周りへ広がる仮の見た目（衝撃の輪）を出す
 
@@ -52,8 +53,8 @@ type Target = {
 local doyoOf: { [string]: Hikei.Effect } = {}
 -- 動揺の効果から引く対象
 local targetOf: { [Hikei.Effect]: Target } = {}
--- 動揺したプレイヤーの、倒れたことを見る接続（UserId の文字列から引く）
-local diedConnections: { [string]: RBXScriptConnection } = {}
+-- 動揺したプレイヤーの、倒れたことと姿が入れ替わることを見る接続（UserId の文字列から引く）
+local playerConnections: { [string]: { RBXScriptConnection } } = {}
 
 local function keyOf(kind: Daikatsu.Kind, id: string): string
 	return `{kind}:{id}`
@@ -210,16 +211,19 @@ local function shake(context: HikeiService.Context, target: Daikatsu.Candidate)
 		local player = playerOf(target.id)
 		if player then
 			addLabel(player)
+			local function onGone()
+				local current = doyoOf[key]
+				if current then
+					endDoyo(current)
+				end
+			end
+			local connections = { player.CharacterRemoving:Once(onGone) }
 			local character = player.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
-				diedConnections[target.id] = humanoid.Died:Once(function()
-					local current = doyoOf[key]
-					if current then
-						endDoyo(current)
-					end
-				end)
+				table.insert(connections, humanoid.Died:Once(onGone))
 			end
+			playerConnections[target.id] = connections
 		end
 	end
 end
@@ -262,11 +266,10 @@ local function finish(effect: Hikei.Effect, _reason: HikeiService.FinishReason)
 	elseif target.kind == "Butai" then
 		ButaiService.setDoyo(target.id, nil)
 	else
-		local connection = diedConnections[target.id]
-		if connection then
+		for _, connection in playerConnections[target.id] or {} do
 			connection:Disconnect()
-			diedConnections[target.id] = nil
 		end
+		playerConnections[target.id] = nil
 		local player = playerOf(target.id)
 		if player then
 			removeLabel(player)

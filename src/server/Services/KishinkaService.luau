@@ -9,7 +9,8 @@
 -- - 上忍と首領は、能力値の補正（JoninService.setHikeiHosei）で攻撃と防御を上げる。
 --   上忍と首領の個体（#91）はまだ無いので、のけぞらないことは個体ができてから isActive で引いて使う
 -- - 同じ発動者にはもう効果が出ていれば重ねて使えない（AlreadyActive）
--- - 効果時間が過ぎるか、発動者が倒れるか、大喝で打ち消されるか、ステージが終わったら解除する
+-- - 効果時間が過ぎるか、発動者が倒れるか、大喝で打ち消されるか、ステージが終わったら解除する。
+--   プレイヤーは、生きたまま姿が入れ替わったとき（キャラクターの変更や出現し直し）にも解除する
 -- - 効果中のプレイヤーには、赤い縁取り（Highlight）の仮の見た目を付ける
 
 local Players = game:GetService("Players")
@@ -33,8 +34,8 @@ local HIGHLIGHT_COLOR = Color3.fromRGB(255, 60, 40)
 
 -- 発動者の ID（プレイヤーは UserId の文字列、上忍と首領はキャラクター ID）から引く、鬼神化の効果
 local active: { [string]: Hikei.Effect } = {}
--- 効果中のプレイヤーの、倒れたことを見る接続
-local diedConnections: { [string]: RBXScriptConnection } = {}
+-- 効果中のプレイヤーの、倒れたことと姿が入れ替わることを見る接続
+local playerConnections: { [string]: { RBXScriptConnection } } = {}
 
 -- 発動者の ID の鬼神化の効果が出ているか（上忍と首領の個体ののけぞりにも使う）
 function KishinkaService.isActive(user: string): boolean
@@ -97,13 +98,24 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 	local jonin = context.jonin
 	if player then
 		addHighlight(player)
+		local connections = {}
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
-			diedConnections[context.user] = humanoid.Died:Once(function()
+			table.insert(
+				connections,
+				humanoid.Died:Once(function()
+					endEffectOf(context.user)
+				end)
+			)
+		end
+		table.insert(
+			connections,
+			player.CharacterRemoving:Once(function()
 				endEffectOf(context.user)
 			end)
-		end
+		)
+		playerConnections[context.user] = connections
 	elseif jonin then
 		JoninService.setHikeiHosei(jonin, HIKEI_ID, Kishinka.modifiers())
 	end
@@ -115,11 +127,10 @@ local function finish(effect: Hikei.Effect, _reason: HikeiService.FinishReason)
 	if active[user] == effect then
 		active[user] = nil
 	end
-	local connection = diedConnections[user]
-	if connection then
+	for _, connection in playerConnections[user] or {} do
 		connection:Disconnect()
-		diedConnections[user] = nil
 	end
+	playerConnections[user] = nil
 	local player = playerOf(user)
 	if player then
 		removeHighlight(player)

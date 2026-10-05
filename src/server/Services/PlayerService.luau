@@ -74,7 +74,8 @@ function PlayerService.getModifiers(player: Player): { Stats.Modifier }
 end
 
 -- 使うキャラクターの能力値。基本値に、登録した関数の補正（秘計の鬼神化など）を足す。
--- 体力の最大と移動速度は出現したときに当てるので、補正を変えても出現し直すまで変わらない
+-- 体力の最大は出現したときに当てるので、補正を変えても出現し直すまで変わらない。
+-- 移動速度は出現したときと、行動が変わるたび（ActionService の歩きの止め外し）に当て直す
 function PlayerService.getStats(player: Player): Stats.Values
 	local base = Stats.baseOf(PlayerService.getCharacterId(player)) :: Stats.Values
 	return Stats.compute(base, PlayerService.getModifiers(player))

@@ -37,7 +37,7 @@ export type Jonin = {
 	id: string,
 	displayName: string,
 	gun: Gun.Gun,
-	-- 今の能力値。軍の補正と、支配エリアの中なら支配エリアの補正を足したもの
+	-- 今の能力値。軍の補正と人数による調整に、支配エリアの中なら支配エリアの補正と、秘計の効果の補正を足したもの
 	stats: Stats.Values,
 	-- 支配エリアの補正を除いた補正（軍の補正と人数による調整）
 	modifiers: { Stats.Modifier },
