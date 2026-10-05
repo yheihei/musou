@@ -94,6 +94,20 @@ test("ガードの最中でも背後と真横からの攻撃は通常どおり�
 	expect(fromSide.result).toBe("Hit")
 end)
 
+test(
+	"ガードできない攻撃（秘計の火や爆発）は、ガードの最中に正面から来ても受ける",
+	function()
+		local outcome = Damage.resolve(
+			defender({ action = "Guard" }),
+			{ origin = ORIGIN, power = 30, reaction = "Knockback", guardable = false },
+			10
+		)
+		expect(outcome.result).toBe("Hit")
+		expect(outcome.amount > 0).toBe(true)
+		expect(outcome.action).toBe("Down")
+	end
+)
+
 test("ガードしていなければ正面からの攻撃も受ける", function()
 	expect(Damage.resolve(defender(), attack(30, "Flinch"), 10).result).toBe("Hit")
 end)

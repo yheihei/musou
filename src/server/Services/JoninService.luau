@@ -118,6 +118,18 @@ function JoninService.setHealth(id: string, value: number): boolean
 	return true
 end
 
+-- 威力 power の攻撃を当てる（秘計の火や爆発など）。与ダメージは威力を防御で軽減したもの（Stats.damage）。
+-- 与えたダメージと、これで倒れたかを返す。いないか倒れていれば 0 と false
+function JoninService.damage(id: string, power: number): (number, boolean)
+	local jonin = find(id)
+	if not jonin or Jonin.isDefeated(jonin) or power <= 0 then
+		return 0, false
+	end
+	local amount = Stats.damage(1, power, jonin.stats.Defense)
+	JoninService.setHealth(id, jonin.health - amount)
+	return amount, Jonin.isDefeated(jonin)
+end
+
 -- 秘計 hikeiId の効果の補正を足すか（modifiers を渡す）、外す（nil を渡す）。いなければ false
 function JoninService.setHikeiHosei(id: string, hikeiId: string, modifiers: { Stats.Modifier }?): boolean
 	local jonin = find(id)

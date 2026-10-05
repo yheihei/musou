@@ -8,6 +8,7 @@
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -59,6 +60,7 @@ local EnemyService = {}
 
 -- 湧かせる敵の軍
 local ENEMY_GUN: Gun.Gun = "Tekigun"
+EnemyService.GUN = ENEMY_GUN
 
 local gekihaEvent = Instance.new("BindableEvent")
 -- プレイヤーが敵を倒したときに、種類（Genin・Jonin）・軍・倒れた位置（Vector3）・倒したプレイヤーで発火する。
@@ -70,6 +72,8 @@ local templates: { [string]: Model } = {}
 local radii: { [string]: number } = {}
 local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
+-- 敵に振る番号。モデルの名前を種類と番号（Genin1、Jonin2…）にする
+local nextNumber = 1
 -- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
 local spawning = true
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
@@ -206,6 +210,8 @@ end
 local function spawnEnemy(kind: string, x: number, z: number): Model?
 	local def = ENEMY_DEFS[kind]
 	local model = templates[kind]:Clone()
+	model.Name = `{kind}{nextNumber}`
+	nextNumber += 1
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
 
@@ -328,6 +334,7 @@ local function removeAll()
 	table.clear(enemies)
 	aliveCount = 0
 	enemiesFolder:ClearAllChildren()
+	nextNumber = 1
 end
 
 function EnemyService.start()
@@ -369,6 +376,29 @@ function EnemyService.start()
 		end
 	)
 
+	DebugCommand.register(
+		"DumpEnemies",
+		"",
+		"生きている仮の湧き処理の敵（名前・種類・体力・位置）を JSON で返す",
+		function()
+			local list = {}
+			for model, enemy in enemies do
+				if enemy.humanoid.Health > 0 then
+					local position = enemy.root.Position
+					table.insert(list, {
+						name = model.Name,
+						kind = enemy.kind,
+						health = math.round(enemy.humanoid.Health * 10) / 10,
+						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
+					})
+				end
+			end
+			table.sort(list, function(a, b)
+				return a.name < b.name
+			end)
+			return HttpService:JSONEncode(list)
+		end
+	)
 	DebugCommand.register(
 		"SetSpawning",
 		"<true|false>",

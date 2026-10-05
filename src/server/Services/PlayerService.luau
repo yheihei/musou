@@ -80,8 +80,9 @@ function PlayerService.getStats(player: Player): Stats.Values
 	return Stats.compute(base, PlayerService.getModifiers(player))
 end
 
-function PlayerService.addGekihasu(player: Player)
-	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + 1)
+-- 撃破数を count（省くと 1）だけ足す
+function PlayerService.addGekihasu(player: Player, count: number?)
+	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + (count or 1))
 end
 
 -- 奥義ゲージ。溜まった本数は Attribute の OugiStock、次の1本までの量は OugiGauge に持つ

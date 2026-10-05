@@ -276,6 +276,13 @@ export type DaikatsuSection = {
 	Shiki: number,
 }
 
+-- 秘計の大火計。大火計地域の中の相手に与えるダメージ
+export type DaikakeiSection = {
+	Power: number,
+	HeisuRate: number,
+	FireTime: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -349,6 +356,7 @@ export type Config = {
 	Fukuhei: FukuheiSection,
 	Kishinka: KishinkaSection,
 	Daikatsu: DaikatsuSection,
+	Daikakei: DaikakeiSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1249,6 +1257,14 @@ local Config: Config = {
 		Attack = 0.7, -- 動揺した上忍・首領・プレイヤーの攻撃の倍率
 		Defense = 0.7, -- 動揺した上忍・首領・プレイヤーの防御の倍率
 		Shiki = 15, -- 動揺した部隊の士気を下げる量（動揺の間だけ）
+	},
+
+	-- 秘計の大火計。発動者から Hikei 節の TargetRange.Daikakei 以内で一番近い大火計地域に火を放ち、
+	-- 地域の中の相手の上忍・首領・プレイヤー・下忍にダメージを与え、部隊の兵数を減らす。計算は Daikakei.luau にある
+	Daikakei = {
+		Power = 120, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
+		HeisuRate = 0.5, -- 地域の中の部隊の兵数を減らす割合（端数は切り上げる）
+		FireTime = 3, -- 地域に炎の仮の見た目を出しておく秒数
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

@@ -792,6 +792,11 @@ local SNAPSHOT = {
 		Defense = 0.7,
 		Shiki = 15,
 	},
+	Daikakei = {
+		Power = 120,
+		HeisuRate = 0.5,
+		FireTime = 3,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

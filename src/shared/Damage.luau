@@ -3,7 +3,8 @@
 -- サーバーの被ダメージの窓口（DamageService）が使う。時刻は引数で受け取り、Roblox の API は使わない。
 --
 -- - 奥義の最中、緊急回避を始めてから Invulnerable 秒、出現直後の ForceField を持つ間は無敵で、何も起きない
--- - ガードの最中（ガードで受けた硬直を含む）に正面から受けた攻撃は、被ダメージ 0 で短い硬直だけ起こす
+-- - ガードの最中（ガードで受けた硬直を含む）に正面から受けた攻撃は、被ダメージ 0 で短い硬直だけ起こす。
+--   ガードできない攻撃（秘計の火や爆発）は、ガードの最中でも受ける
 -- - 与ダメージは Stats.damage で求め、威力を受ける側の防御で軽減する
 -- - のけぞりは、明けてから FlinchImmunity 秒の間は起こさない（ダメージは受ける）
 -- - のけぞらない状態（秘計の鬼神化）では、のけぞりを起こさない（ダメージは受け、吹き飛びと打ち上げはダウンになる）
@@ -25,6 +26,8 @@ export type Attack = {
 	-- 受ける側の防御で軽減する前のダメージ
 	power: number,
 	reaction: Reaction,
+	-- ガードで防げるか。省くと true（秘計の火や爆発は false）
+	guardable: boolean?,
 }
 
 -- 受ける側の状態
@@ -76,9 +79,9 @@ local GUARD_ACTIONS: { [string]: boolean } = {
 	GuardHit = true,
 }
 
--- ガードの最中に、正面から来た攻撃か
+-- ガードの最中に、正面から来たガードで防げる攻撃か
 function Damage.isGuarded(defender: Defender, attack: Attack): boolean
-	if defender.action == nil or not GUARD_ACTIONS[defender.action] then
+	if attack.guardable == false or defender.action == nil or not GUARD_ACTIONS[defender.action] then
 		return false
 	end
 	return Guard.isFront(defender.position, defender.facing, attack.origin, Config.Guard.Angle)
