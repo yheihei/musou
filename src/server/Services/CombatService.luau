@@ -93,20 +93,6 @@ local function scaled(player: Player, timeline: ActionState.Timeline): ActionSta
 	return ActionState.scale(timeline, PlayerService.getStats(player).AttackSpeed)
 end
 
--- 反応に合わせて敵に与える速さ。吹き飛びと打ち上げの軌道を計算するまでの仮置き
-local function knockbackVelocity(origin: Vector3, target: Model, reaction: Config.Reaction, force: number): Vector3?
-	if reaction == "None" or force <= 0 then
-		return nil
-	end
-	local offset = target:GetPivot().Position - origin
-	local flat = Vector3.new(offset.X, 0, offset.Z)
-	local direction = if flat.Magnitude > 0.01 then flat.Unit else Vector3.new(0, 0, -1)
-	if reaction == "Launch" then
-		return direction * force * 0.2 + Vector3.new(0, force, 0)
-	end
-	return direction * force + Vector3.new(0, force * 0.3, 0)
-end
-
 -- 命中の音を鳴らす。まとめて当てたときに重ならないよう、1人の攻撃につき間隔を空ける
 local function playHitSound(player: Player, model: Model)
 	local now = os.clock()
@@ -118,8 +104,9 @@ local function playHitSound(player: Player, model: Model)
 end
 
 local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, gauge: boolean)
-	local velocity = knockbackVelocity(origin, model, hit.Reaction, hit.Knockback)
-	if EnemyService.damage(model, damage, player, velocity) then
+	-- 吹き飛びと打ち上げの軌道は EnemyService が技の吹き飛ばす強さから決める
+	local reaction = { reaction = hit.Reaction, origin = origin, force = hit.Knockback }
+	if EnemyService.damage(model, damage, player, reaction) then
 		Vfx.hit(model)
 		playHitSound(player, model)
 		if gauge then

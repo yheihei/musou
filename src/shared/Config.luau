@@ -68,7 +68,7 @@ export type HitDef = {
 	-- 技の倍率。与ダメージは 倍率 × 攻撃 を、受ける側の防御で軽減したもの
 	Power: number,
 	Reaction: Reaction,
-	-- 吹き飛ばす強さ。軌道の計算ができるまでは、敵にこの大きさの速さを与える
+	-- 吹き飛ばす強さ。吹き飛びと打ち上げの初速を決める（Trajectory.luau、EnemyReaction 節）
 	Knockback: number,
 	Delay: number?,
 	Repeat: number?,
@@ -153,6 +153,21 @@ export type EnemySection = {
 	-- 攻撃を受けたプレイヤーの反応
 	Reaction: Reaction,
 	Scale: number,
+}
+
+-- 敵が攻撃を受けたときの反応（のけぞり・吹き飛び・打ち上げ・ダウン・起き上がり）
+export type EnemyReactionSection = {
+	Gravity: number,
+	KnockbackLift: number,
+	LaunchLift: number,
+	LaunchDrift: number,
+	AirLift: number,
+	AirDrift: number,
+	Flinch: number,
+	Down: number,
+	GetUp: number,
+	JoninScale: number,
+	JoninFlinchScale: number,
 }
 
 export type SpawnerSection = {
@@ -345,6 +360,7 @@ export type Config = {
 	Hitbox: HitboxSection,
 	Genin: EnemySection,
 	Jonin: EnemySection,
+	EnemyReaction: EnemyReactionSection,
 	Spawner: SpawnerSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
@@ -1110,6 +1126,22 @@ local Config: Config = {
 		AttackCooldown = 1.8,
 		Reaction = "Knockback",
 		Scale = 1.4,
+	},
+
+	-- 敵が攻撃を受けたときの反応。吹き飛びと打ち上げは物理演算に任せず、初速と重力から軌道を決める（Trajectory.luau）。
+	-- 着地したらダウンし、しばらくして起き上がる。上忍は反応を弱める倍率で短く飛び、のけぞりにくい
+	EnemyReaction = {
+		Gravity = 120, -- 吹き飛びと打ち上げで落ちる加速度（スタッド/秒²）
+		KnockbackLift = 0.4, -- 吹き飛びの上向きの初速。技の吹き飛ばす強さ（Knockback）に掛ける
+		LaunchLift = 1, -- 打ち上げの上向きの初速。技の Knockback に掛ける
+		LaunchDrift = 0.15, -- 打ち上げの横向きの初速。技の Knockback に掛ける
+		AirLift = 16, -- 空中でのけぞりの攻撃を受けたときに浮かせ直す上向きの初速（スタッド/秒）。追撃で浮かせ続ける
+		AirDrift = 3, -- 空中でのけぞりの攻撃を受けたときの横向きの初速（スタッド/秒）
+		Flinch = 0.35, -- 地上でのけぞって、動けず攻撃もしない秒数
+		Down = 1, -- 着地してから起き上がり始めるまでの秒数
+		GetUp = 0.5, -- 起き上がりの秒数
+		JoninScale = 0.5, -- 上忍の吹き飛び・打ち上げ・浮かせ直しの初速に掛ける倍率（飛ぶ距離は下忍の 0.25 倍）
+		JoninFlinchScale = 0, -- 上忍ののけぞりの秒数に掛ける倍率。0 なら通常攻撃ではのけぞらない
 	},
 
 	-- 暫定の湧き処理。実体化圏での出し入れができたら置き換える

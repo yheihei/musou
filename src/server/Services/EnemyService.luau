@@ -7,10 +7,21 @@
 -- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
+--
+-- 攻撃を受けた敵の反応（数値は Config.luau の EnemyReaction 節）
+-- - のけぞりの攻撃を地上で受けると、Flinch 秒だけ動かず攻撃もしない。上忍は JoninFlinchScale を掛けた秒数（0 ならのけぞらない）
+-- - 吹き飛びと打ち上げは、物理演算に任せず、初速と重力から決めた軌道（ReplicatedStorage.Shared.Trajectory）で動かす。
+--   飛んでいる間は HumanoidRootPart を固定し、フレームごとに軌道の位置へ置く。上忍は JoninScale を掛けた初速で短く飛ぶ
+-- - 空中で攻撃を受けたら、その位置から軌道をやり直す（追撃で再び浮く）。空中でののけぞりは浮かせ直す
+-- - 落ちている途中で地面の高さ（Ground.heightAt）に届いたら着地し、仰向けに倒れる（ダウン）。
+--   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
+-- - 倒された敵も、飛んでいれば着地まで飛び、倒れたまま残る
+-- - 反応の最中は、近づくことも攻撃することもしない
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
@@ -22,6 +33,7 @@ local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
+local Trajectory = require(ReplicatedStorage.Shared.Trajectory)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local DamageService = require(script.Parent.DamageService)
 local KukakuService = require(script.Parent.KukakuService)
@@ -41,6 +53,18 @@ local ENEMY_COLORS: { [string]: Color3 } = {
 	Jonin = Color3.fromRGB(170, 40, 40),
 }
 
+-- 攻撃を受けた反応の状態。Flinch はのけぞり、Air は吹き飛びか打ち上げで飛んでいる間、
+-- Down は着地して倒れている間、GetUp は起き上がり
+type Hanno = {
+	kind: "Flinch" | "Air" | "Down" | "GetUp",
+	-- この状態を始めた時刻（os.clock）
+	startedAt: number,
+	-- この状態が終わる時刻（os.clock）。Air は着地するまで続くので math.huge
+	untilTime: number,
+	-- 飛んでいる間の軌道
+	trajectory: Trajectory.Trajectory?,
+}
+
 type Enemy = {
 	-- 種類（Genin・Jonin）
 	kind: string,
@@ -54,6 +78,25 @@ type Enemy = {
 	spin: number,
 	lastAttack: number,
 	lastHitBy: Player?,
+	-- 立っているときの、地面から HumanoidRootPart の中心までの高さ
+	standHeight: number,
+	-- 攻撃を受けた反応の最中なら、その状態
+	hanno: Hanno?,
+	-- 飛んでいる間と倒れている間に保つ向き（回転だけの CFrame）
+	facing: CFrame,
+	-- 最後に着地した地面の高さ
+	groundY: number?,
+	-- 出てから受けた攻撃の数（確認用）
+	hits: number,
+}
+
+-- 攻撃を当てたときの反応の中身
+export type Hit = {
+	reaction: Config.Reaction,
+	-- 攻撃元の位置。吹き飛ぶ向きを決める
+	origin: Vector3,
+	-- 技の吹き飛ばす強さ（Config.luau の HitDef の Knockback）
+	force: number,
 }
 
 local EnemyService = {}
@@ -74,6 +117,8 @@ local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 -- 敵に振る番号。モデルの名前を種類と番号（Genin1、Jonin2…）にする
 local nextNumber = 1
+-- 飛んでいるか、倒れているか、起き上がっている敵。フレームごとに動かす（倒された敵も着地するまで入る）
+local reacting: { [Model]: Enemy } = {}
 -- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
 local spawning = true
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
@@ -84,6 +129,12 @@ local STAND_OFF_MARGIN = 0.5
 -- 囲みの輪の上を回り込む
 local NEAR_RANGE = 10
 local STEP = 3
+-- 飛んでいる敵の着地を確かめるとき、地面を探し始める高さ（HumanoidRootPart の中心からの高さ。スタッド）
+local LANDING_PROBE = 6
+-- 倒れているときの、地面から HumanoidRootPart の中心までの高さ（体の大きさの倍率を掛ける）
+local LIE_HEIGHT = 1
+-- 飛び始めた高さからこれだけ落ちても地面が無ければ、奈落に落ちたとして倒す（スタッド）
+local FALL_LIMIT = 300
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -148,7 +199,150 @@ local function neighborsOf(enemy: Enemy): { EnemySpacing.Neighbor }
 	return list
 end
 
+-- 歩くのをやめさせる
+local function stopWalking(enemy: Enemy)
+	enemy.humanoid:MoveTo(enemy.root.Position)
+	enemy.humanoid:Move(Vector3.zero)
+end
+
+-- HumanoidRootPart を固定し、軌道と倒れた姿勢をスクリプトで決められるようにする
+local function anchor(enemy: Enemy)
+	stopWalking(enemy)
+	enemy.root.Anchored = true
+end
+
+-- 固定を外し、物理をサーバーに持たせ直す
+local function release(enemy: Enemy)
+	enemy.root.Anchored = false
+	pcall(function()
+		enemy.root:SetNetworkOwner(nil)
+	end)
+end
+
+-- 攻撃元 origin の方を向く向き（回転だけ）。向きが決まらなければ今の向き
+local function facingToward(enemy: Enemy, origin: Vector3): CFrame
+	local position = enemy.root.Position
+	local back = Vector3.new(origin.X - position.X, 0, origin.Z - position.Z)
+	if back.Magnitude < 0.01 then
+		return enemy.root.CFrame.Rotation
+	end
+	return CFrame.lookAt(Vector3.zero, back.Unit)
+end
+
+-- position から初速 velocity で飛ばす
+local function startFlight(enemy: Enemy, velocity: vector, position: Vector3, attackOrigin: Vector3, now: number)
+	enemy.facing = facingToward(enemy, attackOrigin)
+	anchor(enemy)
+	enemy.hanno = {
+		kind = "Air",
+		startedAt = now,
+		untilTime = math.huge,
+		trajectory = Trajectory.new(position, velocity),
+	}
+	enemy.root.CFrame = CFrame.new(position) * enemy.facing
+	reacting[enemy.model] = enemy
+end
+
+-- 攻撃を受けた反応を始める
+local function react(enemy: Enemy, hit: Hit, now: number)
+	local state = enemy.hanno
+	local airborne = state ~= nil and state.kind == "Air"
+	local params = Config.EnemyReaction
+	local scale = if enemy.kind == "Jonin" then params.JoninScale else 1
+	local position = enemy.root.Position
+	local velocity = Trajectory.initialVelocity(hit.reaction, position - hit.origin, hit.force, airborne, scale)
+	if velocity then
+		-- 倒れているところから飛ばすときは、立っているときの高さから飛ばす
+		local lying = state ~= nil and (state.kind == "Down" or state.kind == "GetUp")
+		local from = if lying
+			then Vector3.new(position.X, (enemy.groundY or position.Y) + enemy.standHeight, position.Z)
+			else position
+		startFlight(enemy, velocity, from, hit.origin, now)
+		return
+	end
+	if hit.reaction ~= "Flinch" or enemy.humanoid.Health <= 0 then
+		return
+	end
+	if state ~= nil and state.kind ~= "Flinch" then
+		return
+	end
+	local seconds = params.Flinch * (if enemy.kind == "Jonin" then params.JoninFlinchScale else 1)
+	if seconds > 0 then
+		enemy.hanno = { kind = "Flinch", startedAt = now, untilTime = now + seconds, trajectory = nil }
+		stopWalking(enemy)
+	end
+end
+
+-- 着地して仰向けに倒れる
+local function land(enemy: Enemy, x: number, groundY: number, z: number, now: number)
+	enemy.groundY = groundY
+	local scale = enemy.def.Scale
+	enemy.root.CFrame = CFrame.new(x, groundY + LIE_HEIGHT * scale, z)
+		* enemy.facing
+		* CFrame.Angles(math.rad(90), 0, 0)
+	if enemy.humanoid.Health <= 0 then
+		-- 倒された敵は倒れたまま残し、消えるのを待つ
+		enemy.hanno = { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil }
+		reacting[enemy.model] = nil
+		return
+	end
+	enemy.hanno = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
+end
+
+-- 飛んでいる敵を軌道の位置へ置き、落ちている途中で地面に届いたら着地させる
+local function updateFlight(enemy: Enemy, state: Hanno, now: number)
+	local trajectory = state.trajectory :: Trajectory.Trajectory
+	local elapsed = now - state.startedAt
+	local position = Trajectory.positionAt(trajectory, elapsed)
+	if Trajectory.velocityAt(trajectory, elapsed).y <= 0 then
+		local probe = position.y + LANDING_PROBE
+		local groundY = Ground.heightAt(position.x, position.z, probe, { enemiesFolder })
+		if groundY and position.y - enemy.standHeight <= groundY then
+			land(enemy, position.x, groundY, position.z, now)
+			return
+		end
+		if not groundY and trajectory.origin.y - position.y > FALL_LIMIT then
+			reacting[enemy.model] = nil
+			enemy.humanoid.Health = 0
+			enemy.model:Destroy()
+			return
+		end
+	end
+	enemy.root.CFrame = CFrame.new(position) * enemy.facing
+end
+
+-- 飛んでいる・倒れている・起き上がっている敵を進める
+local function updateReaction(enemy: Enemy, now: number)
+	local state = enemy.hanno
+	if not state then
+		reacting[enemy.model] = nil
+		return
+	end
+	if state.kind == "Air" then
+		updateFlight(enemy, state, now)
+	elseif state.kind == "Down" and now >= state.untilTime then
+		-- 起き上がる
+		local position = enemy.root.Position
+		local groundY = enemy.groundY or position.Y
+		enemy.root.CFrame = CFrame.new(position.X, groundY + enemy.standHeight, position.Z) * enemy.facing
+		enemy.hanno =
+			{ kind = "GetUp", startedAt = now, untilTime = now + Config.EnemyReaction.GetUp, trajectory = nil }
+	elseif state.kind == "GetUp" and now >= state.untilTime then
+		enemy.hanno = nil
+		reacting[enemy.model] = nil
+		release(enemy)
+	end
+end
+
 local function updateEnemy(enemy: Enemy, now: number)
+	local hanno = enemy.hanno
+	if hanno then
+		-- のけぞりが明けたら動き出す。飛んでいる・倒れている・起き上がっている間は updateReaction が進める
+		if hanno.kind ~= "Flinch" or now < hanno.untilTime then
+			return
+		end
+		enemy.hanno = nil
+	end
 	local targetPlayer, targetRoot = findNearestTarget(enemy.root.Position)
 	if not targetPlayer or not targetRoot then
 		enemy.humanoid:Move(Vector3.zero)
@@ -233,6 +427,11 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 		spin = math.random() * math.pi * 2,
 		lastAttack = 0,
 		lastHitBy = nil,
+		standHeight = humanoid.HipHeight + root.Size.Y / 2,
+		hanno = nil,
+		facing = root.CFrame.Rotation,
+		groundY = nil,
+		hits = 0,
 	}
 	enemies[model] = enemy
 	aliveCount += 1
@@ -300,17 +499,21 @@ local function spawnButai(center: Vector2, withJonin: boolean)
 	end
 end
 
--- 攻撃側から呼ばれる被ダメージ処理。撃破数はとどめを刺したプレイヤーに付く
-function EnemyService.damage(model: Model, amount: number, attacker: Player, knockback: Vector3?)
+-- 攻撃側から呼ばれる被ダメージ処理。撃破数はとどめを刺したプレイヤーに付く。
+-- hit を渡すと、反応（のけぞり・吹き飛び・打ち上げ）を始める。当てたら true
+function EnemyService.damage(model: Model, amount: number, attacker: Player?, hit: Hit?): boolean
 	local enemy = enemies[model]
 	if not enemy or enemy.humanoid.Health <= 0 then
 		return false
 	end
 
-	enemy.lastHitBy = attacker
+	if attacker then
+		enemy.lastHitBy = attacker
+	end
+	enemy.hits += 1
 	enemy.humanoid:TakeDamage(amount)
-	if knockback then
-		enemy.root.AssemblyLinearVelocity = knockback
+	if hit then
+		react(enemy, hit, os.clock())
 	end
 	return true
 end
@@ -332,6 +535,7 @@ local function removeAll()
 		model:Destroy()
 	end
 	table.clear(enemies)
+	table.clear(reacting)
 	aliveCount = 0
 	enemiesFolder:ClearAllChildren()
 	nextNumber = 1
@@ -379,7 +583,7 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DumpEnemies",
 		"",
-		"生きている仮の湧き処理の敵（名前・種類・体力・位置）を JSON で返す",
+		"生きている仮の湧き処理の敵（名前・種類・体力・受けた攻撃の数・反応の状態・位置）を JSON で返す",
 		function()
 			local list = {}
 			for model, enemy in enemies do
@@ -389,6 +593,8 @@ function EnemyService.start()
 						name = model.Name,
 						kind = enemy.kind,
 						health = math.round(enemy.humanoid.Health * 10) / 10,
+						hits = enemy.hits,
+						hanno = if enemy.hanno then enemy.hanno.kind else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
 					})
 				end
@@ -480,6 +686,22 @@ function EnemyService.start()
 					butaiCount += 1
 					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0)
 				end
+			end
+		end
+	end)
+
+	-- 飛んでいる・倒れている・起き上がっている敵は、フレームごとに進める
+	RunService.Heartbeat:Connect(function()
+		local now = os.clock()
+		for model, enemy in reacting do
+			if not model.Parent then
+				reacting[model] = nil
+				continue
+			end
+			local ok, err = pcall(updateReaction, enemy, now)
+			if not ok then
+				reacting[model] = nil
+				warn(`EnemyService: {model.Name} の反応を進められなかった: {err}`)
 			end
 		end
 	end)

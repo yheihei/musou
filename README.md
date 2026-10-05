@@ -184,6 +184,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - プレイヤーへのダメージは DamageService.damage（攻撃元の位置・威力・反応の種類）を通す。無敵・防御の軽減・のけぞりとダウン・奥義ゲージの増加はそこで決まる
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 敵（仮の湧き処理の下忍と上忍）は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（`src/server/CollisionGroups.luau` の衝突のグループ）。敵が上に積み重なってプレイヤーが動けなくなるのを防ぐ。重ならないよう、敵はプレイヤーの手前（`Config.luau` の Spawner 節の `PlayerGap`）で止まり、ほかの敵とも離れて囲む（立ち位置の計算は `src/shared/EnemySpacing.luau`）。攻撃の当たりは計算で決めるので影響しない
+- 攻撃を受けた敵の反応は EnemyService が決める（数値は `Config.luau` の EnemyReaction 節）。吹き飛びと打ち上げは物理演算に任せず、技の吹き飛ばす強さ（`Knockback`）から決めた初速と重力の軌道（`src/shared/Trajectory.luau`）で、HumanoidRootPart を固定してフレームごとに動かす。空中で受けた攻撃は軌道をやり直し（追撃で浮き直す）、地面の高さ（`Ground.heightAt`）に届いたら仰向けに倒れ（ダウン）、しばらくして起き上がる。地上でののけぞりは短く止まるだけ。上忍は反応を弱める倍率で短く飛び、のけぞらない。窓口の `DumpEnemies` で受けた攻撃の数（`hits`）と反応の状態（`hanno`）を確かめる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
 - ステージの配置は、構成（拠点の種類と軍、つながり、部隊）を `src/shared/Haichi.luau` に、位置をプレースの目印に置く（ADR 0006）。試験用ステージ `Test` は目印の位置もコードに持ち、テストプレイ中に目印を作る。窓口の `Shutsugeki <プレイヤー名> Test` で出撃し、`DumpHaichi Test` で読み込んだ配置を見る

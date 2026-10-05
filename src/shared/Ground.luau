@@ -33,9 +33,13 @@ local function characterOf(part: BasePart): Model?
 end
 
 -- (x, z) の真下の地面の高さを返す。見つからなければ警告を出して nil を返す。
--- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）
-function Ground.heightAt(x: number, z: number, fromY: number?): number?
+-- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）。
+-- exclude を渡すと、その中の部品にも当てない（飛んでいる敵のフォルダなど）
+function Ground.heightAt(x: number, z: number, fromY: number?, exclude: { Instance }?): number?
 	local excluded: { Instance } = CollectionService:GetTagged(Mejirushi.TAG)
+	for _, instance in exclude or {} do
+		table.insert(excluded, instance)
+	end
 	for _, instance in CollectionService:GetTagged(Ground.IGNORE_TAG) do
 		table.insert(excluded, instance)
 	end
