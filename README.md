@@ -13,7 +13,7 @@ PC とゲームパッドで遊ぶ。割り当ては `src/shared/InputMap.luau` �
 | チャージ攻撃。それまでの通常攻撃の段数で C1〜C6 に変わる | 右クリック・X・E | Y |
 | ジャンプ | Space | A |
 | ガード（ガード中に方向を入れると緊急回避） | Shift | L1 |
-| 奥義。奥義ゲージを1本使って出す（最大4本まで溜まる）。発動中は無敵。刃の火遁、酉花の毒手裏剣、石舟斎の無刀取りがある | Q | B |
+| 奥義。奥義ゲージを1本使って出す（最大4本まで溜まる）。発動中は無敵。刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁がある | Q | B |
 | 秘計 | 1〜3 | 十字キーの左・上・右 |
 
 - 右ドラッグでカメラを回す。右クリックは、ドラッグせずに離したときだけチャージ攻撃になる
@@ -186,7 +186,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 敵（仮の湧き処理の下忍と上忍）は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（`src/server/CollisionGroups.luau` の衝突のグループ）。敵が上に積み重なってプレイヤーが動けなくなるのを防ぐ。重ならないよう、敵はプレイヤーの手前（`Config.luau` の Spawner 節の `PlayerGap`）で止まり、ほかの敵とも離れて囲む（立ち位置の計算は `src/shared/EnemySpacing.luau`）。攻撃の当たりは計算で決めるので影響しない
 - 攻撃を受けた敵の反応は EnemyService が決める（数値は `Config.luau` の EnemyReaction 節）。吹き飛びと打ち上げは物理演算に任せず、技の吹き飛ばす強さ（`Knockback`）から決めた初速と重力の軌道（`src/shared/Trajectory.luau`）で、HumanoidRootPart を固定してフレームごとに動かす。空中で受けた攻撃は軌道をやり直し（追撃で浮き直す）、地面の高さ（`Ground.heightAt`）に届いたら仰向けに倒れ（ダウン）、しばらくして起き上がる。地上でののけぞりは短く止まるだけ。上忍は反応を弱める倍率で短く飛び、のけぞらない。窓口の `DumpEnemies` で受けた攻撃の数（`hits`）と反応の状態（`hanno`）を確かめる
-- 奥義の中身は CombatService.registerOugi でキャラクター定義の `ougi` ごとに登録し、技（判定と時間）は `Config.luau` の Ougi 節の Timelines に置く。酉花の毒手裏剣は周りの12方向へ毒手裏剣を撒き、当てた敵を毒にする（`EnemyService.poison`、数値は `Config.luau` の Poison 節）。毒の間は間隔ごとにダメージを与え、とどめは酉花の撃破に数える。窓口の `DumpEnemies` の `poison`（毒の残り秒数）で確かめる。石舟斎の無刀取りは、周りを打ち上げてから高さのある円柱の判定で空中の敵を斬り続け（空中で当たるたびに浮き直す）、最後の一撃で吹き飛ばす。空中への斬撃の段数は Timelines.MutoDori の2つ目の判定の `Repeat` で、`DumpEnemies` の `hits` で数える
+- 奥義の中身は CombatService.registerOugi でキャラクター定義の `ougi` ごとに登録し、技（判定と時間）は `Config.luau` の Ougi 節の Timelines に置く。酉花の毒手裏剣は周りの12方向へ毒手裏剣を撒き、当てた敵を毒にする（`EnemyService.poison`、数値は `Config.luau` の Poison 節）。毒の間は間隔ごとにダメージを与え、とどめは酉花の撃破に数える。窓口の `DumpEnemies` の `poison`（毒の残り秒数）で確かめる。石舟斎の無刀取りは、周りを打ち上げてから高さのある円柱の判定で空中の敵を斬り続け（空中で当たるたびに浮き直す）、最後の一撃で吹き飛ばす。空中への斬撃の段数は Timelines.MutoDori の2つ目の判定の `Repeat` で、`DumpEnemies` の `hits` で数える。金鬼の金遁は、長い溜めの後、輪の判定（`HitShape` の Ring。内側と外側の半径の間に当たる）を内側から外へ広げて打ち上げ、最後の輪で周り全体を吹き飛ばす。`DumpEnemies` の `firstHitAgo`（最初に当たってからの秒数）で、内側の敵ほど先に当たったことを確かめる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
 - ステージの配置は、構成（拠点の種類と軍、つながり、部隊）を `src/shared/Haichi.luau` に、位置をプレースの目印に置く（ADR 0006）。試験用ステージ `Test` は目印の位置もコードに持ち、テストプレイ中に目印を作る。窓口の `Shutsugeki <プレイヤー名> Test` で出撃し、`DumpHaichi Test` で読み込んだ配置を見る

@@ -1,4 +1,6 @@
 --!strict
+local ActionState = require("./ActionState")
+local Config = require("./Config")
 local HitShape = require("./HitShape")
 local testkit = require("@testkit")
 
@@ -173,4 +175,45 @@ test("向きを回すと、上から見て時計回りが正になる", function
 	local target = v(math.sin(math.rad(15)) * 10, 0, -math.cos(math.rad(15)) * 10)
 	expect(inside(line, ORIGIN, target)).toBe(false)
 	expect(inside(line, HitShape.rotate(ORIGIN, 15), target)).toBe(true)
+end)
+
+local RING: HitShape.Shape = { kind = "Ring", inner = 6, outer = 12, height = 10 }
+
+test("輪は内側と外側の半径の間に当たり、向きは見ない", function()
+	expect(inside(RING, ORIGIN, v(0, 0, -9))).toBe(true)
+	expect(inside(RING, ORIGIN, v(9, 0, 0))).toBe(true)
+	expect(inside(RING, ORIGIN, v(0, 0, 9))).toBe(true)
+	expect(inside(RING, ORIGIN, v(0, 0, -3))).toBe(false)
+	expect(inside(RING, ORIGIN, v(0, 0, -13))).toBe(false)
+	expect(inside(RING, ORIGIN, v(0, 6, -9))).toBe(false)
+end)
+
+test("輪は対象の半径の分だけ内側と外側にはみ出していても当たる", function()
+	expect(inside(RING, ORIGIN, v(0, 0, -5), 1)).toBe(true)
+	expect(inside(RING, ORIGIN, v(0, 0, -13), 1)).toBe(true)
+	expect(inside(RING, ORIGIN, v(0, 0, -4.9), 1)).toBe(false)
+end)
+
+test("Config の輪は内側の半径を省くと 0 にする", function()
+	local shape = HitShape.fromDef({ Kind = "Ring", Radius = 8, Height = 6 }, 4)
+	expect(shape).toEqual({ kind = "Ring", inner = 0, outer = 8, height = 6 })
+end)
+
+test("金遁の輪は、内側の敵から順に当たる", function()
+	local timeline = Config.Ougi.Timelines.Kinton
+	-- 原点から 3・9・15・21 スタッドの敵に、最初に当たる時刻
+	local firstAt = {}
+	for index, distance in { 3, 9, 15, 21 } do
+		for _, scheduled in ActionState.hits(timeline) do
+			local shape = HitShape.fromDef(scheduled.hit.Shape, Config.Hitbox.Height)
+			if HitShape.test(shape, ORIGIN, v(distance, 0, 0), 1) then
+				firstAt[index] = scheduled.at
+				break
+			end
+		end
+	end
+	expect(#firstAt).toBe(4)
+	for index = 2, 4 do
+		expect(firstAt[index] > firstAt[index - 1]).toBe(true)
+	end
 end)

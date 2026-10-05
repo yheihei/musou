@@ -173,6 +173,7 @@ test("技の判定は形ごとの寸法を持ち、持続の間に出て、受�
 		Sector = { "Radius", "Angle" },
 		Sphere = { "Radius" },
 		Line = { "Length", "Width", "Speed" },
+		Ring = { "Radius" },
 	}
 	local all: { Config.ActionTimeline } = {}
 	for _, bukishu in { "Shuriken", "Katana" } do

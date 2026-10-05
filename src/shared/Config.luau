@@ -55,13 +55,15 @@ export type Reaction = "None" | "Flinch" | "Knockback" | "Launch"
 
 -- 攻撃判定の形。HitShape.luau の形に直して使う。Kind ごとに使う寸法（スタッド）が違う
 -- Box は Range・Width・Height、Sector は Radius・Angle（度）・Height、Sphere は Radius、
--- Line は Length・Width・Speed（スタッド/秒）。Height を省くと Hitbox 節の Height を使う
+-- Line は Length・Width・Speed（スタッド/秒）、Ring は Inner（内側の半径。省くと 0）・Radius（外側の半径）・Height。
+-- Height を省くと Hitbox 節の Height を使う
 export type ShapeDef = {
-	Kind: "Box" | "Sector" | "Sphere" | "Line",
+	Kind: "Box" | "Sector" | "Sphere" | "Line" | "Ring",
 	Range: number?,
 	Width: number?,
 	Height: number?,
 	Radius: number?,
+	Inner: number?,
 	Angle: number?,
 	Length: number?,
 	Speed: number?,
@@ -1218,6 +1220,52 @@ local Config: Config = {
 						Power = 4,
 						Reaction = "Knockback",
 						Knockback = 60,
+					},
+				},
+			},
+			-- 金鬼の金遁。長く溜めてから、地面から金属の刃を突き出す輪を内側から外へ広げて打ち上げ、
+			-- 最後の輪（周り全体）で吹き飛ばす。輪は 0.15 秒おきに 6 スタッドずつ外へ広がる
+			Kinton = {
+				Startup = 0.6,
+				Active = 0.9,
+				Recovery = 0.4,
+				CancelFrom = 1.9,
+				Advance = 0,
+				Interrupt = true,
+				Hits = {
+					{
+						Shape = { Kind = "Ring", Inner = 0, Radius = 6, Height = 10 },
+						Power = 3,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Ring", Inner = 6, Radius = 12, Height = 10 },
+						Delay = 0.15,
+						Power = 3,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Ring", Inner = 12, Radius = 18, Height = 10 },
+						Delay = 0.3,
+						Power = 3,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Ring", Inner = 18, Radius = 24, Height = 10 },
+						Delay = 0.45,
+						Power = 3,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Ring", Inner = 0, Radius = 26, Height = 30 },
+						Delay = 0.8,
+						Power = 4,
+						Reaction = "Knockback",
+						Knockback = 70,
 					},
 				},
 			},

@@ -86,6 +86,14 @@ local function drawShape(shape: HitShape.Shape, origin: HitShape.Origin)
 			local direction = CFrame.fromAxisAngle(Vector3.yAxis, angle):VectorToWorldSpace(forward)
 			drawBar(position, direction, shape.radius, 0.2, shape.height)
 		end
+	elseif shape.kind == "Ring" then
+		-- 内側の半径から外側の半径までの棒を、周りに並べる
+		local steps = math.ceil(360 / SECTOR_STEP)
+		local length = math.max(shape.outer - shape.inner, 0.2)
+		for i = 0, steps - 1 do
+			local direction = CFrame.fromAxisAngle(Vector3.yAxis, math.rad(360 * i / steps)):VectorToWorldSpace(forward)
+			drawBar(position + direction * shape.inner, direction, length, 0.2, shape.height)
+		end
 	else
 		drawBar(position, forward, shape.length, shape.width, shape.width)
 	end

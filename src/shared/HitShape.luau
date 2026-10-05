@@ -1,11 +1,12 @@
 --!strict
--- 攻撃判定の形。前方の箱・扇・球・直線と、判定の原点・対象の位置から当たった対象を求める。
+-- 攻撃判定の形。前方の箱・扇・球・直線・輪と、判定の原点・対象の位置から当たった対象を求める。
 -- 位置は vector（Roblox では Vector3 と同じ値）で受け取り、Instance には触らない。
 -- 部隊データの下忍の位置にも、個体の位置にも同じ関数を使う。
 --
 -- - 箱・扇・直線は原点の向きの水平成分を前とし、高さは原点を中心に上下へ広げる
 -- - 対象は半径を持つ円柱として扱い、半径の分だけ形からはみ出していても当てる
 -- - 直線は飛び道具用。前へ進んだ距離を速さで割った秒数を、当たるまでの時間差として返す
+-- - 輪は原点を中心に、水平の距離が内側と外側の半径の間に入る対象に当てる（向きは見ない。金遁の外へ広がる輪）
 -- - 技の形は Config.luau の ShapeDef で書き、fromDef でこの形にする
 
 local Config = require("./Config")
@@ -40,7 +41,15 @@ export type Line = {
 	speed: number,
 }
 
-export type Shape = Box | Sector | Sphere | Line
+export type Ring = {
+	kind: "Ring",
+	-- 内側と外側の半径（水平。スタッド）
+	inner: number,
+	outer: number,
+	height: number,
+}
+
+export type Shape = Box | Sector | Sphere | Line | Ring
 
 -- 判定の原点。look は向きで、水平成分だけを使う
 export type Origin = {
@@ -94,6 +103,8 @@ function HitShape.fromDef(def: Config.ShapeDef, defaultHeight: number): Shape
 		return { kind = "Sector", radius = def.Radius :: number, angle = def.Angle :: number, height = height }
 	elseif def.Kind == "Sphere" then
 		return { kind = "Sphere", radius = def.Radius :: number }
+	elseif def.Kind == "Ring" then
+		return { kind = "Ring", inner = def.Inner or 0, outer = def.Radius :: number, height = height }
 	end
 	return { kind = "Line", length = def.Length :: number, width = def.Width :: number, speed = def.Speed :: number }
 end
@@ -118,7 +129,13 @@ function HitShape.test(shape: Shape, origin: Origin, position: vector, radius: n
 	end
 
 	local forward, side, up = localOf(origin, position)
-	if shape.kind == "Box" then
+	if shape.kind == "Ring" then
+		local distance = math.sqrt(forward * forward + side * side)
+		local inside = distance + r >= shape.inner
+			and distance - r <= shape.outer
+			and math.abs(up) <= shape.height / 2 + r
+		return inside, distance
+	elseif shape.kind == "Box" then
 		local inside = forward >= -r
 			and forward <= shape.range + r
 			and math.abs(side) <= shape.width / 2 + r
