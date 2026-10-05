@@ -1,4 +1,6 @@
 --!strict
+local ActionState = require("./ActionState")
+local Config = require("./Config")
 local Trajectory = require("./Trajectory")
 local testkit = require("@testkit")
 
@@ -112,3 +114,61 @@ test("上忍は反応を弱める倍率で、下忍より短く飛ぶ", function
 	expect(jonin < genin).toBe(true)
 	expect(jonin).toBeNear(genin * PARAMS.JoninScale * PARAMS.JoninScale)
 end)
+
+-- 奥義の技を1体の敵に当て続けたときの、各判定の時刻での敵の高さを返す。最初の判定で浮く前提で、
+-- 判定ごとに軌道をやり直す（EnemyService と同じ）。敵は高さ standHeight で立ち、地面は 0、技を出す人も同じ高さに立つ
+local function simulate(
+	timeline: Config.ActionTimeline,
+	standHeight: number,
+	scale: number
+): { { at: number, y: number, airborne: boolean } }
+	local params = Config.EnemyReaction
+	local direction = v(1, 0, 0)
+	local result = {}
+	local trajectory: Trajectory.Trajectory? = nil
+	local startedAt = 0
+	local position = v(0, standHeight, 0)
+	for _, scheduled in ActionState.hits(timeline) do
+		local airborne = false
+		local current = trajectory
+		if current then
+			local elapsed = scheduled.at - startedAt
+			airborne = not Trajectory.hasLanded(current, elapsed, standHeight)
+			position = if airborne
+				then Trajectory.positionAt(current, elapsed)
+				else v(position.x, standHeight, position.z)
+		end
+		table.insert(result, { at = scheduled.at, y = position.y, airborne = airborne })
+		local hit = scheduled.hit
+		local velocity = Trajectory.initialVelocity(hit.Reaction, direction, hit.Knockback, airborne, scale, params)
+		if velocity then
+			trajectory = Trajectory.new(position, velocity, params)
+			startedAt = scheduled.at
+		end
+	end
+	return result
+end
+
+test(
+	"無刀取りの空中への斬撃は、打ち上げた敵が着地する前に段数のすべてが判定の高さの中で届く",
+	function()
+		local timeline = Config.Ougi.Timelines.MutoDori
+		local aerial = (timeline.Hits :: { Config.HitDef })[2]
+		-- 下忍（立つ高さ 3）と、反応を弱める上忍（体が大きく、立つ高さ 4.2）
+		local cases = {
+			{ standHeight = 3, scale = 1 },
+			{ standHeight = 4.2, scale = Config.EnemyReaction.JoninScale },
+		}
+		for _, case in cases do
+			local results = simulate(timeline, case.standHeight, case.scale)
+			-- 打ち上げ 1 回、空中への斬撃 Repeat 回、最後の一撃 1 回
+			expect(#results).toBe(1 + (aerial.Repeat or 1) + 1)
+			for index = 2, #results do
+				local item = results[index]
+				expect(item.airborne).toBe(true)
+				-- 技を出す人（敵と同じ高さに立つ）を中心に、判定の高さの半分の範囲に敵がいる
+				expect(math.abs(item.y - case.standHeight) <= (aerial.Shape.Height :: number) / 2).toBe(true)
+			end
+		end
+	end
+)

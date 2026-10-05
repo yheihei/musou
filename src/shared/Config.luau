@@ -1187,6 +1187,40 @@ local Config: Config = {
 					},
 				},
 			},
+			-- 石舟斎の無刀取り。短く構えてから周りを打ち上げ、空中の敵へ斬撃を重ね、最後の一撃で吹き飛ばす。
+			-- 空中への斬撃の段数は2つ目の判定の Repeat。高さ 30 の円柱で、打ち上げた敵に届かせる
+			MutoDori = {
+				Startup = 0.3,
+				Active = 1.1,
+				Recovery = 0.35,
+				CancelFrom = 1.75,
+				Advance = 0,
+				Interrupt = true,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 12, Angle = 360, Height = 10 },
+						Power = 2,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Delay = 0.25,
+						Repeat = 5,
+						Interval = 0.14,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 5,
+					},
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Delay = 1,
+						Power = 4,
+						Reaction = "Knockback",
+						Knockback = 60,
+					},
+				},
+			},
 		},
 	},
 

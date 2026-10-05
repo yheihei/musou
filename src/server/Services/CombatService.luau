@@ -10,7 +10,7 @@
 -- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。敵はまだ防御を持たない
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
 --   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
--- - 奥義は刃の火遁と酉花の毒手裏剣。毒手裏剣は、当てた敵を毒にする（EnemyService.poison）
+-- - 奥義は刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り。毒手裏剣は、当てた敵を毒にする（EnemyService.poison）
 -- - 効果音は、技を出したときに技の音（通常攻撃とジャンプ攻撃は Swing、チャージ攻撃は ChargeKogeki、
 --   奥義は Ougi）を、当てたときに Hit を鳴らす。命中の音は1人の攻撃につき Config.Sound.HitInterval 秒に1回まで
 
@@ -71,8 +71,9 @@ local function colored(color: Color3): Draw
 	end
 end
 
--- 毒手裏剣の仮エフェクトの色
+-- 毒手裏剣と無刀取りの仮エフェクトの色
 local POISON_COLOR = Color3.fromRGB(150, 230, 90)
+local MUTODORI_COLOR = Color3.fromRGB(220, 235, 255)
 
 local SLASH: Style = { draw = colored(Color3.fromRGB(255, 230, 150)), gauge = true, sound = "Swing" }
 local CHARGE_KOGEKI: Style = { draw = colored(Color3.fromRGB(120, 200, 255)), gauge = true, sound = "ChargeKogeki" }
@@ -276,6 +277,8 @@ function CombatService.start()
 			EnemyService.poison(model, player)
 		end,
 	})
+	-- 石舟斎の無刀取り。周りを打ち上げ、空中の敵をまとめて斬る
+	CombatService.registerOugi("MutoDori", { draw = colored(MUTODORI_COLOR) })
 
 	DebugCommand.register(
 		"PlaySound",

@@ -745,6 +745,38 @@ local SNAPSHOT = {
 					},
 				},
 			},
+			MutoDori = {
+				Startup = 0.3,
+				Active = 1.1,
+				Recovery = 0.35,
+				CancelFrom = 1.75,
+				Advance = 0,
+				Interrupt = true,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 12, Angle = 360, Height = 10 },
+						Power = 2,
+						Reaction = "Launch",
+						Knockback = 45,
+					},
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Delay = 0.25,
+						Repeat = 5,
+						Interval = 0.14,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 5,
+					},
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Delay = 1,
+						Power = 4,
+						Reaction = "Knockback",
+						Knockback = 60,
+					},
+				},
+			},
 		},
 	},
 	Poison = {
