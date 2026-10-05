@@ -1,6 +1,6 @@
 --!strict
 -- 軍全体の士気と、士気を上下させる出来事を持つ。部隊の士気は、軍全体の士気に部隊ごとの補正と近くの出来事の補正を
--- 足して決める。ButaiService が部隊を進める間隔ごとに、交戦の計算の前で求め直す（ButaiService.setShikiProvider）。
+-- 足し、大喝で動揺している部隊は動揺の下げ幅を引いて決める。ButaiService が部隊を進める間隔ごとに、交戦の計算の前で求め直す（ButaiService.setShikiProvider）。
 -- 計算は ReplicatedStorage.Shared.Shiki、上下の量・距離・時間は Config.luau の Shiki 節にある。
 --
 -- - 出撃（StageService.started）で軍全体の士気を開始時の値に戻し、出来事を空にする。決着とロビーのフェーズへの戻りでも戻す
@@ -154,6 +154,7 @@ local function registerDebugCommands()
 					gun = item.gun,
 					shiki = round(Shiki.ofButai(gunShiki, item, dekigotoList, now)),
 					shikiHosei = item.shikiHosei,
+					doyo = item.doyo,
 				})
 			end
 			return HttpService:JSONEncode({

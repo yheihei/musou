@@ -6,7 +6,9 @@
 -- - 対象は、発動者から Radius 以内の、発動者の相手の軍の上忍・首領・プレイヤー（生きている出撃メンバー）・部隊。
 --   潜んでいる伏兵部隊は対象にしない。対象が1つも無ければ発動できず（NoTarget）、枚は未使用のまま残る
 -- - 対象の上忍・首領・プレイヤーにかかっている、相手の軍の強化の秘計を打ち消す（HikeiService.dispelKyoka）
--- - 対象ごとに動揺の効果を足す。動揺している対象には重ねず、残っている動揺がそのまま続く
+-- - 対象ごとに動揺の効果を足す。動揺している対象には重ねず、残っている動揺がそのまま続く。
+--   対象がすべてもう動揺していて、打ち消す強化の秘計も無ければ、重ねがけとして発動しない（AlreadyActive）
+-- - 部隊が消えて同じ ID の部隊が作り直されたとき（拠点の守備の Shubi<拠点 ID> など）は、古い動揺を解いてから動揺させる
 -- - 動揺した上忍と首領は攻撃と防御が下がる（JoninService.setHikeiHosei）。
 --   プレイヤーも攻撃と防御が下がり（PlayerService.addModifierProvider）、頭の上に「動揺」の札を出す。
 --   部隊は動揺の間だけ士気が下がる（ButaiService.setDoyo）
@@ -183,11 +185,17 @@ local function endDoyo(effect: Hikei.Effect)
 	HikeiService.finishEffect(effect, "Ended")
 end
 
--- 対象を動揺させる。もう動揺していれば何もしない
-local function shake(context: HikeiService.Context, target: Daikatsu.Candidate)
+-- 対象を動揺させる。動揺させたら true、もう動揺していれば何もせずに false
+local function shake(context: HikeiService.Context, target: Daikatsu.Candidate): boolean
 	local key = keyOf(target.kind, target.id)
-	if doyoOf[key] then
-		return
+	local existing = doyoOf[key]
+	if existing then
+		local butai = if target.kind == "Butai" then ButaiService.get(target.id) else nil
+		if target.kind ~= "Butai" or (butai and butai.doyo) then
+			return false
+		end
+		-- 動揺させた部隊は消え、同じ ID の部隊が作り直されている。古い動揺を解いてから動揺させる
+		endDoyo(existing)
 	end
 	local effect = HikeiService.addEffect({
 		hikei = HIKEI_ID,
@@ -199,7 +207,7 @@ local function shake(context: HikeiService.Context, target: Daikatsu.Candidate)
 		duration = nil,
 	})
 	if not effect then
-		return
+		return false
 	end
 	doyoOf[key] = effect
 	targetOf[effect] = { kind = target.kind, id = target.id }
@@ -226,6 +234,7 @@ local function shake(context: HikeiService.Context, target: Daikatsu.Candidate)
 			playerConnections[target.id] = connections
 		end
 	end
+	return true
 end
 
 local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailure?)
@@ -240,11 +249,15 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 			table.insert(dispelTargets, target.id)
 		end
 	end
-	if #dispelTargets > 0 then
-		HikeiService.dispelKyoka(context.gun, dispelTargets)
-	end
+	local dispelled = if #dispelTargets > 0 then #HikeiService.dispelKyoka(context.gun, dispelTargets) else 0
+	local shaken = 0
 	for _, target in targets do
-		shake(context, target)
+		if shake(context, target) then
+			shaken += 1
+		end
+	end
+	if dispelled == 0 and shaken == 0 then
+		return false, "AlreadyActive"
 	end
 	showWave(context.position)
 	return true, nil
