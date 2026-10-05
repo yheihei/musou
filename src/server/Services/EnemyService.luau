@@ -138,6 +138,8 @@ local nextNumber = 1
 local reacting: { [Model]: Enemy } = {}
 -- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
 local spawning = true
+-- 敵が近づいて攻撃するか。窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
+local aiEnabled = true
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
 local BUTAI_CENTER_TRIES = 8
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
@@ -384,6 +386,12 @@ end
 local function updateEnemy(enemy: Enemy, now: number)
 	updatePoison(enemy, now)
 	if enemy.humanoid.Health <= 0 then
+		return
+	end
+	if not aiEnabled then
+		if not enemy.hanno then
+			enemy.humanoid:Move(Vector3.zero)
+		end
 		return
 	end
 	local hanno = enemy.hanno
@@ -711,6 +719,22 @@ function EnemyService.start()
 		end
 	)
 
+	DebugCommand.register(
+		"SetEnemyAI",
+		"<true|false>",
+		"仮の湧き処理の敵が近づいて攻撃するかを切り替える。止めてもその場で攻撃の反応（吹き飛び・ダウン）と毒は進む（確認用）",
+		function(value)
+			aiEnabled = value == true or value == "true"
+			if not aiEnabled then
+				for _, enemy in enemies do
+					if not enemy.hanno then
+						stopWalking(enemy)
+					end
+				end
+			end
+			return `敵の動きと攻撃を{if aiEnabled then "再開した" else "止めた"}`
+		end
+	)
 	DebugCommand.register(
 		"ClearEnemies",
 		"",
