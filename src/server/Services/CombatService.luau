@@ -10,6 +10,7 @@
 -- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。敵はまだ防御を持たない
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
 --   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
+-- - 奥義は刃の火遁と酉花の毒手裏剣。毒手裏剣は、当てた敵を毒にする（EnemyService.poison）
 -- - 効果音は、技を出したときに技の音（通常攻撃とジャンプ攻撃は Swing、チャージ攻撃は ChargeKogeki、
 --   奥義は Ougi）を、当てたときに Hit を鳴らす。命中の音は1人の攻撃につき Config.Sound.HitInterval 秒に1回まで
 
@@ -36,17 +37,22 @@ local Vfx = require(script.Parent.Parent.Combat.Vfx)
 -- 判定の形の仮エフェクトの描き方
 export type Draw = (shape: HitShape.Shape, origin: HitShape.Origin) -> ()
 
--- 奥義の中身。仮エフェクトの描き方と、判定のほかに出す中身（毒や追撃など）
+-- 当てた敵に付ける追加の中身（毒など）
+export type OnHit = (player: Player, model: Model) -> ()
+
+-- 奥義の中身。仮エフェクトの描き方と、判定のほかに出す中身（追撃など）と、当てた敵に付ける中身（毒など）
 export type OugiEntry = {
 	draw: Draw,
 	perform: ((player: Player, t: number, timeline: ActionState.Timeline) -> ())?,
+	onHit: OnHit?,
 }
 
--- 技の見せ方。仮エフェクトの描き方、当てたときに奥義ゲージを溜めるか、出したときに鳴らす効果音
+-- 技の見せ方。仮エフェクトの描き方、当てたときに奥義ゲージを溜めるか、出したときに鳴らす効果音、当てた敵に付ける中身
 type Style = {
 	draw: Draw,
 	gauge: boolean,
 	sound: string?,
+	onHit: OnHit?,
 }
 
 local CombatService = {}
@@ -64,6 +70,9 @@ local function colored(color: Color3): Draw
 		Vfx.shape(shape, origin, color)
 	end
 end
+
+-- 毒手裏剣の仮エフェクトの色
+local POISON_COLOR = Color3.fromRGB(150, 230, 90)
 
 local SLASH: Style = { draw = colored(Color3.fromRGB(255, 230, 150)), gauge = true, sound = "Swing" }
 local CHARGE_KOGEKI: Style = { draw = colored(Color3.fromRGB(120, 200, 255)), gauge = true, sound = "ChargeKogeki" }
@@ -103,14 +112,18 @@ local function playHitSound(player: Player, model: Model)
 	SoundPlayer.playAt("Hit", model:GetPivot().Position)
 end
 
-local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, gauge: boolean)
+local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, style: Style)
 	-- 吹き飛びと打ち上げの軌道は EnemyService が技の吹き飛ばす強さから決める
 	local reaction = { reaction = hit.Reaction, origin = origin, force = hit.Knockback }
 	if EnemyService.damage(model, damage, player, reaction) then
 		Vfx.hit(model)
 		playHitSound(player, model)
-		if gauge then
+		if style.gauge then
 			PlayerService.addOugiGauge(player, Config.Ougi.GainPerHit)
+		end
+		local onHit = style.onHit
+		if onHit then
+			onHit(player, model)
 		end
 	end
 end
@@ -124,9 +137,9 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 	local position: Vector3 = origin.position
 	for _, target in Hitbox.query(shape, origin, EnemyService.getTargets()) do
 		if target.delay > 0 then
-			task.delay(target.delay, hitOne, player, position, target.ref, damage, hit, style.gauge)
+			task.delay(target.delay, hitOne, player, position, target.ref, damage, hit, style)
 		else
-			hitOne(player, position, target.ref, damage, hit, style.gauge)
+			hitOne(player, position, target.ref, damage, hit, style)
 		end
 	end
 end
@@ -242,7 +255,7 @@ local function registerActions()
 			local id = ougiOf(player)
 			local entry = if id then ougiEntries[id] else nil
 			if entry then
-				perform(player, t, timeline, { draw = entry.draw, gauge = false, sound = "Ougi" })
+				perform(player, t, timeline, { draw = entry.draw, gauge = false, sound = "Ougi", onHit = entry.onHit })
 				if entry.perform then
 					entry.perform(player, t, timeline)
 				end
@@ -256,6 +269,13 @@ function CombatService.start()
 	registerActions()
 	-- 刃の火遁。前方の扇に炎を吐く
 	CombatService.registerOugi("Katon", { draw = Vfx.flame })
+	-- 酉花の毒手裏剣。周りへ毒手裏剣を撒き、当たった敵を毒にする
+	CombatService.registerOugi("PoisonShuriken", {
+		draw = colored(POISON_COLOR),
+		onHit = function(player: Player, model: Model)
+			EnemyService.poison(model, player)
+		end,
+	})
 
 	DebugCommand.register(
 		"PlaySound",

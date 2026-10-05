@@ -17,6 +17,10 @@
 --   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
 -- - 倒された敵も、飛んでいれば着地まで飛び、倒れたまま残る
 -- - 反応の最中は、近づくことも攻撃することもしない
+--
+-- 毒（酉花の奥義「毒手裏剣」。数値は Config.luau の Poison 節）
+-- - 毒の間は Interval 秒ごとに Damage を与える。とどめは毒を付けたプレイヤーの撃破に数える
+-- - 毒の間にもう一度付けると、残りの時間を Duration に戻す。毒の間は緑の煙（Fire）の仮の見た目を出す
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -88,6 +92,19 @@ type Enemy = {
 	groundY: number?,
 	-- 出てから受けた攻撃の数（確認用）
 	hits: number,
+	-- 最初に攻撃を受けた時刻（os.clock。確認用）
+	firstHitAt: number?,
+	-- 毒の間なら、その中身
+	poison: Poison?,
+}
+
+-- 毒の中身
+type Poison = {
+	-- 毒を付けたプレイヤー
+	attacker: Player?,
+	-- 次に毒のダメージを与える時刻と、毒が切れる時刻（os.clock）
+	nextTick: number,
+	untilTime: number,
 }
 
 -- 攻撃を当てたときの反応の中身
@@ -135,6 +152,10 @@ local LANDING_PROBE = 6
 local LIE_HEIGHT = 1
 -- 飛び始めた高さからこれだけ落ちても地面が無ければ、奈落に落ちたとして倒す（スタッド）
 local FALL_LIMIT = 300
+-- 毒の間に出す緑の煙の名前と色
+local POISON_NAME = "Doku"
+local POISON_COLOR = Color3.fromRGB(110, 210, 70)
+local POISON_SECONDARY_COLOR = Color3.fromRGB(40, 110, 30)
 
 local function buildTemplate(kind: string, def: EnemyDef): Model
 	local color = ENEMY_COLORS[kind]
@@ -334,7 +355,37 @@ local function updateReaction(enemy: Enemy, now: number)
 	end
 end
 
+local function removePoisonLook(enemy: Enemy)
+	local fire = enemy.root:FindFirstChild(POISON_NAME)
+	if fire then
+		fire:Destroy()
+	end
+end
+
+-- 毒の間なら、間隔ごとに毒のダメージを与える。毒が切れたら見た目を外す
+local function updatePoison(enemy: Enemy, now: number)
+	local poison = enemy.poison
+	if not poison then
+		return
+	end
+	while now >= poison.nextTick and poison.nextTick <= poison.untilTime and enemy.humanoid.Health > 0 do
+		poison.nextTick += Config.Poison.Interval
+		if poison.attacker and poison.attacker.Parent then
+			enemy.lastHitBy = poison.attacker
+		end
+		enemy.humanoid:TakeDamage(Config.Poison.Damage)
+	end
+	if now >= poison.untilTime or enemy.humanoid.Health <= 0 then
+		enemy.poison = nil
+		removePoisonLook(enemy)
+	end
+end
+
 local function updateEnemy(enemy: Enemy, now: number)
+	updatePoison(enemy, now)
+	if enemy.humanoid.Health <= 0 then
+		return
+	end
 	local hanno = enemy.hanno
 	if hanno then
 		-- のけぞりが明けたら動き出す。飛んでいる・倒れている・起き上がっている間は updateReaction が進める
@@ -432,6 +483,8 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 		facing = root.CFrame.Rotation,
 		groundY = nil,
 		hits = 0,
+		firstHitAt = nil,
+		poison = nil,
 	}
 	enemies[model] = enemy
 	aliveCount += 1
@@ -511,9 +564,41 @@ function EnemyService.damage(model: Model, amount: number, attacker: Player?, hi
 		enemy.lastHitBy = attacker
 	end
 	enemy.hits += 1
+	enemy.firstHitAt = enemy.firstHitAt or os.clock()
 	enemy.humanoid:TakeDamage(amount)
 	if hit then
 		react(enemy, hit, os.clock())
+	end
+	return true
+end
+
+-- 毒にする。毒の間は Config.luau の Poison 節の間隔ごとにダメージを与え、とどめは attacker の撃破に数える。
+-- 毒の間にもう一度付けたら、残りの時間を Duration に戻す。倒れた敵は毒にしない（false）
+function EnemyService.poison(model: Model, attacker: Player?): boolean
+	local enemy = enemies[model]
+	if not enemy or enemy.humanoid.Health <= 0 then
+		return false
+	end
+	local now = os.clock()
+	local current = enemy.poison
+	if current then
+		current.untilTime = now + Config.Poison.Duration
+		current.attacker = attacker or current.attacker
+		return true
+	end
+	enemy.poison = {
+		attacker = attacker,
+		nextTick = now + Config.Poison.Interval,
+		untilTime = now + Config.Poison.Duration,
+	}
+	if not enemy.root:FindFirstChild(POISON_NAME) then
+		local fire = Instance.new("Fire")
+		fire.Name = POISON_NAME
+		fire.Color = POISON_COLOR
+		fire.SecondaryColor = POISON_SECONDARY_COLOR
+		fire.Size = 3 * enemy.def.Scale
+		fire.Heat = 2
+		fire.Parent = enemy.root
 	end
 	return true
 end
@@ -583,18 +668,23 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DumpEnemies",
 		"",
-		"生きている仮の湧き処理の敵（名前・種類・体力・受けた攻撃の数・反応の状態・位置）を JSON で返す",
+		"生きている仮の湧き処理の敵（名前・種類・体力・受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・位置）を JSON で返す",
 		function()
 			local list = {}
+			local now = os.clock()
 			for model, enemy in enemies do
 				if enemy.humanoid.Health > 0 then
 					local position = enemy.root.Position
+					local poison = enemy.poison
+					local firstHitAt = enemy.firstHitAt
 					table.insert(list, {
 						name = model.Name,
 						kind = enemy.kind,
 						health = math.round(enemy.humanoid.Health * 10) / 10,
 						hits = enemy.hits,
+						firstHitAgo = if firstHitAt then math.round((now - firstHitAt) * 100) / 100 else nil,
 						hanno = if enemy.hanno then enemy.hanno.kind else nil,
+						poison = if poison then math.round((poison.untilTime - now) * 10) / 10 else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
 					})
 				end

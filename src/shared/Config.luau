@@ -29,6 +29,13 @@ export type StatsSection = {
 	MinDamage: number,
 }
 
+-- 毒。酉花の奥義「毒手裏剣」で敵に付ける
+export type PoisonSection = {
+	Interval: number,
+	Damage: number,
+	Duration: number,
+}
+
 export type ComboSection = {
 	ComboResetTime: number,
 }
@@ -360,6 +367,7 @@ export type Config = {
 	Combo: ComboSection,
 	Bukishu: BukishuSection,
 	Ougi: OugiSection,
+	Poison: PoisonSection,
 	Action: ActionSection,
 	Jump: JumpSection,
 	Guard: GuardSection,
@@ -1060,7 +1068,134 @@ local Config: Config = {
 					},
 				},
 			},
+			-- 酉花の毒手裏剣。周りの12方向へ毒手裏剣を3回撒き、当たった敵を毒にする（毒は Poison 節）
+			PoisonShuriken = {
+				Startup = 0.2,
+				Active = 0.8,
+				Recovery = 0.3,
+				CancelFrom = 1.3,
+				Advance = 0,
+				Interrupt = true,
+				Hits = {
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 0,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 30,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 60,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 90,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 120,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 150,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 180,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 210,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 240,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 270,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 300,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
+						Yaw = 330,
+						Repeat = 3,
+						Interval = 0.3,
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+				},
+			},
 		},
+	},
+
+	-- 毒。酉花の奥義「毒手裏剣」が当たった敵に付け、毒の間は Interval 秒ごとに Damage を与える（防御で軽減しない）。
+	-- 毒の間にもう一度当たると、残りの時間を Duration に戻す。毒でのとどめは毒を付けたプレイヤーの撃破に数える
+	Poison = {
+		Interval = 1, -- 毒のダメージを与える間隔（秒）
+		Damage = 8, -- 1回の毒のダメージ
+		Duration = 8, -- 毒が続く秒数
 	},
 
 	-- 行動のタイムライン。状態遷移は ActionState.luau が計算する
