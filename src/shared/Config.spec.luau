@@ -810,6 +810,12 @@ local SNAPSHOT = {
 		HeisuRate = 0.5,
 		FireTime = 3,
 	},
+	Bakuhawana = {
+		Rate = 1 / 3,
+		Power = 80,
+		HeisuRate = 0.5,
+		Knockback = 60,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

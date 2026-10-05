@@ -298,6 +298,14 @@ export type DaikakeiSection = {
 	FireTime: number,
 }
 
+-- 秘計の爆破罠。拠点の耐久が割合を下回ったときの爆発
+export type BakuhawanaSection = {
+	Rate: number,
+	Power: number,
+	HeisuRate: number,
+	Knockback: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -373,6 +381,7 @@ export type Config = {
 	Kishinka: KishinkaSection,
 	Daikatsu: DaikatsuSection,
 	Daikakei: DaikakeiSection,
+	Bakuhawana: BakuhawanaSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1297,6 +1306,15 @@ local Config: Config = {
 		Power = 120, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
 		HeisuRate = 0.5, -- 地域の中の部隊の兵数を減らす割合（端数は切り上げる）
 		FireTime = 3, -- 地域に炎の仮の見た目を出しておく秒数
+	},
+
+	-- 秘計の爆破罠。発動者が中にいる自分の軍の拠点に仕掛け、耐久が上限の Rate を上から下へ越えた瞬間に1回だけ爆発して、
+	-- 拠点の中の相手の上忍・首領・プレイヤー・下忍を吹き飛ばし、部隊の兵数を減らす。計算は Bakuhawana.luau にある
+	Bakuhawana = {
+		Rate = 1 / 3, -- 爆発する耐久の、耐久の上限に対する割合
+		Power = 80, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
+		HeisuRate = 0.5, -- 拠点の中の相手の部隊の兵数を減らす割合（端数は切り上げる）
+		Knockback = 60, -- 仮の湧き処理の敵を吹き飛ばす強さ（技の Knockback と同じ。EnemyReaction 節で軌道にする）
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

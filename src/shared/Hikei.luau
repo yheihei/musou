@@ -39,6 +39,7 @@ export type UseFailure =
 	| "NotReady" -- その秘計の処理がまだ無い
 	| "NoTarget" -- 対象（近くの落石地点、中にいる味方の拠点など）が無い
 	| "AlreadyActive" -- 対象にもう同じ秘計の効果が出ている（重ねがけはできない）
+	| "LowTaikyu" -- 対象の拠点の耐久が、爆破罠の爆発する割合をもう下回っている
 
 -- 秘計の効果。1つの対象に1つずつ持つ
 export type Effect = {
@@ -66,7 +67,8 @@ Hikei.MOCHIKOMI_MAX = 3
 Hikei.MOCHIKOMI_ATTRIBUTE = "HikeiMochikomi"
 Hikei.USED_ATTRIBUTE = "HikeiUsed"
 
-Hikei.useFailures = { "NoSlot", "Used", "NotBattle", "Down", "NotReady", "NoTarget", "AlreadyActive" } :: { UseFailure }
+Hikei.useFailures =
+	{ "NoSlot", "Used", "NotBattle", "Down", "NotReady", "NoTarget", "AlreadyActive", "LowTaikyu" } :: { UseFailure }
 
 -- 設計の表の順。選択画面もこの順に並べる
 local ORDER = { "Fukuhei", "Rakuseki", "Daikakei", "Hyoroko", "Bakuhawana", "Chohatsu", "Kishinka", "Daikatsu" }
@@ -359,6 +361,32 @@ function Hikei.checkHyoroko(kyoten: HyorokoTarget?, gun: Gun.Gun): UseFailure?
 	end
 	if kyoten.active then
 		return "AlreadyActive"
+	end
+	return nil
+end
+
+-- 爆破罠の対象にする拠点。発動者が範囲の中にいる拠点の、今の所属と耐久、もう爆破罠を仕掛けたか
+export type BakuhawanaTarget = {
+	gun: Gun.Gun,
+	taikyu: number,
+	-- 爆発する耐久（耐久の上限 × Config.luau の Bakuhawana 節の Rate）
+	threshold: number,
+	-- もう爆破罠を仕掛けた拠点か
+	active: boolean,
+}
+
+-- 爆破罠を発動できるか。kyoten は発動者が範囲の中にいる拠点（どの拠点の範囲にもいなければ nil）、gun は発動者の軍。
+-- 発動できるなら nil、できなければ失敗の理由を返す。対象は自分の軍の拠点（本陣も含む）だけで、拠点の外と相手の拠点は
+-- NoTarget、もう爆破罠を仕掛けた拠点は AlreadyActive、耐久が爆発する割合をもう下回った拠点は LowTaikyu
+function Hikei.checkBakuhawana(kyoten: BakuhawanaTarget?, gun: Gun.Gun): UseFailure?
+	if not kyoten or kyoten.gun ~= gun then
+		return "NoTarget"
+	end
+	if kyoten.active then
+		return "AlreadyActive"
+	end
+	if kyoten.taikyu < kyoten.threshold then
+		return "LowTaikyu"
 	end
 	return nil
 end

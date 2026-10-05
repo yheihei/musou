@@ -230,7 +230,7 @@ test("失敗の理由の一覧は重ならない", function()
 		expect(seen[failure]).toBe(nil)
 		seen[failure] = true
 	end
-	expect(#Hikei.useFailures).toBe(7)
+	expect(#Hikei.useFailures).toBe(8)
 end)
 
 local function request(hikei: string, target: string, now: number): Hikei.EffectRequest
@@ -415,5 +415,22 @@ test(
 		)
 		-- 敵軍の上忍と首領も、自分の軍（敵軍）の通常拠点に使える
 		expect(Hikei.checkHyoroko({ gun = "Tekigun", honjin = false, active = false }, "Tekigun")).toBe(nil)
+	end
+)
+
+test(
+	"爆破罠は、自分の軍の拠点（本陣も含む）で、耐久が爆発する割合以上のときだけ使える",
+	function()
+		local function target(gun: "Mikatagun" | "Tekigun", taikyu: number, active: boolean): Hikei.BakuhawanaTarget
+			return { gun = gun, taikyu = taikyu, threshold = 10, active = active }
+		end
+		expect(Hikei.checkBakuhawana(target("Mikatagun", 30, false), "Mikatagun")).toBe(nil)
+		expect(Hikei.checkBakuhawana(target("Mikatagun", 10, false), "Mikatagun")).toBe(nil)
+		expect(Hikei.checkBakuhawana(target("Mikatagun", 9.5, false), "Mikatagun")).toBe("LowTaikyu")
+		expect(Hikei.checkBakuhawana(target("Tekigun", 30, false), "Mikatagun")).toBe("NoTarget")
+		expect(Hikei.checkBakuhawana(nil, "Mikatagun")).toBe("NoTarget")
+		expect(Hikei.checkBakuhawana(target("Mikatagun", 30, true), "Mikatagun")).toBe("AlreadyActive")
+		-- 敵軍の上忍と首領も、自分の軍（敵軍）の拠点に使える
+		expect(Hikei.checkBakuhawana(target("Tekigun", 30, false), "Tekigun")).toBe(nil)
 	end
 )

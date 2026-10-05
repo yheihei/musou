@@ -35,6 +35,7 @@ local failureMessages: { [Hikei.UseFailure]: string } = {
 	NotReady = "この秘計はまだ使えません",
 	NoTarget = "近くに対象がありません",
 	AlreadyActive = "すでに効果が出ています",
+	LowTaikyu = "拠点の耐久が減りすぎています",
 }
 
 HikeiNotice.failureMessages = failureMessages
