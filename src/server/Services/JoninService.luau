@@ -13,6 +13,7 @@
 --   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
 -- - 部隊を進める間隔ごとに、上忍と首領が自分の軍の支配エリアの中かを確かめ、中なら攻撃と防御を上げる（Jonin.setShihaiArea）。
 --   中かどうかは ShihaiAreaService が setShihaiAreaProvider で渡す関数で引き、関数が無ければ外とみなす
+-- - 秘計の効果（鬼神化など）の補正は、各秘計の処理が setHikeiHosei で足し外しする
 -- - 上忍と首領ごとに ReplicatedStorage.Jonin の下へキャラクター ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・体力（Health・MaxHealth）・軍（Gun）・
 --   率いる部隊（Butai）・首領か（Shuryo）・名前（DisplayName）をクライアントへ複製する
@@ -29,6 +30,7 @@ local Jonin = require(ReplicatedStorage.Shared.Jonin)
 local Kosen = require(ReplicatedStorage.Shared.Kosen)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local HaichiService = require(script.Parent.HaichiService)
@@ -112,6 +114,16 @@ function JoninService.setHealth(id: string, value: number): boolean
 	if defeated then
 		defeatedEvent:Fire(jonin.id)
 	end
+	return true
+end
+
+-- 秘計 hikeiId の効果の補正を足すか（modifiers を渡す）、外す（nil を渡す）。いなければ false
+function JoninService.setHikeiHosei(id: string, hikeiId: string, modifiers: { Stats.Modifier }?): boolean
+	local jonin = find(id)
+	if not jonin then
+		return false
+	end
+	Jonin.setHikeiHosei(jonin, hikeiId, modifiers)
 	return true
 end
 
@@ -252,10 +264,15 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpJonin",
 		"",
-		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・位置）を JSON で返す",
+		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・秘計の効果の補正・位置）を JSON で返す",
 		function()
 			local result = {}
 			for _, jonin in joninList do
+				local hikeiHosei = {}
+				for hikeiId in jonin.hikeiHosei do
+					table.insert(hikeiHosei, hikeiId)
+				end
+				table.sort(hikeiHosei)
 				table.insert(result, {
 					id = jonin.id,
 					name = jonin.displayName,
@@ -268,6 +285,7 @@ local function registerDebugCommands()
 					attack = round(jonin.stats.Attack),
 					defense = round(jonin.stats.Defense),
 					shihaiArea = jonin.shihaiArea,
+					hikeiHosei = if #hikeiHosei > 0 then hikeiHosei else nil,
 					position = { round(jonin.position.x), round(jonin.position.z) },
 				})
 			end

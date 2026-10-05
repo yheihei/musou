@@ -6,6 +6,7 @@
 -- - ガードの最中（ガードで受けた硬直を含む）に正面から受けた攻撃は、被ダメージ 0 で短い硬直だけ起こす
 -- - 与ダメージは Stats.damage で求め、威力を受ける側の防御で軽減する
 -- - のけぞりは、明けてから FlinchImmunity 秒の間は起こさない（ダメージは受ける）
+-- - のけぞらない状態（秘計の鬼神化）では、のけぞりを起こさない（ダメージは受け、吹き飛びと打ち上げはダウンになる）
 -- - 吹き飛びと打ち上げはダウンにする。ダウンと起き上がりの間と、その後の GetUpInvulnerable 秒は無敵
 -- - 奥義ゲージは、受けたダメージ × GainPerDamageTaken だけ溜まる
 -- 数値は Config.luau の Damage 節・Guard 節・KinkyuKaihi 節・Action 節にある。
@@ -38,6 +39,8 @@ export type Defender = {
 	invulnerableUntil: number,
 	-- のけぞらない間が切れる時刻
 	flinchImmuneUntil: number,
+	-- のけぞらない状態か（秘計の鬼神化）。省くと false
+	noFlinch: boolean?,
 	-- 受ける側の位置と向き。ガードの正面の判定に使う
 	position: vector,
 	facing: vector,
@@ -117,7 +120,7 @@ function Damage.resolve(defender: Defender, attack: Attack, now: number): Outcom
 
 	local reaction = attack.reaction
 	if reaction == "Flinch" then
-		if now >= defender.flinchImmuneUntil then
+		if now >= defender.flinchImmuneUntil and not defender.noFlinch then
 			outcome.action = "Flinch"
 			outcome.flinchImmuneUntil = now + ActionState.duration(Config.Action.Flinch) + Config.Damage.FlinchImmunity
 		end

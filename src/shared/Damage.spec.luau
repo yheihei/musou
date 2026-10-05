@@ -135,6 +135,21 @@ test("のけぞらない間でもダウンは起こす", function()
 	expect(outcome.action).toBe("Down")
 end)
 
+test("のけぞらない状態（鬼神化）ではのけぞりを起こさず、ダメージは受ける", function()
+	local outcome = Damage.resolve(defender({ noFlinch = true }), attack(10, "Flinch"), 10)
+	expect(outcome.result).toBe("Hit")
+	expect(outcome.amount > 0).toBe(true)
+	expect(outcome.action).toBe(nil)
+	expect(outcome.flinchImmuneUntil).toBe(0)
+end)
+
+test("のけぞらない状態でも、吹き飛びと打ち上げはダウンにする", function()
+	for _, reaction in { "Knockback", "Launch" } :: { Damage.Reaction } do
+		local outcome = Damage.resolve(defender({ noFlinch = true }), attack(10, reaction), 10)
+		expect(outcome.action).toBe("Down")
+	end
+end)
+
 test("反応の無い攻撃はダメージだけで中断しない", function()
 	local outcome = Damage.resolve(defender(), attack(10, "None"), 10)
 	expect(outcome.result).toBe("Hit")

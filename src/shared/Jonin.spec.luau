@@ -2,6 +2,7 @@
 local Config = require("./Config")
 local Haichi = require("./Haichi")
 local Jonin = require("./Jonin")
+local Kishinka = require("./Kishinka")
 local Stages = require("./Stages")
 local testkit = require("@testkit")
 
@@ -135,3 +136,28 @@ test("味方軍の上忍と首領は人数で体力が変わらない", function
 	)
 	expect(mikata.stats.MaxHealth).toBeNear(Config.Stats.Shuryo.MaxHealth * Config.Stats.MikatagunScale)
 end)
+
+test(
+	"秘計の効果の補正は足すと能力値に掛かり、外すと戻る。支配エリアの補正とも重なる",
+	function()
+		local jonin = Jonin.new(entry("ShikenJonin1", false), { x = 0, z = 0 })
+		Jonin.setHealth(jonin, 300)
+		Jonin.setHikeiHosei(jonin, "Kishinka", Kishinka.modifiers())
+		expect(jonin.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * Config.Kishinka.Attack)
+		expect(jonin.stats.Defense).toBeNear(Config.Stats.Jonin.Defense * Config.Kishinka.Defense)
+		expect(jonin.stats.MaxHealth).toBe(Config.Stats.Jonin.MaxHealth)
+		expect(jonin.health).toBe(300)
+
+		Jonin.setShihaiArea(jonin, true)
+		expect(jonin.stats.Attack).toBeNear(
+			Config.Stats.Jonin.Attack * Config.ShihaiArea.Attack * Config.Kishinka.Attack
+		)
+		Jonin.setShihaiArea(jonin, false)
+		expect(jonin.stats.Attack).toBeNear(Config.Stats.Jonin.Attack * Config.Kishinka.Attack)
+
+		Jonin.setHikeiHosei(jonin, "Kishinka", nil)
+		expect(jonin.stats.Attack).toBe(Config.Stats.Jonin.Attack)
+		expect(jonin.stats.Defense).toBe(Config.Stats.Jonin.Defense)
+		expect(jonin.hikeiHosei.Kishinka).toBe(nil)
+	end
+)

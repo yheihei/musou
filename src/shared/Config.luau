@@ -262,6 +262,12 @@ export type FukuheiSection = {
 	KishuShiki: number,
 }
 
+-- 秘計の鬼神化。効果中の発動者の能力値に掛ける倍率
+export type KishinkaSection = {
+	Attack: number,
+	Defense: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -333,6 +339,7 @@ export type Config = {
 	Shiki: ShikiSection,
 	Hikei: HikeiSection,
 	Fukuhei: FukuheiSection,
+	Kishinka: KishinkaSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1217,6 +1224,13 @@ local Config: Config = {
 		Heisu = 20, -- 伏兵部隊の兵数
 		KishuRadius = 40, -- 相手の部隊かプレイヤーがこの距離（スタッド）まで近づくと奇襲する
 		KishuShiki = 15, -- 奇襲された相手の部隊の士気をずっと下げる量
+	},
+
+	-- 秘計の鬼神化。効果中は発動者の攻撃と防御が上がり、のけぞらない（吹き飛びと打ち上げのダウンは受ける）。
+	-- 効果時間は Hikei 節の Duration.Kishinka。補正は Kishinka.luau が作る
+	Kishinka = {
+		Attack = 1.5, -- 攻撃の倍率
+		Defense = 1.5, -- 防御の倍率。今の防御の値（10 前後）では、受けるダメージは 5% ほどしか減らない
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

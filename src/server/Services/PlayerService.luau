@@ -5,6 +5,7 @@
 -- 出撃では spawnAt が CharacterId を書いてから出撃地点に出現し直す（出現し直しは1回）。
 -- ロビーへ戻っても CharacterId は書き換えないので、見た目は最後に出撃したキャラクターのまま残る。
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
+-- 能力値の補正（秘計の鬼神化など）は、addModifierProvider で登録した関数から集めて getStats で足す。
 --
 -- - Roblox の自動の出現（Players.CharacterAutoLoads）は止め、出現はここで行う
 -- - キャラクターは衝突のグループ Player にする。敵の体とはぶつからない（CollisionGroups）
@@ -12,6 +13,7 @@
 -- - 倒れた人（キャラクターが無い人を含む）は、Config.luau の Stage 節の秒数がたつと、
 --   setRespawner で登録した関数で出現し直す。既定はロビー。出撃中のメンバーの行き先は StageService が決める
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -43,6 +45,8 @@ local spawnTokens: { [Player]: number } = {}
 local downSince: { [Player]: number } = {}
 -- 倒れた人を出現し直させる関数。既定はロビー（start で入れる）
 local respawner: ((Player) -> ())? = nil
+-- プレイヤーの能力値の補正を返す関数（秘計の鬼神化など）。登録した順に足す
+local modifierProviders: { (Player) -> { Stats.Modifier } } = {}
 
 -- 使うキャラクターの ID。Attribute が無いか操作キャラクターでなければ既定のキャラクター
 function PlayerService.getCharacterId(player: Player): string
@@ -53,10 +57,27 @@ function PlayerService.getCharacterId(player: Player): string
 	return Characters.DEFAULT_ID
 end
 
--- 使うキャラクターの能力値。補正はまだ無い
+-- プレイヤーの能力値の補正を返す関数を登録する。getStats は登録した関数の補正をすべて足す
+function PlayerService.addModifierProvider(provider: (Player) -> { Stats.Modifier })
+	table.insert(modifierProviders, provider)
+end
+
+-- 今の能力値の補正（登録した関数が返す補正を、登録した順に並べたもの）
+function PlayerService.getModifiers(player: Player): { Stats.Modifier }
+	local modifiers = {}
+	for _, provider in modifierProviders do
+		for _, modifier in provider(player) do
+			table.insert(modifiers, modifier)
+		end
+	end
+	return modifiers
+end
+
+-- 使うキャラクターの能力値。基本値に、登録した関数の補正（秘計の鬼神化など）を足す。
+-- 体力の最大と移動速度は出現したときに当てるので、補正を変えても出現し直すまで変わらない
 function PlayerService.getStats(player: Player): Stats.Values
 	local base = Stats.baseOf(PlayerService.getCharacterId(player)) :: Stats.Values
-	return Stats.compute(base, {})
+	return Stats.compute(base, PlayerService.getModifiers(player))
 end
 
 function PlayerService.addGekihasu(player: Player)
@@ -277,6 +298,24 @@ local function registerDebugCommands()
 			player:SetAttribute("CharacterId", characterId)
 			local stats = PlayerService.getStats(player)
 			return `{player.Name} を {characterId} にした（体力 {stats.MaxHealth}、移動速度 {stats.WalkSpeed}）`
+		end
+	)
+	DebugCommand.register(
+		"DumpPlayerStats",
+		"<プレイヤー名>",
+		"プレイヤーの今の能力値と、足している補正（秘計の鬼神化など）を JSON で返す",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local stats: { [string]: number } = PlayerService.getStats(player) :: any
+			local values = {}
+			for _, stat in Stats.names do
+				values[stat] = math.round(stats[stat] * 100) / 100
+			end
+			return HttpService:JSONEncode({
+				characterId = PlayerService.getCharacterId(player),
+				stats = values,
+				modifiers = PlayerService.getModifiers(player),
+			})
 		end
 	)
 	DebugCommand.register(

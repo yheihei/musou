@@ -782,6 +782,10 @@ local SNAPSHOT = {
 		KishuRadius = 40,
 		KishuShiki = 15,
 	},
+	Kishinka = {
+		Attack = 1.5,
+		Defense = 1.5,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

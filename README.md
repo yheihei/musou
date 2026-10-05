@@ -20,7 +20,7 @@ PC とゲームパッドで遊ぶ。割り当ては `src/shared/InputMap.luau` �
 - Studio のテストプレイでマウスのクリックがタッチとして届く環境では、Z と X で攻撃する
 - ガード中は動けず、向きも変わらない。正面からの攻撃は被ダメージ 0、背後と側面からは通常どおり受ける
 - 緊急回避はガード中に方向を入れた向きへ動き、動き出しは無敵。続けて出すほど後隙が伸びる
-- 秘計は、入力をサーバーへ送るところまで。効果はまだ無い
+- 秘計は、持ち込んだ枚を1戦に1回ずつ使える。効果があるのは伏兵・落石・兵糧庫・鬼神化で、ほかはまだ効果が無い
 
 ## 開発環境
 
@@ -139,7 +139,7 @@ src/
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -158,6 +158,7 @@ src/
       HyorokoService  秘計の兵糧庫。中にいる味方の通常拠点を、兵站線が切れても孤立しない拠点にする
       RakusekiService  秘計の落石。近くの落石地点に岩を落とし、その区間を相手の軍にとって通れなくする
       FukuheiService  秘計の伏兵。足元に伏兵部隊を潜ませ、近づいた相手を奇襲して士気を下げる
+      KishinkaService  秘計の鬼神化。発動者の攻撃と防御を上げ、のけぞらなくする
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
@@ -204,7 +205,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - ミニマップ（MinimapController）は、戦闘のフェーズの出撃メンバーにだけ、画面の右上（戦況の表示の下）に出撃したステージの区画を北を上にして出す（出す条件は戦況の表示と同じ）。出している間は Roblox 標準のプレイヤー一覧を消す。支配エリア（軍の色の薄い円）、兵站線（入っている兵站線の軍の色の線。どちらにも入っていなければ灰色、塞がれたつながりは薄く）、拠点と本陣（軍の色。本陣は「本」、兵糧庫は「糧」、孤立した拠点は薄く「孤」）、部隊（軍の色の点。交戦中は黄色い縁、潜んでいる伏兵部隊は味方軍のものだけ薄く）、上忍と首領（軍の色の丸に頭文字。`Characters.initialOf`）、自分（黄色）と仲間（白）の位置と向き（針付きの丸）を描く。戦場の様子は `ReplicatedStorage` の ShihaiArea・Tsunagari・Kyoten・Butai・Jonin の Attribute から読み、部隊は下忍の個体を見ずに部隊のデータから描く。つながりの経由点は Tsunagari の Attribute（`KeiyutenCount`・`Keiyuten1`…）で複製する。範囲は workspace の Attribute（`MinimapCenter`・`MinimapSize`）、仲間の位置と向きは Player の Attribute（`MinimapPosition`・`MinimapFacing`）から読む。StreamingEnabled のため、どちらもサーバーの MinimapService が書く。描き直す間隔は `Config.luau` の Minimap 節、計算は `src/shared/Minimap.luau`、大きさと位置は `Ui.Minimap`。範囲は区画の範囲の目印を囲むワールドの軸にそろえた四角で、拠点は目印の向き（拠点の Attribute の `Yaw`）に回して描く。秘計の知らせはミニマップの左に積む
 - リザルト画面（ResultController）は、`StageResult` を受けた人にだけ、勝敗と理由・経過時間・全員の撃破数・本人が開放したステージを出す。`Retry` と `ReturnToLobby` のボタンはリーダーにだけ出し、ほかの人には待ちの文を出す。文は `src/shared/ResultMessage.luau` にある。窓口の `SendStageResult Iga1` で、開放したステージを差し替えた結果を送り直して確かめる
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
-- 秘計の中身は秘計ごとのサービスが `HikeiService.register` で登録する（兵糧庫は HyorokoService）。発動できないとき（対象が無い、重ねがけなど）は失敗の理由を返し、枚は使わずに残る。見た目は `workspace.Hikei` の下の秘計ごとのフォルダ（`HikeiService.folderOf`）に置く。兵糧庫は、発動者が中にいる味方の通常拠点を孤立しない拠点にし（`HeitansenService.setNeverIsolated`）、拠点の中心に米俵と札を置く。制圧されると効果を終える。落石は、発動者から `Config.luau` の Hikei 節の TargetRange.Rakuseki 以内で一番近い落石地点に岩を落とし、その区間を相手の軍にとって通れなくする（`HeitansenService.block`）。岩は相手の軍の下忍と上忍の個体だけを止める衝突のグループ（`CollisionGroups.rakusekiGroupOf`）で、プレイヤーは通り抜ける。効果時間が過ぎると岩が消えて区間が戻る。伏兵は、発動者の足元に伏兵部隊（兵数は `Config.luau` の Fukuhei 節）を潜ませる。潜んでいる部隊は Butai の `fukuhei` の印を持ち、交戦の相手・方針の迎え撃つ相手・拠点の守備と攻める軍に数えない（部隊の Attribute の `Fukuhei`）。相手が KishuRadius 以内に来たら奇襲し（判定は `src/shared/Fukuhei.luau`）、相手の部隊の士気を KishuShiki だけずっと下げて交戦を始める。窓口の `SetHikeiMochikomi`・`UseHikei`・`WarpToKyoten`・`WarpToHikeiChiten`・`SetHikeiRemaining` で確かめる
+- 秘計の中身は秘計ごとのサービスが `HikeiService.register` で登録する（兵糧庫は HyorokoService）。発動できないとき（対象が無い、重ねがけなど）は失敗の理由を返し、枚は使わずに残る。見た目は `workspace.Hikei` の下の秘計ごとのフォルダ（`HikeiService.folderOf`）に置く。兵糧庫は、発動者が中にいる味方の通常拠点を孤立しない拠点にし（`HeitansenService.setNeverIsolated`）、拠点の中心に米俵と札を置く。制圧されると効果を終える。落石は、発動者から `Config.luau` の Hikei 節の TargetRange.Rakuseki 以内で一番近い落石地点に岩を落とし、その区間を相手の軍にとって通れなくする（`HeitansenService.block`）。岩は相手の軍の下忍と上忍の個体だけを止める衝突のグループ（`CollisionGroups.rakusekiGroupOf`）で、プレイヤーは通り抜ける。効果時間が過ぎると岩が消えて区間が戻る。伏兵は、発動者の足元に伏兵部隊（兵数は `Config.luau` の Fukuhei 節）を潜ませる。潜んでいる部隊は Butai の `fukuhei` の印を持ち、交戦の相手・方針の迎え撃つ相手・拠点の守備と攻める軍に数えない（部隊の Attribute の `Fukuhei`）。相手が KishuRadius 以内に来たら奇襲し（判定は `src/shared/Fukuhei.luau`）、相手の部隊の士気を KishuShiki だけずっと下げて交戦を始める。鬼神化は、効果時間（Hikei 節の Duration.Kishinka）の間、発動者の攻撃と防御に `Config.luau` の Kishinka 節の倍率を掛け、のけぞらなくする（吹き飛びと打ち上げはダウンになる）。プレイヤーは能力値の補正（`PlayerService.addModifierProvider`）とのけぞらない状態（`DamageService.addNoFlinchProvider`）、上忍と首領は能力値の補正（`JoninService.setHikeiHosei`）で効かせ、倒れたら解除する。窓口の `SetHikeiMochikomi`・`UseHikei`・`WarpToKyoten`・`WarpToHikeiChiten`・`SetHikeiRemaining`・`DumpPlayerStats` で確かめる
 - 効果音は `src/shared/Sounds.luau` の登録表に置き、`src/shared/SoundPlayer.luau` で名前を指定して鳴らす。戦闘の音はサーバーが場所を指定して鳴らし、画面の音はクライアントが本人にだけ鳴らす。音量は `Config.luau` の Sound 節
 - BGM は `src/shared/Bgm.luau` の登録表に場面（ロビー・イベントシーン・戦闘・勝利・敗北）ごとに置き、クライアントの BgmController が本人にだけ流す。場面は `Bgm.sceneFor` が PartyState のフェーズと StageResult の勝敗から決め、待機中の人はロビーの曲にする。切り替えはフェードで、音量とフェードの長さは `Config.luau` の Bgm 節。流している場面は `SoundService.Bgm` の Attribute `Scene` で確かめる
 - 武器は `src/shared/Appearance.luau` が、キャラクター定義の武器のモデルを右手の握りの Attachment に溶接して持たせる。見た目専用で、当たり判定は持たない

@@ -3,6 +3,7 @@
 -- 無敵・ガード・防御の軽減・反応・奥義ゲージの増加は ReplicatedStorage.Shared.Damage が決める。
 -- ここは体力を減らし、奥義ゲージを足し、のけぞり・ダウン・ガードの硬直を ActionService で始める。
 -- 体力が減ったときは被弾の効果音（Hurt）を鳴らす。
+-- のけぞらない状態（秘計の鬼神化）かは、addNoFlinchProvider で登録した関数に聞く。
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -22,9 +23,25 @@ type Record = {
 local DamageService = {}
 
 local records: { [Player]: Record } = {}
+-- プレイヤーがのけぞらない状態かを返す関数（秘計の鬼神化が登録する）
+local noFlinchProviders: { (Player) -> boolean } = {}
 
 -- 窓口の Damage で攻撃元を置く、プレイヤーからの距離（スタッド）
 local DEBUG_ORIGIN_DISTANCE = 5
+
+-- プレイヤーがのけぞらない状態かを返す関数を登録する。どれかが true を返せば、のけぞりを起こさない
+function DamageService.addNoFlinchProvider(provider: (Player) -> boolean)
+	table.insert(noFlinchProviders, provider)
+end
+
+local function isNoFlinch(player: Player): boolean
+	for _, provider in noFlinchProviders do
+		if provider(player) then
+			return true
+		end
+	end
+	return false
+end
 
 -- 攻撃をプレイヤーに当てて、その結果を返す。倒れているかキャラクターが無ければ nil
 function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Outcome?
@@ -49,6 +66,7 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 		forceField = character:FindFirstChildOfClass("ForceField") ~= nil,
 		invulnerableUntil = record.invulnerableUntil,
 		flinchImmuneUntil = record.flinchImmuneUntil,
+		noFlinch = isNoFlinch(player),
 		position = root.Position,
 		facing = root.CFrame.LookVector,
 	}, attack, t)

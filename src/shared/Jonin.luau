@@ -4,6 +4,7 @@
 -- 能力値は Config.luau の Stats 節（上忍は Jonin、首領は Shuryo）に、補正を Stats.compute で足して求める。
 -- 味方軍の上忍と首領は、体力・攻撃・防御に Stats 節の MikatagunScale を掛けて敵軍よりやや弱くする。
 -- 自分の軍の支配エリアの中では、攻撃と防御が上がる（ShihaiArea.modifiersOf）。
+-- 秘計の効果（鬼神化など）の補正は、秘計 ID ごとに setHikeiHosei で足し外しする。
 -- 敵軍の上忍と首領の体力は、出撃したときのパーティーの人数で上げる（PartySize.modifiersOf）。
 -- 体力が 0 になると倒れる。率いていた部隊は残し、士気だけを下げる（Butai.loseJonin）。
 -- 位置は水平の (x, z) で持つ。Roblox の API は使わない。
@@ -42,6 +43,8 @@ export type Jonin = {
 	modifiers: { Stats.Modifier },
 	-- 自分の軍の支配エリアの中か
 	shihaiArea: boolean,
+	-- 秘計の効果の補正。秘計 ID から引く（鬼神化など）
+	hikeiHosei: { [string]: { Stats.Modifier } },
 	-- 今の体力。0 なら倒れている
 	health: number,
 	-- 率いる部隊の ID。首領と、部隊を失った上忍は nil
@@ -90,11 +93,27 @@ function Jonin.modifiersOf(gun: Gun.Gun): { Stats.Modifier }
 	}
 end
 
--- 能力値。modifiers は支配エリアの補正を除いた補正、shihaiArea は自分の軍の支配エリアの中か
-local function statsOf(shuryo: boolean, modifiers: { Stats.Modifier }, shihaiArea: boolean): Stats.Values
+-- 能力値。modifiers は支配エリアの補正を除いた補正、shihaiArea は自分の軍の支配エリアの中か、
+-- hikeiHosei は秘計の効果の補正（秘計 ID の順に足す）
+local function statsOf(
+	shuryo: boolean,
+	modifiers: { Stats.Modifier },
+	shihaiArea: boolean,
+	hikeiHosei: { [string]: { Stats.Modifier } }
+): Stats.Values
 	local list = table.clone(modifiers)
 	for _, modifier in ShihaiArea.modifiersOf(shihaiArea) do
 		table.insert(list, modifier)
+	end
+	local ids = {}
+	for id in hikeiHosei do
+		table.insert(ids, id)
+	end
+	table.sort(ids)
+	for _, id in ids do
+		for _, modifier in hikeiHosei[id] do
+			table.insert(list, modifier)
+		end
 	end
 	return Stats.compute(Stats.npcBaseOf(shuryo), list)
 end
@@ -107,7 +126,7 @@ function Jonin.new(entry: Entry, position: Point, partySize: number?): Jonin
 	for _, modifier in PartySize.modifiersOf(entry.gun, partySize or 1) do
 		table.insert(modifiers, modifier)
 	end
-	local stats = statsOf(entry.shuryo, modifiers, false)
+	local stats = statsOf(entry.shuryo, modifiers, false, {})
 	return {
 		id = entry.id,
 		displayName = if character then character.displayName else entry.id,
@@ -115,6 +134,7 @@ function Jonin.new(entry: Entry, position: Point, partySize: number?): Jonin
 		stats = stats,
 		modifiers = modifiers,
 		shihaiArea = false,
+		hikeiHosei = {},
 		health = stats.MaxHealth,
 		butai = entry.butai,
 		shuryo = entry.shuryo,
@@ -141,8 +161,15 @@ function Jonin.setShihaiArea(jonin: Jonin, inside: boolean): boolean
 		return false
 	end
 	jonin.shihaiArea = inside
-	jonin.stats = statsOf(jonin.shuryo, jonin.modifiers, inside)
+	jonin.stats = statsOf(jonin.shuryo, jonin.modifiers, inside, jonin.hikeiHosei)
 	return true
+end
+
+-- 秘計 hikeiId の効果の補正を足すか（modifiers を渡す）、外す（nil を渡す）。能力値を求め直す。
+-- 体力の最大を変える補正は渡さない（今の体力はそのまま）
+function Jonin.setHikeiHosei(jonin: Jonin, hikeiId: string, modifiers: { Stats.Modifier }?)
+	jonin.hikeiHosei[hikeiId] = if modifiers then table.clone(modifiers) else nil
+	jonin.stats = statsOf(jonin.shuryo, jonin.modifiers, jonin.shihaiArea, jonin.hikeiHosei)
 end
 
 return Jonin
