@@ -303,3 +303,34 @@ test("範囲の外の位置は範囲の縁へ寄せ、中はそのまま", funct
 	expect(insideX).toBe(-20)
 	expect(insideZ).toBe(25)
 end)
+
+test(
+	"進んでいる道が塞がれたら、向かっていた拠点へ岩を越えて進まず、最後にいた拠点へ引き返す",
+	function()
+		local kyotenList, tsunagariList = shiken()
+		for _, item in kyotenList do
+			if item.id == "Higashi" then
+				item.taikyuRate = 0.5
+				item.kogeki = true
+			end
+		end
+		local blocked: { Hoshin.Tsunagari } = {}
+		for _, item in tsunagariList do
+			local copy = table.clone(item)
+			if Haichi.pairKey(item.kyotenA, item.kyotenB) == Haichi.pairKey("Chuo", "Higashi") then
+				copy.blocked = { Tekigun = true }
+			end
+			table.insert(blocked, copy)
+		end
+		local item = butai("Kyuen", "Tekigun", "Chuo")
+		item.atKyoten = false
+		item.mokutekiKyoten = "Higashi"
+		-- 中央（0, 0）から東（220, -60）へ向かう道の途中
+		item.position = { x = 45, z = -12 }
+		local decision = Hoshin.decide(item, kyotenList, blocked, {}, PARAMS)
+		expect(decision).toEqual({ kind = "Kyoten", kyoten = "Chuo", next = "Chuo", butai = nil, position = nil })
+		-- 塞がれていなければ、そのまま東の救援へ進む
+		local open = Hoshin.decide(item, kyotenList, tsunagariList, {}, PARAMS)
+		expect(open).toEqual({ kind = "Kyoten", kyoten = "Higashi", next = "Higashi", butai = nil, position = nil })
+	end
+)

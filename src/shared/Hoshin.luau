@@ -14,6 +14,7 @@
 -- - 道のりは、部隊の今の位置からつながりに沿って測る。拠点の中にとどまっている部隊はその拠点から、
 --   拠点の間を進んでいる部隊（迎え撃っている部隊も）は、最後にいた拠点・向かっている拠点・一番近い拠点のそれぞれへ
 --   まっすぐ戻るか進んでから、つながりをたどる
+-- - 進んでいる道が落石で塞がれたら、最後にいた拠点へ引き返してから測る（岩を越えて進まない）
 -- - たどれるのは自分の軍の拠点と、自分の軍が通れるつながり（落石で塞がれたつながりは通らない）。
 --   相手の軍の拠点には入れるが、その先へは進まない（落としてから次を目指す）。中にとどまっている拠点からは、
 --   相手の軍の拠点でも先へ進める
@@ -237,13 +238,42 @@ local function closest(kyotenList: { Kyoten }, reach: { [string]: Reach }, accep
 	return best
 end
 
+-- 拠点 a と b を結ぶつながりが、軍 gun にとって塞がれているか（つながりが無ければ false）
+local function blockedBetween(tsunagariList: { Tsunagari }, a: string, b: string, gun: Gun.Gun): boolean
+	for _, tsunagari in tsunagariList do
+		local same = (tsunagari.kyotenA == a and tsunagari.kyotenB == b)
+			or (tsunagari.kyotenA == b and tsunagari.kyotenB == a)
+		if same then
+			local blocked = tsunagari.blocked
+			return blocked ~= nil and blocked[gun] == true
+		end
+	end
+	return false
+end
+
 -- 部隊の今の位置からの道のり。拠点の中にとどまっていればその拠点から、拠点の外なら、最後にいた拠点・
--- 向かっている拠点・一番近い拠点へまっすぐ向かってから測る
+-- 向かっている拠点・一番近い拠点へまっすぐ向かってから測る。
+-- 進んでいる道（最後にいた拠点と向かっている拠点の間）が塞がれたら、最後にいた拠点へ引き返してから測る
 local function reachOf(butai: Butai, kyotenList: { Kyoten }, tsunagariList: { Tsunagari }): { [string]: Reach }
 	local byId = indexById(kyotenList)
 	local kyoten = butai.kyoten
 	if kyoten and byId[kyoten] and butai.atKyoten and not butai.mokutekiKyoten then
 		return Hoshin.reach(kyotenList, tsunagariList, butai.gun, kyoten)
+	end
+	local mokutekiKyoten = butai.mokutekiKyoten
+	if
+		kyoten
+		and byId[kyoten]
+		and mokutekiKyoten
+		and blockedBetween(tsunagariList, kyoten, mokutekiKyoten, butai.gun)
+	then
+		local item = byId[kyoten]
+		return Hoshin.reachFrom(
+			kyotenList,
+			tsunagariList,
+			butai.gun,
+			{ [kyoten] = distance(butai.position.x, butai.position.z, item.x, item.z) }
+		)
 	end
 	local sources: { [string]: number } = {}
 	local function add(id: string?)

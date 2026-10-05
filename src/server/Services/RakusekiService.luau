@@ -9,8 +9,11 @@
 --   同じ区間をほかの岩が同じ軍に対して塞いでいれば、その軍の通れなさは残す
 -- - 相手の部隊は、塞いだ区間を経路に使わない（HoshinService の道のりは、その軍が通れないつながりを通らない）
 -- - 岩は区間の向きに直角に並べ、地面の高さに合わせて置く。当たり判定は、相手の軍の下忍と上忍の個体だけを止める
---   衝突のグループにする（CollisionGroups.rakusekiGroupOf。プレイヤーは通り抜ける）。地面の高さの計算には当てない
+--   衝突のグループにする（CollisionGroups.rakusekiGroupOf。プレイヤーは通り抜ける）。
+--   当たり判定があると CanQuery が効かないので、タグ Ground.IGNORE_TAG を付けて地面の高さの計算に当てない
+--   （岩の上に下忍を出したり、草むらを浮かせたりしない）
 
+local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Ground = require(ReplicatedStorage.Shared.Ground)
@@ -75,6 +78,7 @@ local function rock(name: string, diameter: number, position: Vector3, group: st
 	local y = Ground.heightAt(position.X, position.Z) or position.Y
 	part.Position = Vector3.new(position.X, y + diameter * (0.5 - SINK), position.Z)
 	part.CollisionGroup = group
+	CollectionService:AddTag(part, Ground.IGNORE_TAG)
 	part.Parent = parent
 	return part
 end

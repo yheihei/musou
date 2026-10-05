@@ -3,6 +3,7 @@
 -- キャラクターや部隊を出現させる処理は、固定の高さを使わずこの関数で高さを決める。
 -- キャラクター（Humanoid を持つモデル）と目印には当てない。
 -- 目印は CanQuery を false にして置くので光線は当たらないが、念のためタグ Mejirushi でも除く。
+-- 当たり判定のある見た目（秘計の落石の岩など）は CanQuery が効かないので、タグ NotGround（IGNORE_TAG）を付けて除く。
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -10,6 +11,9 @@ local Players = game:GetService("Players")
 local Mejirushi = require("./Mejirushi")
 
 local Ground = {}
+
+-- 地面の高さの計算で当てない部品に付けるタグ（当たり判定があっても地面に数えない）
+Ground.IGNORE_TAG = "NotGround"
 
 -- 上から下へ当てる光線の開始の高さと長さ（スタッド）
 local RAY_TOP = 1000
@@ -32,6 +36,9 @@ end
 -- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）
 function Ground.heightAt(x: number, z: number, fromY: number?): number?
 	local excluded: { Instance } = CollectionService:GetTagged(Mejirushi.TAG)
+	for _, instance in CollectionService:GetTagged(Ground.IGNORE_TAG) do
+		table.insert(excluded, instance)
+	end
 	for _, player in Players:GetPlayers() do
 		if player.Character then
 			table.insert(excluded, player.Character)
