@@ -50,11 +50,18 @@ function Ground.excludedOf(exclude: { Instance }?): { Instance }
 end
 
 -- origin から direction へ光線を当て、excluded（excludedOf で作る）とキャラクター（Humanoid を持つモデル）を除いて
--- 最初に当たったものを返す。当たらなければ nil。excluded は書き換えない
-function Ground.raycast(origin: Vector3, direction: Vector3, excluded: { Instance }): RaycastResult?
+-- 最初に当たったものを返す。当たらなければ nil。excluded は書き換えない。
+-- respectCanCollide なら、当たり判定の無い部品（CanCollide が false）にも当てない
+function Ground.raycast(
+	origin: Vector3,
+	direction: Vector3,
+	excluded: { Instance },
+	respectCanCollide: boolean?
+): RaycastResult?
 	local list = table.clone(excluded)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.RespectCanCollide = respectCanCollide == true
 	for _ = 1, MAX_RETRIES do
 		params.FilterDescendantsInstances = list
 		local result = workspace:Raycast(origin, direction, params)

@@ -16,7 +16,8 @@
 -- - 落ちている途中で足が地面（真下へ当てた光線。Ground.raycast）に届いたら着地し、仰向けに倒れる（ダウン）。
 --   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
 -- - 飛んでいる間は、前のフレームの位置から今の位置へ光線を当て、物に当たったら手前で止める。床（上を向いた面）なら
---   そこに着地し、壁なら横の速さを、天井なら上向きの速さを消して、そこから落とし直す（壁や屋根を通り抜けない）
+--   そこに着地し、壁や天井なら面へ向かう速さを消して、面に沿って滑らせて落とし直す（壁や屋根を通り抜けない）。
+--   光線は当たり判定の無い部品（CanCollide が false）には当てない
 -- - 倒された敵は、飛んでいれば着地まで飛び、倒れたまま残る。倒れている間か起き上がる途中で倒されても、倒れたまま残る
 -- - 反応の最中は、近づくことも攻撃することもしない
 --
@@ -152,12 +153,12 @@ local NEAR_RANGE = 10
 local STEP = 3
 -- 飛んでいる敵が床とみなす面の向き（面の法線の上向きの成分の下限）
 local FLOOR_NORMAL_Y = 0.7
--- 壁や天井に当たったとき、当たった位置から面の外へ戻す距離（スタッド）
-local CONTACT_OFFSET = 0.5
+-- 壁や天井に当たったとき、当たった位置から面の外へ戻す距離（スタッド）。細い隙間の向こうへ押し出さないよう小さくする
+local CONTACT_OFFSET = 0.1
+-- 足の下の地面を探す光線を、立っているときの高さより少しだけ長くする（ちょうどの長さでは当たり損ねることがあるため）
+local BELOW_MARGIN = 0.1
 -- 倒れているときの、地面から HumanoidRootPart の中心までの高さ（体の大きさの倍率を掛ける）
 local LIE_HEIGHT = 1
--- 飛び始めた高さからこれだけ落ちても地面が無ければ、奈落に落ちたとして倒す（スタッド）
-local FALL_LIMIT = 300
 -- 毒の間に出す緑の煙の名前と色
 local POISON_NAME = "Doku"
 local POISON_COLOR = Color3.fromRGB(110, 210, 70)
@@ -325,15 +326,23 @@ local function land(enemy: Enemy, x: number, groundY: number, z: number, now: nu
 	enemy.hanno = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
 end
 
--- 飛んでいる途中で壁か天井に当たったら、当たった位置の手前から、壁なら横の速さを、天井なら上向きの速さを消して落とし直す
-local function bounce(enemy: Enemy, state: Hanno, hit: RaycastResult, velocity: vector, now: number)
+-- 足の下（HumanoidRootPart の中心から立っているときの高さまで）に地面があれば着地させ、true を返す
+local function landIfGrounded(enemy: Enemy, position: vector, now: number, excluded: { Instance }): boolean
+	local below = Ground.raycast(position, vector.create(0, -(enemy.standHeight + BELOW_MARGIN), 0), excluded, true)
+	if not below then
+		return false
+	end
+	land(enemy, position.x, below.Position.Y, position.z, now)
+	return true
+end
+
+-- 飛んでいる途中で壁か天井に当たったら、当たった位置の手前から、面へ向かう速さを消して面に沿って滑らせ直す
+local function slide(enemy: Enemy, state: Hanno, hit: RaycastResult, velocity: vector, now: number)
 	local normal = hit.Normal
-	local offset = if normal.Y < -FLOOR_NORMAL_Y then CONTACT_OFFSET else enemy.radius
-	local position = hit.Position + normal * offset
-	local after = if normal.Y < -FLOOR_NORMAL_Y
-		then vector.create(velocity.x, math.min(velocity.y, 0), velocity.z)
-		else vector.create(0, math.min(velocity.y, 0), 0)
-	state.trajectory = Trajectory.new(position, after)
+	local position = hit.Position + normal * CONTACT_OFFSET
+	local into = velocity:Dot(normal)
+	local along = if into < 0 then velocity - normal * into else velocity
+	state.trajectory = Trajectory.new(position, along)
 	state.startedAt = now
 	enemy.root.CFrame = CFrame.new(position) * enemy.facing
 end
@@ -344,27 +353,27 @@ local function updateFlight(enemy: Enemy, state: Hanno, now: number, excluded: {
 	local trajectory = state.trajectory :: Trajectory.Trajectory
 	local elapsed = now - state.startedAt
 	local position = Trajectory.positionAt(trajectory, elapsed)
+	local velocity = Trajectory.velocityAt(trajectory, elapsed)
 	local from = enemy.root.Position
 	local step = position - from
 	if step.Magnitude > 1e-3 then
-		local hit = Ground.raycast(from, step, excluded)
+		local hit = Ground.raycast(from, step, excluded, true)
 		if hit then
 			if hit.Normal.Y >= FLOOR_NORMAL_Y then
 				land(enemy, hit.Position.X, hit.Position.Y, hit.Position.Z, now)
-			else
-				bounce(enemy, state, hit, Trajectory.velocityAt(trajectory, elapsed), now)
+				return
 			end
+			slide(enemy, state, hit, velocity, now)
+			-- 滑らせた先の足の下に地面があれば、そこで着地する（斜めの天井と床の間で床を抜けない）
+			landIfGrounded(enemy, enemy.root.Position, now, excluded)
 			return
 		end
 	end
-	if Trajectory.velocityAt(trajectory, elapsed).y <= 0 then
-		-- 足の下に地面があるか（HumanoidRootPart の中心から立っているときの高さだけ下まで）
-		local below = Ground.raycast(position, vector.create(0, -enemy.standHeight, 0), excluded)
-		if below and Trajectory.hasLanded(trajectory, elapsed, below.Position.Y + enemy.standHeight) then
-			land(enemy, position.x, below.Position.Y, position.z, now)
+	if velocity.y <= 0 then
+		if landIfGrounded(enemy, position, now, excluded) then
 			return
 		end
-		if trajectory.origin.y - position.y > FALL_LIMIT then
+		if position.y < workspace.FallenPartsDestroyHeight then
 			-- 奈落に落ちた
 			reacting[enemy.model] = nil
 			enemy.humanoid.Health = 0
@@ -621,9 +630,8 @@ function EnemyService.damage(model: Model, amount: number, attacker: Player?, hi
 		return false
 	end
 
-	if attacker then
-		enemy.lastHitBy = attacker
-	end
+	-- とどめを刺した人の撃破に数える。攻撃した人がいなければ（NPC の秘計など）、前に攻撃した人の撃破にもしない
+	enemy.lastHitBy = attacker
 	enemy.hits += 1
 	enemy.firstHitAt = enemy.firstHitAt or os.clock()
 	enemy.humanoid:TakeDamage(amount)
