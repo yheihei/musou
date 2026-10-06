@@ -10,7 +10,7 @@
 -- - 部隊は兵数を減らす（ButaiService.changeHeisu）。潜んでいる伏兵部隊も地域の中にいれば焼く。
 --   減った兵数は拠点の耐久にも数える（ButaiService.heisuLost を KyotenService が受ける）
 -- - プレイヤー（敵軍が使ったとき）は、被ダメージの窓口でガードできない吹き飛びの攻撃を受ける
--- - 仮の湧き処理の敵（味方軍が使ったとき）は、威力のダメージを受ける。とどめを刺したら発動者の撃破に数える
+-- - 仮の湧き処理の敵（味方軍が使ったとき）は、威力のダメージを受ける。発動者がプレイヤーなら、とどめを発動者の撃破に数える
 -- - 発動者がプレイヤーなら、倒した上忍・首領と減らした兵数を撃破数に足す
 -- - 同じ軍は対象にしない（味方を巻き込まない）
 -- - 地域の中に、炎の仮の見た目を FireTime 秒だけ出す
@@ -158,7 +158,7 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 	end
 
 	local player = context.player
-	if opponent == EnemyService.GUN and player then
+	if opponent == EnemyService.GUN then
 		local amount = Stats.damage(1, power, 0)
 		for _, target in EnemyService.getTargets() do
 			local position: Vector3 = target.position

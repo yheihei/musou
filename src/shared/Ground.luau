@@ -32,10 +32,8 @@ local function characterOf(part: BasePart): Model?
 	return nil
 end
 
--- (x, z) の真下の地面の高さを返す。見つからなければ警告を出して nil を返す。
--- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）。
--- exclude を渡すと、その中の部品にも当てない（飛んでいる敵のフォルダなど）
-function Ground.heightAt(x: number, z: number, fromY: number?, exclude: { Instance }?): number?
+-- 地面の高さの計算で当てない部品の一覧。目印（タグ Mejirushi）、タグ NotGround の部品、プレイヤーのキャラクターと、exclude
+function Ground.excludedOf(exclude: { Instance }?): { Instance }
 	local excluded: { Instance } = CollectionService:GetTagged(Mejirushi.TAG)
 	for _, instance in exclude or {} do
 		table.insert(excluded, instance)
@@ -48,26 +46,39 @@ function Ground.heightAt(x: number, z: number, fromY: number?, exclude: { Instan
 			table.insert(excluded, player.Character)
 		end
 	end
+	return excluded
+end
 
-	local top = fromY or RAY_TOP
-	local origin = Vector3.new(x, top, z)
-	local direction = Vector3.new(0, -RAY_LENGTH, 0)
+-- origin から direction へ光線を当て、excluded（excludedOf で作る）とキャラクター（Humanoid を持つモデル）を除いて
+-- 最初に当たったものを返す。当たらなければ nil。excluded は書き換えない
+function Ground.raycast(origin: Vector3, direction: Vector3, excluded: { Instance }): RaycastResult?
+	local list = table.clone(excluded)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-
 	for _ = 1, MAX_RETRIES do
-		params.FilterDescendantsInstances = excluded
+		params.FilterDescendantsInstances = list
 		local result = workspace:Raycast(origin, direction, params)
 		if not result then
-			break
+			return nil
 		end
 		local character = if result.Instance:IsA("BasePart") then characterOf(result.Instance) else nil
 		if not character then
-			return result.Position.Y
+			return result
 		end
-		table.insert(excluded, character)
+		table.insert(list, character)
 	end
+	return nil
+end
 
+-- (x, z) の真下の地面の高さを返す。見つからなければ警告を出して nil を返す。
+-- fromY を渡すと、その高さから下へ探す（屋根の下に出したいときなど）。
+-- exclude を渡すと、その中の部品にも当てない（飛んでいる敵のフォルダなど）
+function Ground.heightAt(x: number, z: number, fromY: number?, exclude: { Instance }?): number?
+	local top = fromY or RAY_TOP
+	local result = Ground.raycast(Vector3.new(x, top, z), Vector3.new(0, -RAY_LENGTH, 0), Ground.excludedOf(exclude))
+	if result then
+		return result.Position.Y
+	end
 	warn(`Ground.heightAt: ({x}, {z}) の真下に地面が見つからない（y = {top} から探した）`)
 	return nil
 end

@@ -13,9 +13,11 @@
 -- - 吹き飛びと打ち上げは、物理演算に任せず、初速と重力から決めた軌道（ReplicatedStorage.Shared.Trajectory）で動かす。
 --   飛んでいる間は HumanoidRootPart を固定し、フレームごとに軌道の位置へ置く。上忍は JoninScale を掛けた初速で短く飛ぶ
 -- - 空中で攻撃を受けたら、その位置から軌道をやり直す（追撃で再び浮く）。空中でののけぞりは浮かせ直す
--- - 落ちている途中で地面の高さ（Ground.heightAt）に届いたら着地し、仰向けに倒れる（ダウン）。
+-- - 落ちている途中で足が地面（真下へ当てた光線。Ground.raycast）に届いたら着地し、仰向けに倒れる（ダウン）。
 --   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
--- - 倒された敵も、飛んでいれば着地まで飛び、倒れたまま残る
+-- - 飛んでいる間は、前のフレームの位置から今の位置へ光線を当て、物に当たったら手前で止める。床（上を向いた面）なら
+--   そこに着地し、壁なら横の速さを、天井なら上向きの速さを消して、そこから落とし直す（壁や屋根を通り抜けない）
+-- - 倒された敵は、飛んでいれば着地まで飛び、倒れたまま残る。倒れている間か起き上がる途中で倒されても、倒れたまま残る
 -- - 反応の最中は、近づくことも攻撃することもしない
 --
 -- 毒（酉花の奥義「毒手裏剣」。数値は Config.luau の Poison 節）
@@ -148,8 +150,10 @@ local STAND_OFF_MARGIN = 0.5
 -- 囲みの輪の上を回り込む
 local NEAR_RANGE = 10
 local STEP = 3
--- 飛んでいる敵の着地を確かめるとき、地面を探し始める高さ（HumanoidRootPart の中心からの高さ。スタッド）
-local LANDING_PROBE = 6
+-- 飛んでいる敵が床とみなす面の向き（面の法線の上向きの成分の下限）
+local FLOOR_NORMAL_Y = 0.7
+-- 壁や天井に当たったとき、当たった位置から面の外へ戻す距離（スタッド）
+local CONTACT_OFFSET = 0.5
 -- 倒れているときの、地面から HumanoidRootPart の中心までの高さ（体の大きさの倍率を掛ける）
 local LIE_HEIGHT = 1
 -- 飛び始めた高さからこれだけ落ちても地面が無ければ、奈落に落ちたとして倒す（スタッド）
@@ -296,35 +300,72 @@ local function react(enemy: Enemy, hit: Hit, now: number)
 	end
 end
 
--- 着地して仰向けに倒れる
-local function land(enemy: Enemy, x: number, groundY: number, z: number, now: number)
+-- 地面の高さ groundY の (x, z) に仰向けに寝かせる
+local function lieDown(enemy: Enemy, x: number, groundY: number, z: number)
 	enemy.groundY = groundY
 	local scale = enemy.def.Scale
 	enemy.root.CFrame = CFrame.new(x, groundY + LIE_HEIGHT * scale, z)
 		* enemy.facing
 		* CFrame.Angles(math.rad(90), 0, 0)
+end
+
+-- 倒された敵を倒れたまま残し、消えるのを待つ
+local function stayDown(enemy: Enemy, now: number)
+	enemy.hanno = { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil }
+	reacting[enemy.model] = nil
+end
+
+-- 着地して仰向けに倒れる
+local function land(enemy: Enemy, x: number, groundY: number, z: number, now: number)
+	lieDown(enemy, x, groundY, z)
 	if enemy.humanoid.Health <= 0 then
-		-- 倒された敵は倒れたまま残し、消えるのを待つ
-		enemy.hanno = { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil }
-		reacting[enemy.model] = nil
+		stayDown(enemy, now)
 		return
 	end
 	enemy.hanno = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
 end
 
--- 飛んでいる敵を軌道の位置へ置き、落ちている途中で地面に届いたら着地させる
-local function updateFlight(enemy: Enemy, state: Hanno, now: number)
+-- 飛んでいる途中で壁か天井に当たったら、当たった位置の手前から、壁なら横の速さを、天井なら上向きの速さを消して落とし直す
+local function bounce(enemy: Enemy, state: Hanno, hit: RaycastResult, velocity: vector, now: number)
+	local normal = hit.Normal
+	local offset = if normal.Y < -FLOOR_NORMAL_Y then CONTACT_OFFSET else enemy.radius
+	local position = hit.Position + normal * offset
+	local after = if normal.Y < -FLOOR_NORMAL_Y
+		then vector.create(velocity.x, math.min(velocity.y, 0), velocity.z)
+		else vector.create(0, math.min(velocity.y, 0), 0)
+	state.trajectory = Trajectory.new(position, after)
+	state.startedAt = now
+	enemy.root.CFrame = CFrame.new(position) * enemy.facing
+end
+
+-- 飛んでいる敵を軌道の位置へ置く。途中で物に当たったら止め、落ちている途中で足が地面に届いたら着地させる。
+-- excluded は光線を当てない部品（Ground.excludedOf）
+local function updateFlight(enemy: Enemy, state: Hanno, now: number, excluded: { Instance })
 	local trajectory = state.trajectory :: Trajectory.Trajectory
 	local elapsed = now - state.startedAt
 	local position = Trajectory.positionAt(trajectory, elapsed)
-	if Trajectory.velocityAt(trajectory, elapsed).y <= 0 then
-		local probe = position.y + LANDING_PROBE
-		local groundY = Ground.heightAt(position.x, position.z, probe, { enemiesFolder })
-		if groundY and position.y - enemy.standHeight <= groundY then
-			land(enemy, position.x, groundY, position.z, now)
+	local from = enemy.root.Position
+	local step = position - from
+	if step.Magnitude > 1e-3 then
+		local hit = Ground.raycast(from, step, excluded)
+		if hit then
+			if hit.Normal.Y >= FLOOR_NORMAL_Y then
+				land(enemy, hit.Position.X, hit.Position.Y, hit.Position.Z, now)
+			else
+				bounce(enemy, state, hit, Trajectory.velocityAt(trajectory, elapsed), now)
+			end
 			return
 		end
-		if not groundY and trajectory.origin.y - position.y > FALL_LIMIT then
+	end
+	if Trajectory.velocityAt(trajectory, elapsed).y <= 0 then
+		-- 足の下に地面があるか（HumanoidRootPart の中心から立っているときの高さだけ下まで）
+		local below = Ground.raycast(position, vector.create(0, -enemy.standHeight, 0), excluded)
+		if below and Trajectory.hasLanded(trajectory, elapsed, below.Position.Y + enemy.standHeight) then
+			land(enemy, position.x, below.Position.Y, position.z, now)
+			return
+		end
+		if trajectory.origin.y - position.y > FALL_LIMIT then
+			-- 奈落に落ちた
 			reacting[enemy.model] = nil
 			enemy.humanoid.Health = 0
 			enemy.model:Destroy()
@@ -334,15 +375,24 @@ local function updateFlight(enemy: Enemy, state: Hanno, now: number)
 	enemy.root.CFrame = CFrame.new(position) * enemy.facing
 end
 
--- 飛んでいる・倒れている・起き上がっている敵を進める
-local function updateReaction(enemy: Enemy, now: number)
+-- 飛んでいる・倒れている・起き上がっている敵を進める。excluded は光線を当てない部品（Ground.excludedOf）
+local function updateReaction(enemy: Enemy, now: number, excluded: { Instance })
 	local state = enemy.hanno
 	if not state then
 		reacting[enemy.model] = nil
 		return
 	end
+	if state.kind ~= "Air" and enemy.humanoid.Health <= 0 then
+		-- 倒れている間か起き上がる途中で倒された敵は、寝かせ直して倒れたまま残す
+		if state.kind == "GetUp" then
+			local position = enemy.root.Position
+			lieDown(enemy, position.X, enemy.groundY or (position.Y - enemy.standHeight), position.Z)
+		end
+		stayDown(enemy, now)
+		return
+	end
 	if state.kind == "Air" then
-		updateFlight(enemy, state, now)
+		updateFlight(enemy, state, now, excluded)
 	elseif state.kind == "Down" and now >= state.untilTime then
 		-- 起き上がる
 		local position = enemy.root.Position
@@ -812,15 +862,22 @@ function EnemyService.start()
 
 	-- 飛んでいる・倒れている・起き上がっている敵は、フレームごとに進める
 	RunService.Heartbeat:Connect(function()
+		if next(reacting) == nil then
+			return
+		end
 		local now = os.clock()
+		-- 光線を当てない部品の一覧はフレームごとに1回だけ作る。敵どうしには当てない
+		local excluded = Ground.excludedOf({ enemiesFolder })
 		for model, enemy in reacting do
 			if not model.Parent then
 				reacting[model] = nil
 				continue
 			end
-			local ok, err = pcall(updateReaction, enemy, now)
+			local ok, err = pcall(updateReaction, enemy, now, excluded)
 			if not ok then
 				reacting[model] = nil
+				enemy.hanno = nil
+				release(enemy)
 				warn(`EnemyService: {model.Name} の反応を進められなかった: {err}`)
 			end
 		end
