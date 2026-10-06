@@ -634,6 +634,7 @@ local SNAPSHOT = {
 				CancelFrom = 1.3,
 				Advance = 0,
 				Interrupt = true,
+				HitOnce = true,
 				Hits = {
 					{
 						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
@@ -760,7 +761,7 @@ local SNAPSHOT = {
 						Knockback = 45,
 					},
 					{
-						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Shape = { Kind = "Sector", Radius = 18, Angle = 360, Height = 30 },
 						Delay = 0.25,
 						Repeat = 5,
 						Interval = 0.14,
@@ -769,7 +770,7 @@ local SNAPSHOT = {
 						Knockback = 5,
 					},
 					{
-						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Shape = { Kind = "Sector", Radius = 18, Angle = 360, Height = 30 },
 						Delay = 1,
 						Power = 4,
 						Reaction = "Knockback",

@@ -497,6 +497,9 @@ local function onEnemyDied(enemy: Enemy)
 	end
 	enemies[enemy.model] = nil
 	aliveCount -= 1
+	-- 毒の間に倒れたら、毒の煙を消す
+	enemy.poison = nil
+	removePoisonLook(enemy)
 
 	local attacker = enemy.lastHitBy
 	if attacker and attacker.Parent then
@@ -748,7 +751,7 @@ function EnemyService.start()
 						hits = enemy.hits,
 						firstHitAgo = if firstHitAt then math.round((now - firstHitAt) * 100) / 100 else nil,
 						hanno = if enemy.hanno then enemy.hanno.kind else nil,
-						poison = if poison then math.round((poison.untilTime - now) * 10) / 10 else nil,
+						poison = if poison then math.max(math.round((poison.untilTime - now) * 10) / 10, 0) else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
 					})
 				end

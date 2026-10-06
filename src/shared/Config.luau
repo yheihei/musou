@@ -94,6 +94,8 @@ export type ActionTimeline = {
 	Interrupt: boolean?,
 	-- この行動が終わったときに続けて始める行動
 	Next: string?,
+	-- 同じ時刻に出る判定を、1体に1回だけ当てるか（放射状に重なる直線の多重の命中を防ぐ）
+	HitOnce: boolean?,
 	-- 攻撃の判定。攻撃でない行動には無い
 	Hits: { HitDef }?,
 }
@@ -1070,7 +1072,8 @@ local Config: Config = {
 					},
 				},
 			},
-			-- 酉花の毒手裏剣。周りの12方向へ毒手裏剣を3回撒き、当たった敵を毒にする（毒は Poison 節）
+			-- 酉花の毒手裏剣。周りの12方向へ毒手裏剣を3回撒き、当たった敵を毒にする（毒は Poison 節）。
+			-- 近くでは直線が重なるので、1回の撒き（同じ時刻の12本）は1体に1回だけ当てる
 			PoisonShuriken = {
 				Startup = 0.2,
 				Active = 0.8,
@@ -1078,6 +1081,7 @@ local Config: Config = {
 				CancelFrom = 1.3,
 				Advance = 0,
 				Interrupt = true,
+				HitOnce = true,
 				Hits = {
 					{
 						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 120 },
@@ -1190,7 +1194,7 @@ local Config: Config = {
 				},
 			},
 			-- 石舟斎の無刀取り。短く構えてから周りを打ち上げ、空中の敵へ斬撃を重ね、最後の一撃で吹き飛ばす。
-			-- 空中への斬撃の段数は2つ目の判定の Repeat。高さ 30 の円柱で、打ち上げた敵に届かせる
+			-- 空中への斬撃の段数は2つ目の判定の Repeat。高さ 30・半径 18 の円柱で、打ち上げて外へ流れた敵にも届かせる
 			MutoDori = {
 				Startup = 0.3,
 				Active = 1.1,
@@ -1206,7 +1210,7 @@ local Config: Config = {
 						Knockback = 45,
 					},
 					{
-						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Shape = { Kind = "Sector", Radius = 18, Angle = 360, Height = 30 },
 						Delay = 0.25,
 						Repeat = 5,
 						Interval = 0.14,
@@ -1215,7 +1219,7 @@ local Config: Config = {
 						Knockback = 5,
 					},
 					{
-						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 30 },
+						Shape = { Kind = "Sector", Radius = 18, Angle = 360, Height = 30 },
 						Delay = 1,
 						Power = 4,
 						Reaction = "Knockback",

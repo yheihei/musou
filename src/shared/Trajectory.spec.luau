@@ -120,14 +120,15 @@ end)
 local function simulate(
 	timeline: Config.ActionTimeline,
 	standHeight: number,
-	scale: number
-): { { at: number, y: number, airborne: boolean } }
+	scale: number,
+	startX: number
+): { { at: number, x: number, y: number, airborne: boolean } }
 	local params = Config.EnemyReaction
 	local direction = v(1, 0, 0)
 	local result = {}
 	local trajectory: Trajectory.Trajectory? = nil
 	local startedAt = 0
-	local position = v(0, standHeight, 0)
+	local position = v(startX, standHeight, 0)
 	for _, scheduled in ActionState.hits(timeline) do
 		local airborne = false
 		local current = trajectory
@@ -138,7 +139,7 @@ local function simulate(
 				then Trajectory.positionAt(current, elapsed)
 				else v(position.x, standHeight, position.z)
 		end
-		table.insert(result, { at = scheduled.at, y = position.y, airborne = airborne })
+		table.insert(result, { at = scheduled.at, x = position.x, y = position.y, airborne = airborne })
 		local hit = scheduled.hit
 		local velocity = Trajectory.initialVelocity(hit.Reaction, direction, hit.Knockback, airborne, scale, params)
 		if velocity then
@@ -153,21 +154,25 @@ test(
 	"無刀取りの空中への斬撃は、打ち上げた敵が着地する前に段数のすべてが判定の高さの中で届く",
 	function()
 		local timeline = Config.Ougi.Timelines.MutoDori
-		local aerial = (timeline.Hits :: { Config.HitDef })[2]
-		-- 下忍（立つ高さ 3）と、反応を弱める上忍（体が大きく、立つ高さ 4.2）
+		local hits = timeline.Hits :: { Config.HitDef }
+		local launch, aerial = hits[1], hits[2]
+		-- 下忍（立つ高さ 3）と、反応を弱める上忍（体が大きく、立つ高さ 4.2）を、すぐそばと打ち上げの円の縁に置く
 		local cases = {
-			{ standHeight = 3, scale = 1 },
-			{ standHeight = 4.2, scale = Config.EnemyReaction.JoninScale },
+			{ standHeight = 3, scale = 1, startX = 2 },
+			{ standHeight = 3, scale = 1, startX = launch.Shape.Radius :: number },
+			{ standHeight = 4.2, scale = Config.EnemyReaction.JoninScale, startX = 2 },
+			{ standHeight = 4.2, scale = Config.EnemyReaction.JoninScale, startX = launch.Shape.Radius :: number },
 		}
 		for _, case in cases do
-			local results = simulate(timeline, case.standHeight, case.scale)
+			local results = simulate(timeline, case.standHeight, case.scale, case.startX)
 			-- 打ち上げ 1 回、空中への斬撃 Repeat 回、最後の一撃 1 回
 			expect(#results).toBe(1 + (aerial.Repeat or 1) + 1)
 			for index = 2, #results do
 				local item = results[index]
 				expect(item.airborne).toBe(true)
-				-- 技を出す人（敵と同じ高さに立つ）を中心に、判定の高さの半分の範囲に敵がいる
+				-- 技を出す人（原点に、敵と同じ高さで立つ）の判定の円柱の中に敵がいる（外へ流れても届く）
 				expect(math.abs(item.y - case.standHeight) <= (aerial.Shape.Height :: number) / 2).toBe(true)
+				expect(math.abs(item.x) <= (aerial.Shape.Radius :: number)).toBe(true)
 			end
 		end
 	end

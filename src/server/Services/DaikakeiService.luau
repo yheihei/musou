@@ -135,8 +135,7 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 	for _, butai in ButaiService.list() do
 		if butai.gun == opponent and insideOf(chiiki, butai.position.x, butai.position.z) then
 			local loss = Daikakei.heisuLoss(butai.heisu)
-			if loss > 0 then
-				ButaiService.changeHeisu(butai.id, -loss)
+			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss) then
 				kills += loss
 			end
 		end

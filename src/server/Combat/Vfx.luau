@@ -135,12 +135,15 @@ function Vfx.blades(shape: HitShape.Shape, origin: HitShape.Origin)
 	local position: Vector3 = origin.position
 	local middle = (shape.inner + shape.outer) / 2
 	local count = math.clamp(math.floor(2 * math.pi * math.max(middle, 1) / BLADE_SPACING), 6, 48)
+	-- 地面の高さは刃ごとに光線を当てて引く。地面が無ければ警告を出さずに判定の原点の下に置く
+	local excluded = Ground.excludedOf()
 	for index = 1, count do
 		local angle = (index + math.random() * 0.5) * 2 * math.pi / count
 		local distance = shape.inner + math.random() * (shape.outer - shape.inner)
 		local x = position.X + math.cos(angle) * distance
 		local z = position.Z + math.sin(angle) * distance
-		local groundY = Ground.heightAt(x, z, position.Y + 5) or (position.Y - BLADE_FALLBACK_DROP)
+		local hit = Ground.raycast(Vector3.new(x, position.Y + 5, z), Vector3.new(0, -50, 0), excluded)
+		local groundY = if hit then hit.Position.Y else position.Y - BLADE_FALLBACK_DROP
 		local height = BLADE_MIN_HEIGHT + math.random() * (BLADE_MAX_HEIGHT - BLADE_MIN_HEIGHT)
 		local blade = Instance.new("Part")
 		blade.Size = Vector3.new(BLADE_WIDTH, height, BLADE_WIDTH)

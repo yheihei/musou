@@ -129,14 +129,21 @@ local function hitOne(player: Player, origin: Vector3, model: Model, damage: num
 	end
 end
 
--- 技の判定を1つ出し、形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる
-local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: Style)
+-- 技の判定を1つ出し、形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる。
+-- once を渡すと、そこに入っている敵には当てず、当てた敵を入れる（同じ時刻の判定を1体に1回だけ当てる技）
+local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: Style, once: { [Model]: boolean }?)
 	local shape = HitShape.fromDef(hit.Shape, Config.Hitbox.Height)
 	local origin = HitShape.rotate(Hitbox.originOf(root), hit.Yaw or 0)
 	style.draw(shape, origin)
 	local damage = Stats.damage(hit.Power, PlayerService.getStats(player).Attack, 0)
 	local position: Vector3 = origin.position
 	for _, target in Hitbox.query(shape, origin, EnemyService.getTargets()) do
+		if once then
+			if once[target.ref] then
+				continue
+			end
+			once[target.ref] = true
+		end
 		if target.delay > 0 then
 			task.delay(target.delay, hitOne, player, position, target.ref, damage, hit, style)
 		else
@@ -154,12 +161,19 @@ local function perform(player: Player, t: number, timeline: ActionState.Timeline
 	if root and timeline.Advance > 0 then
 		Push.move(root, root.CFrame.LookVector, timeline.Advance, timeline.Startup + timeline.Active)
 	end
+	-- 同じ時刻の判定を1体に1回だけ当てる技（HitOnce）は、時刻ごとに当てた敵を覚える
+	local hitOnce: { [number]: { [Model]: boolean } }? = if timeline.HitOnce then {} else nil
 	for _, scheduled in ActionState.hits(timeline) do
+		local once: { [Model]: boolean }? = nil
+		if hitOnce then
+			once = hitOnce[scheduled.at] or {}
+			hitOnce[scheduled.at] = once
+		end
 		local function fire()
 			local _, startedAt = ActionService.current(player)
 			local current = getRoot(player)
 			if startedAt == t and current then
-				doHit(player, current, scheduled.hit, style)
+				doHit(player, current, scheduled.hit, style, once)
 			end
 		end
 		if scheduled.at <= 0 then

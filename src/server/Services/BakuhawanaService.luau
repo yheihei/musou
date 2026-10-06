@@ -8,8 +8,9 @@
 --   もう罠を仕掛けた拠点には重ねて使えず（AlreadyActive）、耐久が割合をもう下回った拠点にも使えない（LowTaikyu）。
 --   発動できなかった枚は未使用のまま残る
 -- - 効果に期限は無い。爆発するか、拠点が制圧されるか、ステージが終わったら罠を外す
--- - 耐久が割合を上から下へ越えたら（KyotenService.taikyuChanged）爆発する。耐久が割合を越える前に一度に 0 まで減って
---   制圧された（KyotenService.seiatsu）ときも、その時に爆発する
+-- - 耐久が割合を上から下へ越えるとき、耐久を書き換える前に爆発する（KyotenService.addTaikyuListener）。
+--   一度に 0 まで減って制圧されるときも、制圧の前に爆発する（爆発で倒れた相手の下忍は、制圧した軍の耐久に数えない）
+-- - 割合を越えずに制圧されたとき（窓口の SetKyotenGun など）は、爆発せずに罠を外す
 -- - 爆発は、拠点の範囲の中の相手の上忍・首領（JoninService.damage）・プレイヤー（ガードできない吹き飛びの攻撃）・
 --   仮の湧き処理の敵（ダメージと吹き飛び）にダメージを与え、相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。
 --   同じ軍は無傷
@@ -60,8 +61,6 @@ type Trap = {
 	effect: Hikei.Effect,
 	-- 仕掛けた軍
 	gun: Gun.Gun,
-	-- 最後に見た耐久
-	taikyu: number,
 	-- 発動者がプレイヤーならその Player
 	player: Player?,
 }
@@ -204,8 +203,7 @@ local function explode(kyotenId: string, trap: Trap)
 	for _, butai in ButaiService.list() do
 		if butai.gun == opponent and KyotenService.contains(kyotenId, butai.position) then
 			local loss = Bakuhawana.heisuLoss(butai.heisu)
-			if loss > 0 then
-				ButaiService.changeHeisu(butai.id, -loss)
+			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss) then
 				kills += loss
 			end
 		end
@@ -280,7 +278,7 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 	if not effect then
 		return false, "NoTarget"
 	end
-	traps[kyotenId] = { effect = effect, gun = context.gun, taikyu = kyoten.taikyu, player = context.player }
+	traps[kyotenId] = { effect = effect, gun = context.gun, player = context.player }
 	-- 目印は仕掛けた軍にだけ見せる。プレイヤーは味方軍なので、敵軍の罠の目印は置かない
 	if context.gun == "Mikatagun" then
 		buildMarker(kyotenId)
@@ -297,32 +295,30 @@ local function finish(effect: Hikei.Effect, _reason: HikeiService.FinishReason)
 	removeMarker(kyotenId)
 end
 
--- 耐久が割合を上から下へ越えたら爆発させる
-local function onTaikyuChanged(kyotenId: string, taikyu: number)
+-- 耐久が割合を上から下へ越えるなら、書き換える前（制圧の前）に爆発させる
+local function onTaikyuChanging(kyotenId: string, before: number, after: number)
 	local trap = traps[kyotenId]
 	local kyoten = KyotenService.get(kyotenId)
 	if not trap or not kyoten or kyoten.gun ~= trap.gun then
-		-- 制圧されて持ち主が変わったときは、onSeiatsu が爆発させる
 		return
 	end
-	local before = trap.taikyu
-	trap.taikyu = taikyu
-	if Bakuhawana.crossed(before, taikyu, Kyoten.maxTaikyu(kyoten.honjin)) then
+	if Bakuhawana.crossed(before, after, Kyoten.maxTaikyu(kyoten.honjin)) then
 		explode(kyotenId, trap)
 	end
 end
 
--- 割合を越える前に一度に制圧されたら、その時に爆発させる
+-- 割合を越えずに制圧されたら（窓口の SetKyotenGun など）、爆発させずに罠を外す
 local function onSeiatsu(kyotenId: string, _gun: Gun.Gun, previous: Gun.Gun)
 	local trap = traps[kyotenId]
 	if trap and trap.gun == previous then
-		explode(kyotenId, trap)
+		traps[kyotenId] = nil
+		HikeiService.finishEffect(trap.effect, "Ended")
 	end
 end
 
 function BakuhawanaService.start()
 	HikeiService.register(HIKEI_ID, { activate = activate, finish = finish })
-	KyotenService.taikyuChanged:Connect(onTaikyuChanged)
+	KyotenService.addTaikyuListener(onTaikyuChanging)
 	KyotenService.seiatsu:Connect(onSeiatsu)
 end
 

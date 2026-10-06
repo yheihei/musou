@@ -66,7 +66,7 @@ export type Target<T> = {
 
 export type Hit<T> = {
 	ref: T,
-	-- 原点からの距離。箱と直線は前への距離、扇は水平の距離、球は直線距離
+	-- 原点からの距離。箱と直線は前への距離、扇と輪は水平の距離、球は直線距離
 	distance: number,
 	-- 当たるまでの時間差（秒）。直線以外は 0
 	delay: number,

@@ -28,6 +28,7 @@
 --   範囲の向き（Yaw。北から時計回りの度）・
 --   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
+-- - 耐久を書き換える前（制圧の前）に、addTaikyuListener で登録した関数を呼ぶ（秘計の爆破罠）
 -- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
 -- - 窓口の WarpToKyoten で、プレイヤーを拠点の中心へ移す（秘計の確認用）
 
@@ -87,6 +88,9 @@ KyotenService.taikyuChanged = taikyuChangedEvent.Event
 local seiatsuEvent = Instance.new("BindableEvent")
 -- 拠点が制圧されたときに、拠点 ID・制圧した軍・元の軍で発火する
 KyotenService.seiatsu = seiatsuEvent.Event
+-- 耐久を書き換える前に呼ぶ関数（秘計の爆破罠が登録する）
+local taikyuListeners: { (id: string, before: number, after: number) -> () } = {}
+
 local loadedEvent = Instance.new("BindableEvent")
 -- 出撃したステージの拠点を作り終えたときに、ステージ ID で発火する
 KyotenService.loaded = loadedEvent.Event
@@ -392,6 +396,22 @@ local function afterChange(entry: Entry, previous: Gun.Gun, captured: boolean)
 	end
 end
 
+-- 耐久を書き換える前に呼ぶ関数を登録する。拠点 ID・今の耐久・書き換えた後の耐久を受け取る。
+-- 制圧の前に呼ぶので、この中で倒れた下忍は、まだ元の軍の拠点の中で倒れたものとして数える
+function KyotenService.addTaikyuListener(listener: (id: string, before: number, after: number) -> ())
+	table.insert(taikyuListeners, listener)
+end
+
+-- 耐久を after に書き換える前に、登録した関数を呼ぶ
+local function beforeChange(entry: Entry, after: number)
+	for _, listener in taikyuListeners do
+		local ok, err = pcall(listener, entry.state.id, entry.state.taikyu, after)
+		if not ok then
+			warn(`KyotenService: {entry.state.id} の耐久を書き換える前の処理が失敗した: {err}`)
+		end
+	end
+end
+
 -- 耐久を amount 減らす。0 になったら相手の軍に制圧させる。制圧したら true。
 -- 拠点が無いか、amount が 0 以下なら何もしない
 function KyotenService.damage(id: string, amount: number): boolean
@@ -399,6 +419,7 @@ function KyotenService.damage(id: string, amount: number): boolean
 	if not entry or amount <= 0 then
 		return false
 	end
+	beforeChange(entry, math.max(entry.state.taikyu - amount, 0))
 	local previous = entry.state.gun
 	local captured = Kyoten.damage(entry.state, amount)
 	afterChange(entry, previous, captured)
@@ -411,6 +432,7 @@ function KyotenService.setTaikyu(id: string, value: number): boolean
 	if not entry then
 		return false
 	end
+	beforeChange(entry, math.clamp(value, 0, Kyoten.maxTaikyu(entry.state.honjin)))
 	local previous = entry.state.gun
 	local captured = Kyoten.setTaikyu(entry.state, value)
 	afterChange(entry, previous, captured)
