@@ -16,7 +16,8 @@
 -- - 落ちている途中で足が地面（真下へ当てた光線。Ground.raycast）に届いたら着地し、仰向けに倒れる（ダウン）。
 --   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
 -- - 飛んでいる間は、前のフレームの位置から今の位置へ光線を当て、物に当たったら手前で止める。床（上を向いた面）なら
---   そこに着地し、壁や天井なら面へ向かう速さを消して、面に沿って滑らせて落とし直す（壁や屋根を通り抜けない）。
+--   そこに着地し、壁や天井なら来た向きへ少し戻って、面へ向かう速さを消して面に沿って滑らせる（壁や屋根を通り抜けない）。
+--   急な面（壁）の上には着地しない。
 --   光線は当たり判定の無い部品（CanCollide が false）には当てない
 -- - 倒された敵は、飛んでいれば着地まで飛び、倒れたまま残る。倒れている間か起き上がる途中で倒されても、倒れたまま残る
 -- - 反応の最中は、近づくことも攻撃することもしない
@@ -153,7 +154,7 @@ local NEAR_RANGE = 10
 local STEP = 3
 -- 飛んでいる敵が床とみなす面の向き（面の法線の上向きの成分の下限）
 local FLOOR_NORMAL_Y = 0.7
--- 壁や天井に当たったとき、当たった位置から面の外へ戻す距離（スタッド）。細い隙間の向こうへ押し出さないよう小さくする
+-- 壁や天井に当たったとき、当たった位置から来た向きへ戻す距離（スタッド）。細い隙間の向こうへ押し出さないよう小さくする
 local CONTACT_OFFSET = 0.1
 -- 足の下の地面を探す光線を、立っているときの高さより少しだけ長くする（ちょうどの長さでは当たり損ねることがあるため）
 local BELOW_MARGIN = 0.1
@@ -326,20 +327,22 @@ local function land(enemy: Enemy, x: number, groundY: number, z: number, now: nu
 	enemy.hanno = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
 end
 
--- 足の下（HumanoidRootPart の中心から立っているときの高さまで）に地面があれば着地させ、true を返す
+-- 足の下（HumanoidRootPart の中心から立っているときの高さまで）に床（上を向いた面）があれば着地させ、true を返す。
+-- 壁のような急な面には着地しない
 local function landIfGrounded(enemy: Enemy, position: vector, now: number, excluded: { Instance }): boolean
 	local below = Ground.raycast(position, vector.create(0, -(enemy.standHeight + BELOW_MARGIN), 0), excluded, true)
-	if not below then
+	if not below or below.Normal.Y < FLOOR_NORMAL_Y then
 		return false
 	end
 	land(enemy, position.x, below.Position.Y, position.z, now)
 	return true
 end
 
--- 飛んでいる途中で壁か天井に当たったら、当たった位置の手前から、面へ向かう速さを消して面に沿って滑らせ直す
-local function slide(enemy: Enemy, state: Hanno, hit: RaycastResult, velocity: vector, now: number)
+-- 飛んでいる途中で壁か天井に当たったら、当たった位置から来た向きへ少し戻り、面へ向かう速さを消して面に沿って滑らせ直す。
+-- 面の向き（法線）でなく来た向きへ戻すので、鋭い角でも反対の壁の中へ入らない。heading は動いてきた向きの単位ベクトル
+local function slide(enemy: Enemy, state: Hanno, hit: RaycastResult, heading: Vector3, velocity: vector, now: number)
 	local normal = hit.Normal
-	local position = hit.Position + normal * CONTACT_OFFSET
+	local position = hit.Position - heading * CONTACT_OFFSET
 	local into = velocity:Dot(normal)
 	local along = if into < 0 then velocity - normal * into else velocity
 	state.trajectory = Trajectory.new(position, along)
@@ -363,7 +366,7 @@ local function updateFlight(enemy: Enemy, state: Hanno, now: number, excluded: {
 				land(enemy, hit.Position.X, hit.Position.Y, hit.Position.Z, now)
 				return
 			end
-			slide(enemy, state, hit, velocity, now)
+			slide(enemy, state, hit, step.Unit, velocity, now)
 			-- 滑らせた先の足の下に地面があれば、そこで着地する（斜めの天井と床の間で床を抜けない）
 			landIfGrounded(enemy, enemy.root.Position, now, excluded)
 			return
