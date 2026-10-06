@@ -379,8 +379,8 @@ end
 local function updateFlight(enemy: Enemy, state: Hanno, now: number, excluded: { Instance })
 	local from = enemy.root.Position
 	if now - (state.flightStartedAt or state.startedAt) > MAX_FLIGHT_TIME then
-		-- 床の無い急な面の間などで着地できないまま時間が過ぎたら、その場に倒れる
-		land(enemy, from.X, from.Y - enemy.standHeight, from.Z, now)
+		-- 床の無い急な面の間などで着地できないまま時間が過ぎたら、その場（今の高さのまま）に倒れる
+		land(enemy, from.X, from.Y - LIE_HEIGHT * enemy.def.Scale, from.Z, now)
 		return
 	end
 	local trajectory = state.trajectory :: Trajectory.Trajectory
