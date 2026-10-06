@@ -9,7 +9,9 @@
 --   発動できなかった枚は未使用のまま残る
 -- - 効果に期限は無い。爆発するか、拠点が制圧されるか、ステージが終わったら罠を外す
 -- - 耐久が割合を上から下へ越えるとき、耐久を書き換える前に爆発する（KyotenService.addTaikyuListener）。
---   一度に 0 まで減って制圧されるときも、制圧の前に爆発する（爆発で倒れた相手の下忍は、制圧した軍の耐久に数えない）
+--   一度に 0 まで減って制圧されるときも、制圧の前に爆発する
+-- - 爆発で減らした部隊の兵数は、拠点の耐久に数えない（ButaiService.changeHeisu の silent）。
+--   兵数の減少の知らせは遅れて届くことがあり、制圧した軍の拠点の耐久に数えると、その場で取り返してしまうため
 -- - 割合を越えずに制圧されたとき（窓口の SetKyotenGun など）は、爆発せずに罠を外す
 -- - 爆発は、拠点の範囲の中の相手の上忍・首領（JoninService.damage）・プレイヤー（ガードできない吹き飛びの攻撃）・
 --   仮の湧き処理の敵（ダメージと吹き飛び）にダメージを与え、相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。
@@ -203,7 +205,7 @@ local function explode(kyotenId: string, trap: Trap)
 	for _, butai in ButaiService.list() do
 		if butai.gun == opponent and KyotenService.contains(kyotenId, butai.position) then
 			local loss = Bakuhawana.heisuLoss(butai.heisu)
-			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss) then
+			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss, true) then
 				kills += loss
 			end
 		end

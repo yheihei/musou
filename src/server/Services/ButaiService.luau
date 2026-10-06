@@ -334,8 +334,9 @@ local function notifyLost(butai: Butai.Butai, loss: number)
 	end
 end
 
--- 兵数を delta だけ増減する。増減した後の兵数を返す。部隊がいなければ nil。減ったら heisuLost で知らせる
-function ButaiService.changeHeisu(id: string, delta: number): number?
+-- 兵数を delta だけ増減する。増減した後の兵数を返す。部隊がいなければ nil。減ったら heisuLost で知らせる。
+-- silent なら heisuLost で知らせない（拠点の耐久に数えない。爆破罠の爆発）
+function ButaiService.changeHeisu(id: string, delta: number, silent: boolean?): number?
 	local butai = find(id)
 	if not butai then
 		return nil
@@ -343,7 +344,9 @@ function ButaiService.changeHeisu(id: string, delta: number): number?
 	local before = butai.heisu
 	local heisu = Butai.changeHeisu(butai, delta)
 	publish(butai)
-	notifyLost(butai, before - heisu)
+	if not silent then
+		notifyLost(butai, before - heisu)
+	end
 	return heisu
 end
 
