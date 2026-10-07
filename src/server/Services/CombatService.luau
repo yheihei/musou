@@ -7,10 +7,14 @@
 -- - 時間はキャラクターの攻撃の速さで伸び縮みさせる（ActionState.scale）
 -- - 判定はタイムラインの Hits の時刻に出し、それまでに行動が変わっていたら出さない
 -- - 前進量は、発生から持続の終わりまでにサーバーの拘束で前へ動かす
--- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。敵はまだ防御を持たない
+-- - 攻撃を当てる相手は、仮の湧き処理の敵（EnemyService）と、敵軍の上忍・首領の個体（JoninKotaiService）。
+--   味方軍の上忍・首領の個体とほかのプレイヤーには当てない
+-- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。仮の湧き処理の敵はまだ防御を持たない。
+--   上忍と首領は被ダメージの受け口（JoninService.damage）が防御で軽減し、倒したら撃破数に数える
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
 --   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
--- - 奥義は刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁。毒手裏剣は、当てた敵を毒にする（EnemyService.poison）
+-- - 奥義は刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁。毒手裏剣は、当てた敵を毒にする
+--   （仮の湧き処理の敵は EnemyService.poison、上忍と首領は JoninService.poison）
 -- - 効果音は、技を出したときに技の音（通常攻撃とジャンプ攻撃は Swing、チャージ攻撃は ChargeKogeki、
 --   奥義は Ougi）を、当てたときに Hit を鳴らす。命中の音は1人の攻撃につき Config.Sound.HitInterval 秒に1回まで
 
@@ -22,6 +26,7 @@ local Actions = require(ReplicatedStorage.Shared.Actions)
 local Characters = require(ReplicatedStorage.Shared.Characters)
 local Combo = require(ReplicatedStorage.Shared.Combo)
 local Config = require(ReplicatedStorage.Shared.Config)
+local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local Sounds = require(ReplicatedStorage.Shared.Sounds)
@@ -29,6 +34,8 @@ local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ActionService = require(script.Parent.ActionService)
 local EnemyService = require(script.Parent.EnemyService)
+local JoninKotaiService = require(script.Parent.JoninKotaiService)
+local JoninService = require(script.Parent.JoninService)
 local PlayerService = require(script.Parent.PlayerService)
 local Hitbox = require(script.Parent.Parent.Combat.Hitbox)
 local Push = require(script.Parent.Parent.Combat.Push)
@@ -56,6 +63,9 @@ type Style = {
 }
 
 local CombatService = {}
+
+-- プレイヤー（味方軍）の攻撃を当てる、上忍と首領の個体の軍
+local AITE_GUN: Gun.Gun = "Tekigun"
 
 local combos: { [Player]: Combo.State } = {}
 -- 命中の音を最後に鳴らした時刻
@@ -113,10 +123,20 @@ local function playHitSound(player: Player, model: Model)
 	SoundPlayer.playAt("Hit", model:GetPivot().Position)
 end
 
-local function hitOne(player: Player, origin: Vector3, model: Model, damage: number, hit: Config.HitDef, style: Style)
-	-- 吹き飛びと打ち上げの軌道は EnemyService が技の吹き飛ばす強さから決める
+-- 攻撃を1体に当てる。attack は攻撃したプレイヤーの攻撃の能力値
+local function hitOne(player: Player, origin: Vector3, model: Model, attack: number, hit: Config.HitDef, style: Style)
+	-- 吹き飛びと打ち上げの軌道は、仮の湧き処理の敵と上忍・首領の個体が、技の吹き飛ばす強さから決める（Combat/Hanno）
 	local reaction = { reaction = hit.Reaction, origin = origin, force = hit.Knockback }
-	if EnemyService.damage(model, damage, player, reaction) then
+	local joninId = JoninKotaiService.idOf(model)
+	local landed
+	if joninId then
+		-- 上忍と首領は、威力（技の倍率 × 攻撃）を被ダメージの受け口が防御で軽減する
+		local amount = JoninService.damage(joninId, hit.Power * attack, player, reaction)
+		landed = amount > 0
+	else
+		landed = EnemyService.damage(model, Stats.damage(hit.Power, attack, 0), player, reaction)
+	end
+	if landed then
 		Vfx.hit(model)
 		playHitSound(player, model)
 		if style.gauge then
@@ -135,9 +155,13 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 	local shape = HitShape.fromDef(hit.Shape, Config.Hitbox.Height)
 	local origin = HitShape.rotate(Hitbox.originOf(root), hit.Yaw or 0)
 	style.draw(shape, origin)
-	local damage = Stats.damage(hit.Power, PlayerService.getStats(player).Attack, 0)
+	local attack = PlayerService.getStats(player).Attack
 	local position: Vector3 = origin.position
-	for _, target in Hitbox.query(shape, origin, EnemyService.getTargets()) do
+	local targets = EnemyService.getTargets()
+	for _, target in JoninKotaiService.getTargets(AITE_GUN) do
+		table.insert(targets, target)
+	end
+	for _, target in Hitbox.query(shape, origin, targets) do
 		if once then
 			if once[target.ref] then
 				continue
@@ -145,9 +169,9 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 			once[target.ref] = true
 		end
 		if target.delay > 0 then
-			task.delay(target.delay, hitOne, player, position, target.ref, damage, hit, style)
+			task.delay(target.delay, hitOne, player, position, target.ref, attack, hit, style)
 		else
-			hitOne(player, position, target.ref, damage, hit, style)
+			hitOne(player, position, target.ref, attack, hit, style)
 		end
 	end
 end
@@ -288,7 +312,12 @@ function CombatService.start()
 	CombatService.registerOugi("PoisonShuriken", {
 		draw = colored(POISON_COLOR),
 		onHit = function(player: Player, model: Model)
-			EnemyService.poison(model, player)
+			local joninId = JoninKotaiService.idOf(model)
+			if joninId then
+				JoninService.poison(joninId, player)
+			else
+				EnemyService.poison(model, player)
+			end
 		end,
 	})
 	-- 石舟斎の無刀取り。周りを打ち上げ、空中の敵をまとめて斬る

@@ -6,8 +6,8 @@
 -- - 対象は発動者自身。プレイヤーにも、敵軍の上忍と首領（#128 の AI）にも同じ倍率を使う
 -- - プレイヤーは、能力値の補正（PlayerService.addModifierProvider）で攻撃と防御を上げ、
 --   被ダメージの窓口（DamageService.addNoFlinchProvider）でのけぞらなくする。吹き飛びと打ち上げはダウンになる
--- - 上忍と首領は、能力値の補正（JoninService.setHikeiHosei）で攻撃と防御を上げる。
---   上忍と首領の個体（#91）はまだ無いので、のけぞらないことは個体ができてから isActive で引いて使う
+-- - 上忍と首領は、能力値の補正（JoninService.setHikeiHosei）で攻撃と防御を上げ、
+--   個体の反応（JoninKotaiService.addNoFlinchProvider）でのけぞらなくする
 -- - 同じ発動者にはもう効果が出ていれば重ねて使えない（AlreadyActive）
 -- - 効果時間が過ぎるか、発動者が倒れるか、大喝で打ち消されるか、ステージが終わったら解除する。
 --   プレイヤーは、生きたまま姿が入れ替わったとき（キャラクターの変更や出現し直し）にも解除する
@@ -21,6 +21,7 @@ local Kishinka = require(ReplicatedStorage.Shared.Kishinka)
 local Stats = require(ReplicatedStorage.Shared.Stats)
 local DamageService = require(script.Parent.DamageService)
 local HikeiService = require(script.Parent.HikeiService)
+local JoninKotaiService = require(script.Parent.JoninKotaiService)
 local JoninService = require(script.Parent.JoninService)
 local PlayerService = require(script.Parent.PlayerService)
 
@@ -152,6 +153,7 @@ function KishinkaService.start()
 	DamageService.addNoFlinchProvider(function(player: Player): boolean
 		return active[userIdOf(player)] ~= nil
 	end)
+	JoninKotaiService.addNoFlinchProvider(KishinkaService.isActive)
 	JoninService.defeated:Connect(endEffectOf)
 	Players.PlayerRemoving:Connect(function(player)
 		endEffectOf(userIdOf(player))

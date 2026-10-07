@@ -8,19 +8,10 @@
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 --
--- 攻撃を受けた敵の反応（数値は Config.luau の EnemyReaction 節）
--- - のけぞりの攻撃を地上で受けると、Flinch 秒だけ動かず攻撃もしない。上忍は JoninFlinchScale を掛けた秒数（0 ならのけぞらない）
--- - 吹き飛びと打ち上げは、物理演算に任せず、初速と重力から決めた軌道（ReplicatedStorage.Shared.Trajectory）で動かす。
---   飛んでいる間は HumanoidRootPart を固定し、フレームごとに軌道の位置へ置く。上忍は JoninScale を掛けた初速で短く飛ぶ
--- - 空中で攻撃を受けたら、その位置から軌道をやり直す（追撃で再び浮く）。空中でののけぞりは浮かせ直す
--- - 落ちている途中で足が地面（真下へ当てた光線。Ground.raycast）に届いたら着地し、仰向けに倒れる（ダウン）。
---   Down 秒たったら起き上がり、GetUp 秒たったら固定を外して動き出す。倒れている間に吹き飛びか打ち上げを受けると、また飛ぶ
--- - 飛んでいる間は、前のフレームの位置から今の位置へ光線を当て、物に当たったら手前で止める。床（上を向いた面）なら
---   そこに着地し、壁や天井なら面から少し離して、面へ向かう速さを消して面に沿って滑らせる（壁や屋根を通り抜けない）。
---   急な面（壁）の上には着地しない。床の無い急な面の間などで MaxFlightTime 秒たっても着地しなければ、その場に倒れる。
---   光線は当たり判定の無い部品（CanCollide が false）には当てない
--- - 倒された敵は、飛んでいれば着地まで飛び、倒れたまま残る。倒れている間か起き上がる途中で倒されても、倒れたまま残る
--- - 反応の最中は、近づくことも攻撃することもしない
+-- 攻撃を受けた敵の反応（のけぞり・吹き飛び・打ち上げ・ダウン・起き上がり）は Combat/Hanno が動かす。
+-- 上忍は Config.luau の EnemyReaction 節の JoninScale を掛けた初速で短く飛び、JoninFlinchScale を掛けた秒数だけのけぞる
+-- （0 ならのけぞらない）。反応の最中は、近づくことも攻撃することもしない。
+-- 上忍と首領の個体（データの上忍と首領。JoninKotaiService）とは別の、仮の湧き処理の敵である
 --
 -- 毒（酉花の奥義「毒手裏剣」。数値は Config.luau の Poison 節）
 -- - 毒の間は Interval 秒ごとに Damage を与える。とどめは毒を付けたプレイヤーの撃破に数える
@@ -29,7 +20,6 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
@@ -41,13 +31,13 @@ local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
-local Trajectory = require(ReplicatedStorage.Shared.Trajectory)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local DamageService = require(script.Parent.DamageService)
 local KukakuService = require(script.Parent.KukakuService)
 local PlayerService = require(script.Parent.PlayerService)
 local StageService = require(script.Parent.StageService)
 local CollisionGroups = require(script.Parent.Parent.CollisionGroups)
+local Hanno = require(script.Parent.Parent.Combat.Hanno)
 
 type EnemyDef = Config.EnemySection
 
@@ -59,20 +49,6 @@ local ENEMY_DEFS: { [string]: EnemyDef } = {
 local ENEMY_COLORS: { [string]: Color3 } = {
 	Genin = Color3.fromRGB(70, 90, 160),
 	Jonin = Color3.fromRGB(170, 40, 40),
-}
-
--- 攻撃を受けた反応の状態。Flinch はのけぞり、Air は吹き飛びか打ち上げで飛んでいる間、
--- Down は着地して倒れている間、GetUp は起き上がり
-type Hanno = {
-	kind: "Flinch" | "Air" | "Down" | "GetUp",
-	-- この状態を始めた時刻（os.clock）
-	startedAt: number,
-	-- この状態が終わる時刻（os.clock）。Air は着地するまで続くので math.huge
-	untilTime: number,
-	-- 飛んでいる間の軌道
-	trajectory: Trajectory.Trajectory?,
-	-- 吹き飛びか打ち上げを受けた時刻（os.clock）。面に沿って滑らせても変えない
-	flightStartedAt: number?,
 }
 
 type Enemy = {
@@ -88,14 +64,8 @@ type Enemy = {
 	spin: number,
 	lastAttack: number,
 	lastHitBy: Player?,
-	-- 立っているときの、地面から HumanoidRootPart の中心までの高さ
-	standHeight: number,
-	-- 攻撃を受けた反応の最中なら、その状態
-	hanno: Hanno?,
-	-- 飛んでいる間と倒れている間に保つ向き（回転だけの CFrame）
-	facing: CFrame,
-	-- 最後に着地した地面の高さ
-	groundY: number?,
+	-- 攻撃を受けた反応（Combat/Hanno）
+	body: Hanno.Body,
 	-- 出てから受けた攻撃の数（確認用）
 	hits: number,
 	-- 最初に攻撃を受けた時刻（os.clock。確認用）
@@ -114,13 +84,7 @@ type Poison = {
 }
 
 -- 攻撃を当てたときの反応の中身
-export type Hit = {
-	reaction: Config.Reaction,
-	-- 攻撃元の位置。吹き飛ぶ向きを決める
-	origin: Vector3,
-	-- 技の吹き飛ばす強さ（Config.luau の HitDef の Knockback）
-	force: number,
-}
+export type Hit = Hanno.Hit
 
 local EnemyService = {}
 
@@ -140,8 +104,6 @@ local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 -- 敵に振る番号。モデルの名前を種類と番号（Genin1、Jonin2…）にする
 local nextNumber = 1
--- 飛んでいるか、倒れているか、起き上がっている敵。フレームごとに動かす（倒された敵も着地するまで入る）
-local reacting: { [Model]: Enemy } = {}
 -- 一定間隔の湧きを続けるか。窓口の SetSpawning で切り替える
 local spawning = true
 -- 敵が近づいて攻撃するか。窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
@@ -154,18 +116,6 @@ local STAND_OFF_MARGIN = 0.5
 -- 囲みの輪の上を回り込む
 local NEAR_RANGE = 10
 local STEP = 3
--- 飛んでいる敵が床とみなす面の向き（面の法線の上向きの成分の下限）
-local FLOOR_NORMAL_Y = 0.7
--- 壁や天井に当たったとき、当たった位置から面の外へ離す距離（スタッド）。細い隙間の向こうへ押し出さないよう小さくする
-local SURFACE_GAP = 0.05
--- 面の外へ離すと別の面にぶつかるとき（鋭い角）に、当たった位置から来た向きへ戻す距離（スタッド）
-local CONTACT_OFFSET = 0.1
--- 面に沿って滑る速さの上限（スタッド/秒）
-local MAX_SLIDE_SPEED = 150
--- 吹き飛びか打ち上げを受けてから、着地しないまま飛んでいられる秒数。過ぎたらその場に倒れる
-local MAX_FLIGHT_TIME = 5
--- 足の下の地面を探す光線を、立っているときの高さより少しだけ長くする（ちょうどの長さでは当たり損ねることがあるため）
-local BELOW_MARGIN = 0.1
 -- 倒れているときの、地面から HumanoidRootPart の中心までの高さ（体の大きさの倍率を掛ける）
 local LIE_HEIGHT = 1
 -- 毒の間に出す緑の煙の名前と色
@@ -236,218 +186,6 @@ local function neighborsOf(enemy: Enemy): { EnemySpacing.Neighbor }
 	return list
 end
 
--- 歩くのをやめさせる
-local function stopWalking(enemy: Enemy)
-	enemy.humanoid:MoveTo(enemy.root.Position)
-	enemy.humanoid:Move(Vector3.zero)
-end
-
--- HumanoidRootPart を固定し、軌道と倒れた姿勢をスクリプトで決められるようにする
-local function anchor(enemy: Enemy)
-	stopWalking(enemy)
-	enemy.root.Anchored = true
-end
-
--- 固定を外し、物理をサーバーに持たせ直す
-local function release(enemy: Enemy)
-	enemy.root.Anchored = false
-	pcall(function()
-		enemy.root:SetNetworkOwner(nil)
-	end)
-end
-
--- 攻撃元 origin の方を向く向き（回転だけ）。向きが決まらなければ今の向き
-local function facingToward(enemy: Enemy, origin: Vector3): CFrame
-	local position = enemy.root.Position
-	local back = Vector3.new(origin.X - position.X, 0, origin.Z - position.Z)
-	if back.Magnitude < 0.01 then
-		return enemy.root.CFrame.Rotation
-	end
-	return CFrame.lookAt(Vector3.zero, back.Unit)
-end
-
--- position から初速 velocity で飛ばす
-local function startFlight(enemy: Enemy, velocity: vector, position: Vector3, attackOrigin: Vector3, now: number)
-	enemy.facing = facingToward(enemy, attackOrigin)
-	anchor(enemy)
-	enemy.hanno = {
-		kind = "Air",
-		startedAt = now,
-		untilTime = math.huge,
-		trajectory = Trajectory.new(position, velocity),
-		flightStartedAt = now,
-	}
-	enemy.root.CFrame = CFrame.new(position) * enemy.facing
-	reacting[enemy.model] = enemy
-end
-
--- 攻撃を受けた反応を始める
-local function react(enemy: Enemy, hit: Hit, now: number)
-	local state = enemy.hanno
-	local airborne = state ~= nil and state.kind == "Air"
-	local params = Config.EnemyReaction
-	local scale = if enemy.kind == "Jonin" then params.JoninScale else 1
-	local position = enemy.root.Position
-	local velocity = Trajectory.initialVelocity(hit.reaction, position - hit.origin, hit.force, airborne, scale)
-	if velocity then
-		-- 倒れているところから飛ばすときは、立っているときの高さから飛ばす
-		local lying = state ~= nil and (state.kind == "Down" or state.kind == "GetUp")
-		local from = if lying
-			then Vector3.new(position.X, (enemy.groundY or position.Y) + enemy.standHeight, position.Z)
-			else position
-		startFlight(enemy, velocity, from, hit.origin, now)
-		return
-	end
-	if hit.reaction ~= "Flinch" or enemy.humanoid.Health <= 0 then
-		return
-	end
-	if state ~= nil and state.kind ~= "Flinch" then
-		return
-	end
-	local seconds = params.Flinch * (if enemy.kind == "Jonin" then params.JoninFlinchScale else 1)
-	if seconds > 0 then
-		enemy.hanno = { kind = "Flinch", startedAt = now, untilTime = now + seconds, trajectory = nil }
-		stopWalking(enemy)
-	end
-end
-
--- 地面の高さ groundY の (x, z) に仰向けに寝かせる
-local function lieDown(enemy: Enemy, x: number, groundY: number, z: number)
-	enemy.groundY = groundY
-	local scale = enemy.def.Scale
-	enemy.root.CFrame = CFrame.new(x, groundY + LIE_HEIGHT * scale, z)
-		* enemy.facing
-		* CFrame.Angles(math.rad(90), 0, 0)
-end
-
--- 倒された敵を倒れたまま残し、消えるのを待つ
-local function stayDown(enemy: Enemy, now: number)
-	enemy.hanno = { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil }
-	reacting[enemy.model] = nil
-end
-
--- 着地して仰向けに倒れる
-local function land(enemy: Enemy, x: number, groundY: number, z: number, now: number)
-	lieDown(enemy, x, groundY, z)
-	if enemy.humanoid.Health <= 0 then
-		stayDown(enemy, now)
-		return
-	end
-	enemy.hanno = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
-end
-
--- 足の下（HumanoidRootPart の中心から立っているときの高さまで）に床（上を向いた面）があれば着地させ、true を返す。
--- 壁のような急な面には着地しない
-local function landIfGrounded(enemy: Enemy, position: vector, now: number, excluded: { Instance }): boolean
-	local below = Ground.raycast(position, vector.create(0, -(enemy.standHeight + BELOW_MARGIN), 0), excluded, true)
-	if not below or below.Normal.Y < FLOOR_NORMAL_Y then
-		return false
-	end
-	land(enemy, position.x, below.Position.Y, position.z, now)
-	return true
-end
-
--- 飛んでいる途中で壁か天井に当たったら、面から少し離し、面へ向かう速さを消して面に沿って滑らせ直す。
--- 面の外へ離すと別の面にぶつかるとき（鋭い角）は、代わりに来た向きへ少し戻す。heading は動いてきた向きの単位ベクトル
-local function slide(
-	enemy: Enemy,
-	state: Hanno,
-	hit: RaycastResult,
-	heading: Vector3,
-	velocity: vector,
-	now: number,
-	excluded: { Instance }
-)
-	local normal = hit.Normal
-	local before = hit.Position - heading * 0.01
-	local position = hit.Position + normal * SURFACE_GAP
-	if Ground.raycast(before, position - before, excluded, true) then
-		position = hit.Position - heading * CONTACT_OFFSET
-	end
-	local into = velocity:Dot(normal)
-	local along = if into < 0 then velocity - normal * into else velocity
-	if along.Magnitude > MAX_SLIDE_SPEED then
-		along = along.Unit * MAX_SLIDE_SPEED
-	end
-	state.trajectory = Trajectory.new(position, along)
-	state.startedAt = now
-	enemy.root.CFrame = CFrame.new(position) * enemy.facing
-end
-
--- 飛んでいる敵を軌道の位置へ置く。途中で物に当たったら止め、落ちている途中で足が地面に届いたら着地させる。
--- excluded は光線を当てない部品（Ground.excludedOf）
-local function updateFlight(enemy: Enemy, state: Hanno, now: number, excluded: { Instance })
-	local from = enemy.root.Position
-	if now - (state.flightStartedAt or state.startedAt) > MAX_FLIGHT_TIME then
-		-- 床の無い急な面の間などで着地できないまま時間が過ぎたら、その場（今の高さのまま）に倒れる
-		land(enemy, from.X, from.Y - LIE_HEIGHT * enemy.def.Scale, from.Z, now)
-		return
-	end
-	local trajectory = state.trajectory :: Trajectory.Trajectory
-	local elapsed = now - state.startedAt
-	local position = Trajectory.positionAt(trajectory, elapsed)
-	local velocity = Trajectory.velocityAt(trajectory, elapsed)
-	local step = position - from
-	if step.Magnitude > 1e-3 then
-		local hit = Ground.raycast(from, step, excluded, true)
-		if hit then
-			if hit.Normal.Y >= FLOOR_NORMAL_Y then
-				land(enemy, hit.Position.X, hit.Position.Y, hit.Position.Z, now)
-				return
-			end
-			slide(enemy, state, hit, step.Unit, velocity, now, excluded)
-			-- 滑らせた先の足の下に地面があれば、そこで着地する（斜めの天井と床の間で床を抜けない）
-			landIfGrounded(enemy, enemy.root.Position, now, excluded)
-			return
-		end
-	end
-	if velocity.y <= 0 then
-		if landIfGrounded(enemy, position, now, excluded) then
-			return
-		end
-		if position.y < workspace.FallenPartsDestroyHeight then
-			-- 奈落に落ちた
-			reacting[enemy.model] = nil
-			enemy.humanoid.Health = 0
-			enemy.model:Destroy()
-			return
-		end
-	end
-	enemy.root.CFrame = CFrame.new(position) * enemy.facing
-end
-
--- 飛んでいる・倒れている・起き上がっている敵を進める。excluded は光線を当てない部品（Ground.excludedOf）
-local function updateReaction(enemy: Enemy, now: number, excluded: { Instance })
-	local state = enemy.hanno
-	if not state then
-		reacting[enemy.model] = nil
-		return
-	end
-	if state.kind ~= "Air" and enemy.humanoid.Health <= 0 then
-		-- 倒れている間か起き上がる途中で倒された敵は、寝かせ直して倒れたまま残す
-		if state.kind == "GetUp" then
-			local position = enemy.root.Position
-			lieDown(enemy, position.X, enemy.groundY or (position.Y - enemy.standHeight), position.Z)
-		end
-		stayDown(enemy, now)
-		return
-	end
-	if state.kind == "Air" then
-		updateFlight(enemy, state, now, excluded)
-	elseif state.kind == "Down" and now >= state.untilTime then
-		-- 起き上がる
-		local position = enemy.root.Position
-		local groundY = enemy.groundY or position.Y
-		enemy.root.CFrame = CFrame.new(position.X, groundY + enemy.standHeight, position.Z) * enemy.facing
-		enemy.hanno =
-			{ kind = "GetUp", startedAt = now, untilTime = now + Config.EnemyReaction.GetUp, trajectory = nil }
-	elseif state.kind == "GetUp" and now >= state.untilTime then
-		enemy.hanno = nil
-		reacting[enemy.model] = nil
-		release(enemy)
-	end
-end
-
 local function removePoisonLook(enemy: Enemy)
 	local fire = enemy.root:FindFirstChild(POISON_NAME)
 	if fire then
@@ -480,18 +218,14 @@ local function updateEnemy(enemy: Enemy, now: number)
 		return
 	end
 	if not aiEnabled then
-		if not enemy.hanno then
+		if not enemy.body.state then
 			enemy.humanoid:Move(Vector3.zero)
 		end
 		return
 	end
-	local hanno = enemy.hanno
-	if hanno then
-		-- のけぞりが明けたら動き出す。飛んでいる・倒れている・起き上がっている間は updateReaction が進める
-		if hanno.kind ~= "Flinch" or now < hanno.untilTime then
-			return
-		end
-		enemy.hanno = nil
+	-- のけぞりが明けたら動き出す。飛んでいる・倒れている・起き上がっている間は Hanno が進める
+	if Hanno.busy(enemy.body, now) then
+		return
 	end
 	local targetPlayer, targetRoot = findNearestTarget(enemy.root.Position)
 	if not targetPlayer or not targetRoot then
@@ -570,6 +304,7 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 	-- ノックバックの挙動を安定させるため物理はサーバーが持つ
 	root:SetNetworkOwner(nil)
 
+	local reaction = Config.EnemyReaction
 	local enemy: Enemy = {
 		kind = kind,
 		model = model,
@@ -580,10 +315,11 @@ local function spawnEnemy(kind: string, x: number, z: number): Model?
 		spin = math.random() * math.pi * 2,
 		lastAttack = 0,
 		lastHitBy = nil,
-		standHeight = humanoid.HipHeight + root.Size.Y / 2,
-		hanno = nil,
-		facing = root.CFrame.Rotation,
-		groundY = nil,
+		body = Hanno.newBody(model, humanoid, root, {
+			lieHeight = LIE_HEIGHT * def.Scale,
+			scale = if kind == "Jonin" then reaction.JoninScale else 1,
+			flinchScale = if kind == "Jonin" then reaction.JoninFlinchScale else 1,
+		}),
 		hits = 0,
 		firstHitAt = nil,
 		poison = nil,
@@ -668,7 +404,7 @@ function EnemyService.damage(model: Model, amount: number, attacker: Player?, hi
 	enemy.firstHitAt = enemy.firstHitAt or os.clock()
 	enemy.humanoid:TakeDamage(amount)
 	if hit then
-		react(enemy, hit, os.clock())
+		Hanno.react(enemy.body, hit, os.clock())
 	end
 	return true
 end
@@ -717,11 +453,11 @@ end
 
 -- 敵をすべて消す。倒れて消える前の敵も消し、撃破数には数えない
 local function removeAll()
-	for model in enemies do
+	for model, enemy in enemies do
+		Hanno.forget(enemy.body)
 		model:Destroy()
 	end
 	table.clear(enemies)
-	table.clear(reacting)
 	aliveCount = 0
 	enemiesFolder:ClearAllChildren()
 	nextNumber = 1
@@ -731,6 +467,8 @@ function EnemyService.start()
 	enemiesFolder = Instance.new("Folder")
 	enemiesFolder.Name = "Enemies"
 	enemiesFolder.Parent = workspace
+	-- 飛んでいる敵の光線を、ほかの敵に当てない
+	Hanno.excludeFolder(enemiesFolder)
 
 	-- 戦闘のフェーズが終わったら片付ける
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
@@ -790,7 +528,7 @@ function EnemyService.start()
 						health = math.round(enemy.humanoid.Health * 10) / 10,
 						hits = enemy.hits,
 						firstHitAgo = if firstHitAt then math.round((now - firstHitAt) * 100) / 100 else nil,
-						hanno = if enemy.hanno then enemy.hanno.kind else nil,
+						hanno = Hanno.kindOf(enemy.body),
 						poison = if poison then math.max(math.round((poison.untilTime - now) * 10) / 10, 0) else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
 					})
@@ -820,8 +558,8 @@ function EnemyService.start()
 			aiEnabled = value == true or value == "true"
 			if not aiEnabled then
 				for _, enemy in enemies do
-					if not enemy.hanno then
-						stopWalking(enemy)
+					if not enemy.body.state then
+						Hanno.stopWalking(enemy.body)
 					end
 				end
 			end
@@ -899,29 +637,6 @@ function EnemyService.start()
 					butaiCount += 1
 					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0)
 				end
-			end
-		end
-	end)
-
-	-- 飛んでいる・倒れている・起き上がっている敵は、フレームごとに進める
-	RunService.Heartbeat:Connect(function()
-		if next(reacting) == nil then
-			return
-		end
-		local now = os.clock()
-		-- 光線を当てない部品の一覧はフレームごとに1回だけ作る。敵どうしには当てない
-		local excluded = Ground.excludedOf({ enemiesFolder })
-		for model, enemy in reacting do
-			if not model.Parent then
-				reacting[model] = nil
-				continue
-			end
-			local ok, err = pcall(updateReaction, enemy, now, excluded)
-			if not ok then
-				reacting[model] = nil
-				enemy.hanno = nil
-				release(enemy)
-				warn(`EnemyService: {model.Name} の反応を進められなかった: {err}`)
 			end
 		end
 	end)

@@ -1,14 +1,16 @@
 --!strict
--- キャラクターの物理の衝突のグループ。敵（仮の湧き処理の下忍と上忍）は、体ではプレイヤーにもほかの敵にもぶつからない。
--- 敵は近づいて攻撃するだけで、体で押したり上に乗ったりしない。ぶつかると、敵がプレイヤーや敵の上に積み重なり、
+-- キャラクターの物理の衝突のグループ。NPC の個体（敵軍の仮の湧き処理の下忍と上忍、両軍の上忍と首領の個体）は、
+-- 体ではプレイヤーにもほかの個体にもぶつからない。
+-- 個体は近づいて攻撃するだけで、体で押したり上に乗ったりしない。ぶつかると、個体がプレイヤーや個体の上に積み重なり、
 -- プレイヤーが囲まれて動けなくなるため。攻撃の当たりは物理でなく計算（HitShape）で決めるので、ぶつからなくても当たる。
 --
--- - グループはプレイヤーのキャラクター（Player）と敵（Enemy）。地面や建物（Default）とはどちらもぶつかる
+-- - グループはプレイヤーのキャラクター（Player）、敵軍の個体（Enemy）、味方軍の個体（Mikatagun）。
+--   地面や建物（Default）とはどれもぶつかる
 -- - プレイヤーどうしはぶつかる
 -- - キャラクターに後から足した部品（武器、見た目の差し替え）も同じグループにする
 -- - 秘計の落石の岩は、使った軍の相手の軍の下忍と上忍の個体だけを止める。プレイヤーは通り抜ける。
---   敵軍の個体を止める岩は RakusekiTekigun（Enemy とだけぶつかる）、味方軍の個体を止める岩は RakusekiMikatagun。
---   味方軍の個体はまだいない（#82）ので、RakusekiMikatagun が止めるキャラクターは今は無い
+--   敵軍の個体を止める岩は RakusekiTekigun（Enemy とだけぶつかる）、味方軍の個体を止める岩は RakusekiMikatagun
+--   （Mikatagun とだけぶつかる）。味方軍の個体は、上忍と首領の個体（#91）だけがいる（下忍は #82）
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local PhysicsService = game:GetService("PhysicsService")
@@ -19,6 +21,7 @@ local CollisionGroups = {}
 
 CollisionGroups.PLAYER = "Player"
 CollisionGroups.ENEMY = "Enemy"
+CollisionGroups.MIKATAGUN = "Mikatagun"
 CollisionGroups.RAKUSEKI_TEKIGUN = "RakusekiTekigun"
 CollisionGroups.RAKUSEKI_MIKATAGUN = "RakusekiMikatagun"
 
@@ -34,6 +37,7 @@ function CollisionGroups.setup()
 		{
 			CollisionGroups.PLAYER,
 			CollisionGroups.ENEMY,
+			CollisionGroups.MIKATAGUN,
 			CollisionGroups.RAKUSEKI_TEKIGUN,
 			CollisionGroups.RAKUSEKI_MIKATAGUN,
 		}
@@ -42,13 +46,23 @@ function CollisionGroups.setup()
 			PhysicsService:RegisterCollisionGroup(name)
 		end
 	end
-	PhysicsService:CollisionGroupSetCollidable(CollisionGroups.ENEMY, CollisionGroups.PLAYER, false)
-	PhysicsService:CollisionGroupSetCollidable(CollisionGroups.ENEMY, CollisionGroups.ENEMY, false)
-	-- 落石の岩はプレイヤーを止めない。敵軍の個体を止める岩だけが Enemy とぶつかる
+	-- 個体は、プレイヤーにも、軍に関係なくほかの個体にもぶつからない
+	for _, kotai in { CollisionGroups.ENEMY, CollisionGroups.MIKATAGUN } do
+		PhysicsService:CollisionGroupSetCollidable(kotai, CollisionGroups.PLAYER, false)
+		PhysicsService:CollisionGroupSetCollidable(kotai, CollisionGroups.ENEMY, false)
+		PhysicsService:CollisionGroupSetCollidable(kotai, CollisionGroups.MIKATAGUN, false)
+	end
+	-- 落石の岩はプレイヤーを止めない。敵軍の個体を止める岩は Enemy とだけ、味方軍の個体を止める岩は Mikatagun とだけぶつかる
 	for _, rock in { CollisionGroups.RAKUSEKI_TEKIGUN, CollisionGroups.RAKUSEKI_MIKATAGUN } do
 		PhysicsService:CollisionGroupSetCollidable(rock, CollisionGroups.PLAYER, false)
 	end
 	PhysicsService:CollisionGroupSetCollidable(CollisionGroups.RAKUSEKI_MIKATAGUN, CollisionGroups.ENEMY, false)
+	PhysicsService:CollisionGroupSetCollidable(CollisionGroups.RAKUSEKI_TEKIGUN, CollisionGroups.MIKATAGUN, false)
+end
+
+-- 軍 gun の NPC の個体のグループ
+function CollisionGroups.kotaiGroupOf(gun: Gun.Gun): string
+	return if gun == "Tekigun" then CollisionGroups.ENEMY else CollisionGroups.MIKATAGUN
 end
 
 -- 軍 blockedGun の個体だけを止める落石の岩のグループ

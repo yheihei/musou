@@ -906,6 +906,13 @@ local SNAPSHOT = {
 		CorpseLifetime = 2,
 		PlayerGap = 2,
 	},
+	Jittaikaken = {
+		AppearRadius = 120,
+		DisappearRadius = 160,
+		Interval = 0.25,
+		HomeRadius = 6,
+		CorpseLifetime = 3,
+	},
 	Kosen = {
 		StartDistance = 30,
 		Zensenhaba = 10,

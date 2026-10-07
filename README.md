@@ -149,7 +149,8 @@ src/
       KyotenService  戦場の拠点の耐久と所属と守備。範囲の中で拠点の軍の下忍が倒れると耐久を減らし、0 で相手の軍に制圧させる。守備を補充し、守備のいない拠点は攻める軍がいる間に耐久を減らす。ReplicatedStorage.Kyoten の Attribute で複製する
       HeitansenService  兵站線と孤立。拠点の所属とつながりから軍ごとの兵站線を求め直し、孤立した拠点の補充を止める。つながりを通れなくする API と、孤立しない拠点の指定の API を持つ。ReplicatedStorage.Tsunagari の Attribute で複製する
       SaishutsugekiService  兵力と再出撃。倒れた出撃メンバーを兵站線につながった最寄りの味方の拠点から再出撃させ、兵力を1使う。兵力0で倒れたら負けにする
-      JoninService  上忍と首領のデータ（能力値・体力・率いる部隊）。上忍は部隊とともに動き、首領は本陣にとどまる。ReplicatedStorage.Jonin の Attribute で複製する
+      JoninService  上忍と首領のデータ（能力値・体力・率いる部隊）と被ダメージの受け口。上忍は部隊とともに動き、首領は本陣にとどまる。ReplicatedStorage.Jonin の Attribute で複製する
+      JoninKotaiService  実体化圏で上忍と首領（両軍）の個体を出し入れする。個体は名札と体力バーを付け、データの位置と体力に合わせる
       HoshinService  上忍が部隊を率いて、配置で決めた方針（攻略・防衛・救援）に沿って部隊の目的地を決める
       MinimapService  ミニマップに出す区画の範囲と、出撃メンバーの位置と向きを Attribute で複製する
       ShihaiAreaService  支配エリア。兵站線につながった拠点の周りを支配エリアとし、その軍の部隊の交戦の押す力と、上忍と首領の攻撃と防御を上げる。ReplicatedStorage.ShihaiArea の Attribute で複製する
@@ -165,7 +166,7 @@ src/
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CombatService  攻撃の中身と当たり判定
-    Combat/    当たり判定と仮エフェクト
+    Combat/    当たり判定・攻撃を受けた個体の反応（Hanno）・仮エフェクト
   client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面・BGM
     Selection/  出撃前の画面（ストーリーとステージ・キャラクター・秘計の選択と出撃ボタン）の欄
     Dialogue    イベントシーンの会話窓
@@ -184,8 +185,8 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - クライアントは Remotes.Action で「攻撃したい」だけを送る。クールダウン・コンボ・当たり判定はサーバーが決める
 - プレイヤーへのダメージは DamageService.damage（攻撃元の位置・威力・反応の種類）を通す。無敵・防御の軽減・のけぞりとダウン・奥義ゲージの増加はそこで決まる
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
-- 敵（仮の湧き処理の下忍と上忍）は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（`src/server/CollisionGroups.luau` の衝突のグループ）。敵が上に積み重なってプレイヤーが動けなくなるのを防ぐ。重ならないよう、敵はプレイヤーの手前（`Config.luau` の Spawner 節の `PlayerGap`）で止まり、ほかの敵とも離れて囲む（立ち位置の計算は `src/shared/EnemySpacing.luau`）。攻撃の当たりは計算で決めるので影響しない
-- 攻撃を受けた敵の反応は EnemyService が決める（数値は `Config.luau` の EnemyReaction 節）。吹き飛びと打ち上げは物理演算に任せず、技の吹き飛ばす強さ（`Knockback`）から決めた初速と重力の軌道（`src/shared/Trajectory.luau`）で、HumanoidRootPart を固定してフレームごとに動かす。空中で受けた攻撃は軌道をやり直し（追撃で浮き直す）、足が地面（`Ground.raycast`）に届いたら仰向けに倒れ（ダウン）、しばらくして起き上がる。飛んでいる間は前のフレームの位置から光線を当て、壁や天井に当たったら面へ向かう速さを消して、面に沿って滑らせる（壁や屋根を通り抜けない。当たり判定の無い部品には当てない）。急な面には着地せず、5 秒たっても着地できなければその場に倒れる。地上でののけぞりは短く止まるだけ。上忍は反応を弱める倍率で短く飛び、のけぞらない。窓口の `DumpEnemies` で受けた攻撃の数（`hits`）と反応の状態（`hanno`）を確かめる。`SetEnemyAI false` で敵の動きと攻撃を止めると、決めた位置の敵に技を当てて確かめられる
+- 敵（仮の湧き処理の下忍と上忍）と、両軍の上忍・首領の個体は、体ではプレイヤーにもほかの個体にもぶつからない（`src/server/CollisionGroups.luau` の衝突のグループ。敵軍は Enemy、味方軍は Mikatagun）。敵は近づいて攻撃するだけである。敵が上に積み重なってプレイヤーが動けなくなるのを防ぐ。重ならないよう、敵はプレイヤーの手前（`Config.luau` の Spawner 節の `PlayerGap`）で止まり、ほかの敵とも離れて囲む（立ち位置の計算は `src/shared/EnemySpacing.luau`）。攻撃の当たりは計算で決めるので影響しない
+- 攻撃を受けた敵（仮の湧き処理の敵と、上忍・首領の個体）の反応は `src/server/Combat/Hanno.luau` が決める（数値は `Config.luau` の EnemyReaction 節）。吹き飛びと打ち上げは物理演算に任せず、技の吹き飛ばす強さ（`Knockback`）から決めた初速と重力の軌道（`src/shared/Trajectory.luau`）で、HumanoidRootPart を固定してフレームごとに動かす。空中で受けた攻撃は軌道をやり直し（追撃で浮き直す）、足が地面（`Ground.raycast`）に届いたら仰向けに倒れ（ダウン）、しばらくして起き上がる。飛んでいる間は前のフレームの位置から光線を当て、壁や天井に当たったら面へ向かう速さを消して、面に沿って滑らせる（壁や屋根を通り抜けない。当たり判定の無い部品には当てない）。急な面には着地せず、5 秒たっても着地できなければその場に倒れる。地上でののけぞりは短く止まるだけ。上忍は反応を弱める倍率で短く飛び、のけぞらない。窓口の `DumpEnemies` で受けた攻撃の数（`hits`）と反応の状態（`hanno`）を確かめる。`SetEnemyAI false` で敵の動きと攻撃を止めると、決めた位置の敵に技を当てて確かめられる
 - 奥義の中身は CombatService.registerOugi でキャラクター定義の `ougi` ごとに登録し、技（判定と時間）は `Config.luau` の Ougi 節の Timelines に置く。酉花の毒手裏剣は周りの12方向へ毒手裏剣を撒き、当てた敵を毒にする（`EnemyService.poison`、数値は `Config.luau` の Poison 節）。近くでは直線が重なるので、技の `HitOnce` で同じ時刻の判定を1体に1回だけ当てる。毒の間は間隔ごとにダメージを与え、とどめは酉花の撃破に数える。窓口の `DumpEnemies` の `poison`（毒の残り秒数）で確かめる。石舟斎の無刀取りは、周りを打ち上げてから高さのある円柱の判定で空中の敵を斬り続け（空中で当たるたびに浮き直す）、最後の一撃で吹き飛ばす。空中への斬撃の段数は Timelines.MutoDori の2つ目の判定の `Repeat` で、`DumpEnemies` の `hits` で数える。金鬼の金遁は、長い溜めの後、輪の判定（`HitShape` の Ring。内側と外側の半径の間に当たる）を内側から外へ広げて打ち上げ、最後の輪で周り全体を吹き飛ばす。`DumpEnemies` の `firstHitAgo`（最初に当たってからの秒数）で、内側の敵ほど先に当たったことを確かめる
 - 撃破数と奥義ゲージは Player の Attribute（`Gekihasu`、本数の `OugiStock`、次の1本までの量の `OugiGauge`）に持たせ、HUD はその変更を購読する
 - 数値調整は `src/shared/Config.luau` に集約している
@@ -197,7 +198,9 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 兵站線は HeitansenService が、拠点の制圧・つながりを通れなくしたとき・戻したとき・孤立しない拠点の指定のたびに求め直す（計算は `src/shared/Heitansen.luau`）。孤立した拠点は守備を補充しない。落石は `HeitansenService.block`、兵糧庫は `setNeverIsolated` を使う。クライアントは拠点の Attribute の `Koritsu`・`NeverIsolated` と、`ReplicatedStorage.Tsunagari` のつながりごとの Configuration の Attribute（`KyotenA`・`KyotenB`・`Heitansen`・`BlockedMikatagun`・`BlockedTekigun`）を読む。窓口の `DumpHeitansen`・`BlockTsunagari`・`UnblockTsunagari`・`SetNeverIsolated`・`ShowHeitansen` で確かめる
 - 落石地点と大火計地域は、区画の目印（`Mejirushi.RakusekiChiten`・`DaikakeiChiiki`）だけで完結させる。出撃したときに HaichiService が読み、構成の拠点とつながりと突き合わせて警告を出す。秘計の発動者から `Config.luau` の Hikei 節の `TargetRange` 以内で一番近い地点は `HaichiService.nearestRakusekiChiten`・`nearestDaikakeiChiiki` で引く。クライアントは仮の目印（旗と地面の枠）を出す。窓口の `DumpHikeiMejirushi`・`FindHikeiChiten` で確かめる
 - 支配エリアは ShihaiAreaService が、兵站線を求め直すたびに求め直す（判定は `src/shared/ShihaiArea.luau`、半径と倍率は `Config.luau` の ShihaiArea 節）。兵站線につながった拠点の中心から半径以内がその拠点の軍の支配エリアで、重なる地点は中心が近い拠点の軍のものにする。孤立した拠点は持たない。自分の軍の支配エリアの中では、部隊の交戦の押す力と、上忍と首領の攻撃と防御が上がる。クライアントは `ReplicatedStorage.ShihaiArea` の拠点ごとの Configuration の Attribute（`Gun`・`Position`・`Radius`）を読む。窓口の `DumpShihaiArea`・`ShowShihaiArea` で確かめる。交戦の押す力と倍率は `DumpKosen`、上忍の攻撃と防御は `DumpJonin` に出る
-- 上忍と首領は JoninService がデータで持つ（計算は `src/shared/Jonin.luau`）。上忍は率いる部隊の位置に合わせ、首領は本陣の中心に置く。能力値は `Config.luau` の Stats 節の Jonin・Shuryo。クライアントは `ReplicatedStorage.Jonin` のキャラクター ID ごとの Configuration の Attribute（`Position`・`Health`・`MaxHealth`・`Gun`・`Butai`・`Shuryo`・`DisplayName`）を読む。窓口の `DumpJonin`・`SetJoninHealth` で確かめる
+- 上忍と首領は JoninService がデータで持つ（計算は `src/shared/Jonin.luau`）。上忍は率いる部隊の位置に合わせ、首領は本陣の中心に置く。能力値は `Config.luau` の Stats 節の Jonin・Shuryo。クライアントは `ReplicatedStorage.Jonin` のキャラクター ID ごとの Configuration の Attribute（`Position`・`Health`・`MaxHealth`・`Gun`・`Butai`・`Shuryo`・`DisplayName`・`Kotai`）を読む。窓口の `DumpJonin`・`SetJoninHealth` で確かめる
+- 上忍と首領の被ダメージの受け口は `JoninService.damage`（威力・攻撃したプレイヤー・反応）の1つで、プレイヤーの攻撃（CombatService）も秘計（大火計・爆破罠）もここを通す。与ダメージは威力を防御で軽減した値（`Stats.damage`）。倒れたら、率いていた部隊の士気を下げ、攻撃したプレイヤーの撃破数に1を足し、`JoninService.defeated`（キャラクター ID と倒したプレイヤー）で知らせる。士気の出来事（上忍の撃破）はこれを受けて ShikiService が知らせる。毒手裏剣の毒もデータの上で進む（`JoninService.poison`）。窓口の `DamageJonin`・`PoisonJonin` で確かめる
+- 上忍と首領（両軍）の個体は JoninKotaiService が実体化圏で出し入れする（判定は `src/shared/Jittaikaken.luau`、半径は `Config.luau` の Jittaikaken 節）。出撃メンバーの誰かが AppearRadius 以内に近づくと、仮の見た目（`Appearance.createModel`）に軍の色の体力バーを付けて地面の高さ（`Ground.placeCharacter`）に出し、全員が DisappearRadius より離れると消す。体力はデータに残るので、離れて戻っても同じ体力で出直す。出ている間は個体の位置をデータへ写し、率いる部隊の位置（首領は本陣の中心）から離れたら歩いて戻る。倒れた個体はその場に倒れ、CorpseLifetime 秒後に消える。敵軍の個体はプレイヤーの攻撃判定の対象になる（`JoninKotaiService.getTargets`）。窓口の `DumpJoninKotai` で確かめる
 - 部隊の目的地は HoshinService が、配置で部隊ごとに決めた方針（攻略・防衛・救援）に沿って `Config.luau` の Hoshin 節の間隔ごとに決め直す（判断は `src/shared/Hoshin.luau`）。攻略はつながりの先の道のりが一番近い相手の拠点、防衛は担当の拠点に近づいた相手の部隊、救援は耐久が減って攻められている自分の軍の拠点を目指し、目指す先が無ければ担当の拠点へ戻る。つながりの経由点をたどり、その軍が通れないつながりは通らない。外から目的地を差し替える API（`HoshinService.overrideKyoten`・`overridePosition`・`release`）を持つ。首領は本陣の範囲にとどまる（`JoninService.setPosition` が範囲の縁へ寄せる）。窓口の `DumpHoshin`・`SetHoshinAI`・`SetHoshin`・`OverrideMokutekichi`・`SetJoninPosition` で確かめる。`SetHoshinAI false` で判断を止めると、方針で動く部隊はその場で止まる。方針で動く部隊を窓口で動かすときは `OverrideMokutekichi` を使う（`MoveButai` は次の判断で目的地が戻る）
 - 敵味方の部隊が近づくと交戦を始め、決着までその場にとどまる。相手は1部隊ずつで、交戦中の敵の手前に来た部隊は待つ。組み方と損害の計算は `src/shared/Kosen.luau`、距離と係数は `Config.luau` の Kosen 節
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる

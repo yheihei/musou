@@ -1,14 +1,21 @@
 --!strict
 -- 上忍と首領をデータで持つ。出撃したステージの配置から作り、上忍は率いる部隊の位置に合わせ、首領は本陣の中心に置く。
 -- 型と体力の計算は ReplicatedStorage.Shared.Jonin、能力値は Config.luau の Stats 節にある。
--- 個体（モデル）と、攻撃による被ダメージと撃破は #91 で作る。
+-- 個体（モデル）の出し入れは JoninKotaiService が行う。体力はここに持つので、個体が消えて出直しても体力は残る。
 --
 -- - 出撃（StageService.started）で作り、決着とロビーのフェーズへの戻りで片付ける。配置の構成が無いステージでは作らない
 -- - 敵軍の上忍と首領の体力は、出撃したときの人数（StartInfo.partySize）で上げる。途中で抜けても変えない
 -- - 上忍の位置は、部隊を進める間隔（Config.luau の Butai 節）ごとに率いる部隊の位置へ合わせる。
 --   戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
 -- - 首領は本陣の範囲にとどまる。setPosition で範囲の外の位置を渡されたら、範囲の縁へ寄せる（Hoshin.clampToRange）
--- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）
+-- - 被ダメージの受け口は damage の1つ。プレイヤーの攻撃（CombatService）も秘計（大火計・爆破罠）もここを通す。
+--   与ダメージは威力を防御で軽減したもの（Stats.damage）。damaged で、個体に反応（吹き飛びなど）を始めさせる
+-- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）。
+--   倒したプレイヤー（攻撃した人）がいれば、その人の撃破数に1を足す。defeated で、倒した人と一緒に知らせる（両軍、首領を含む）
+-- - 毒（酉花の奥義「毒手裏剣」。Config.luau の Poison 節）は、データの上で間隔ごとに体力を減らす。個体が消えても続く。
+--   毒でのとどめは、毒を付けたプレイヤーの撃破に数える。毒の間にもう一度付けると、残りの時間を Duration に戻す
+-- - 個体として出ている上忍（setKotai）は、個体が位置を決める（JoninKotaiService が setPosition で写す）。
+--   部隊への追従はしない。個体が戻る位置は homeOf（率いる部隊の位置、首領は本陣の中心）
 -- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
 --   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
 -- - 部隊を進める間隔ごとに、上忍と首領が自分の軍の支配エリアの中かを確かめ、中なら攻撃と防御を上げる（Jonin.setShihaiArea）。
@@ -16,7 +23,7 @@
 -- - 秘計の効果（鬼神化など）の補正は、各秘計の処理が setHikeiHosei で足し外しする
 -- - 上忍と首領ごとに ReplicatedStorage.Jonin の下へキャラクター ID の名前で Configuration を置き、Attribute で
 --   位置（Position。Vector2 の X と Y にワールドの X と Z）・体力（Health・MaxHealth）・軍（Gun）・
---   率いる部隊（Butai）・首領か（Shuryo）・名前（DisplayName）をクライアントへ複製する
+--   率いる部隊（Butai）・首領か（Shuryo）・名前（DisplayName）・個体として出ているか（Kotai）をクライアントへ複製する
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -35,7 +42,26 @@ local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local HaichiService = require(script.Parent.HaichiService)
+local PlayerService = require(script.Parent.PlayerService)
 local StageService = require(script.Parent.StageService)
+
+-- 攻撃を当てたときの反応の中身（個体が吹き飛ぶ向きと強さ）。Combat/Hanno の Hit と同じ形
+export type Hit = {
+	reaction: Config.Reaction,
+	-- 攻撃元の位置
+	origin: Vector3,
+	-- 技の吹き飛ばす強さ（Config.luau の HitDef の Knockback）
+	force: number,
+}
+
+-- 毒の中身
+type Poison = {
+	-- 毒を付けたプレイヤー
+	attacker: Player?,
+	-- 次に毒のダメージを与える時刻と、毒が切れる時刻（os.clock）
+	nextTick: number,
+	untilTime: number,
+}
 
 local JoninService = {}
 
@@ -47,13 +73,20 @@ local joninList: { Jonin.Jonin } = {}
 local folder: Folder
 -- 首領のキャラクター ID から引く、とどまる本陣の範囲（目印のパーツの中心・向き・大きさ）
 local honjinRangeOf: { [string]: { cframe: CFrame, size: Vector3 } } = {}
+-- 個体として出ている上忍と首領のキャラクター ID
+local kotaiOf: { [string]: boolean } = {}
+-- キャラクター ID から引く、毒の中身
+local poisonOf: { [string]: Poison } = {}
 
 -- 軍と位置を受け、その軍の支配エリアの中かを返す関数（ShihaiAreaService が渡す）
 local shihaiAreaProvider: ((gun: Gun.Gun, position: Jonin.Point) -> boolean)? = nil
 
 local defeatedEvent = Instance.new("BindableEvent")
--- 上忍か首領が倒れたときに、そのキャラクター ID で発火する
+-- 上忍か首領が倒れたときに、そのキャラクター ID と、倒したプレイヤー（いなければ nil）で発火する。両軍、首領も含む
 JoninService.defeated = defeatedEvent.Event
+local damagedEvent = Instance.new("BindableEvent")
+-- damage でダメージを与えたときに、キャラクター ID・与えたダメージ・反応の中身（Hit。無ければ nil）で発火する
+JoninService.damaged = damagedEvent.Event
 
 local function find(id: string): Jonin.Jonin?
 	for _, jonin in joninList do
@@ -90,6 +123,7 @@ local function publish(jonin: Jonin.Jonin)
 	instance:SetAttribute("Position", Vector2.new(jonin.position.x, jonin.position.z))
 	instance:SetAttribute("Health", jonin.health)
 	instance:SetAttribute("MaxHealth", jonin.stats.MaxHealth)
+	instance:SetAttribute("Kotai", kotaiOf[jonin.id] == true)
 end
 
 -- 軍と位置を受け、その軍の支配エリアの中かを返す関数を登録する
@@ -97,8 +131,9 @@ function JoninService.setShihaiAreaProvider(provider: (gun: Gun.Gun, position: J
 	shihaiAreaProvider = provider
 end
 
--- 体力を書き換える。倒れたら、率いていた部隊は残して士気だけ下げる。いなければ false
-function JoninService.setHealth(id: string, value: number): boolean
+-- 体力を書き換える。倒れたら、率いていた部隊は残して士気だけ下げ、毒を外す。
+-- attacker を渡すと、倒れたときにその人の撃破数に1を足す。いなければ false
+function JoninService.setHealth(id: string, value: number, attacker: Player?): boolean
 	local jonin = find(id)
 	if not jonin then
 		return false
@@ -107,27 +142,118 @@ function JoninService.setHealth(id: string, value: number): boolean
 	if defeated then
 		local butai = jonin.butai
 		jonin.butai = nil
+		poisonOf[jonin.id] = nil
 		if butai then
 			ButaiService.loseJonin(butai)
 		end
 	end
 	publish(jonin)
 	if defeated then
-		defeatedEvent:Fire(jonin.id)
+		local credited = if attacker and attacker.Parent then attacker else nil
+		if credited then
+			PlayerService.addGekihasu(credited)
+		end
+		defeatedEvent:Fire(jonin.id, credited)
 	end
 	return true
 end
 
--- 威力 power の攻撃を当てる（秘計の火や爆発など）。与ダメージは威力を防御で軽減したもの（Stats.damage）。
+-- 上忍か首領の被ダメージの受け口。プレイヤーの攻撃も秘計もここを通す。
+-- power は防御で軽減する前の威力（技の倍率 × 攻撃。秘計は Config.luau の威力）。与ダメージは Stats.damage で防御で軽減する。
+-- attacker は攻撃したプレイヤー（倒したら撃破数に数える。NPC の秘計などは nil）、hit を渡すと個体が反応する。
 -- 与えたダメージと、これで倒れたかを返す。いないか倒れていれば 0 と false
-function JoninService.damage(id: string, power: number): (number, boolean)
+function JoninService.damage(id: string, power: number, attacker: Player?, hit: Hit?): (number, boolean)
 	local jonin = find(id)
 	if not jonin or Jonin.isDefeated(jonin) or power <= 0 then
 		return 0, false
 	end
 	local amount = Stats.damage(1, power, jonin.stats.Defense)
-	JoninService.setHealth(id, jonin.health - amount)
+	JoninService.setHealth(id, jonin.health - amount, attacker)
+	damagedEvent:Fire(id, amount, hit)
 	return amount, Jonin.isDefeated(jonin)
+end
+
+-- 毒にする。毒の間は Config.luau の Poison 節の間隔ごとに Damage を与え、とどめは attacker の撃破に数える。
+-- 毒の間にもう一度付けたら、残りの時間を Duration に戻す。いないか倒れていれば false
+function JoninService.poison(id: string, attacker: Player?): boolean
+	local jonin = find(id)
+	if not jonin or Jonin.isDefeated(jonin) then
+		return false
+	end
+	local now = os.clock()
+	local current = poisonOf[id]
+	if current then
+		current.untilTime = now + Config.Poison.Duration
+		current.attacker = attacker or current.attacker
+		return true
+	end
+	poisonOf[id] = {
+		attacker = attacker,
+		nextTick = now + Config.Poison.Interval,
+		untilTime = now + Config.Poison.Duration,
+	}
+	return true
+end
+
+-- 毒の間か
+function JoninService.isPoisoned(id: string): boolean
+	return poisonOf[id] ~= nil
+end
+
+-- 毒の間の上忍と首領に、間隔ごとに毒のダメージを与える。切れた毒は外す
+local function updatePoison(now: number)
+	for id, poison in table.clone(poisonOf) do
+		local jonin = find(id)
+		while
+			jonin
+			and not Jonin.isDefeated(jonin)
+			and now >= poison.nextTick
+			and poison.nextTick <= poison.untilTime
+		do
+			poison.nextTick += Config.Poison.Interval
+			local attacker = if poison.attacker and poison.attacker.Parent then poison.attacker else nil
+			JoninService.setHealth(id, jonin.health - Config.Poison.Damage, attacker)
+		end
+		if not jonin or Jonin.isDefeated(jonin) or now >= poison.untilTime then
+			poisonOf[id] = nil
+		end
+	end
+end
+
+-- 個体として出ているかを書く（JoninKotaiService が呼ぶ）。出ている間は部隊に追従させず、個体の位置を写してもらう
+function JoninService.setKotai(id: string, present: boolean)
+	local jonin = find(id)
+	if present then
+		kotaiOf[id] = true
+	else
+		kotaiOf[id] = nil
+	end
+	if jonin then
+		publish(jonin)
+	end
+end
+
+-- 個体として出ているか
+function JoninService.isKotai(id: string): boolean
+	return kotaiOf[id] == true
+end
+
+-- 個体が戻る位置。率いる部隊があればその位置、首領は本陣の中心、部隊を失った上忍は今の位置。いなければ nil
+function JoninService.homeOf(id: string): Jonin.Point?
+	local jonin = find(id)
+	if not jonin then
+		return nil
+	end
+	local butai = if jonin.butai then ButaiService.get(jonin.butai) else nil
+	if butai then
+		return { x = butai.position.x, z = butai.position.z }
+	end
+	local range = if jonin.shuryo then honjinRangeOf[jonin.id] else nil
+	if range then
+		local center = range.cframe.Position
+		return { x = center.X, z = center.Z }
+	end
+	return { x = jonin.position.x, z = jonin.position.z }
 end
 
 -- 秘計 hikeiId の効果の補正を足すか（modifiers を渡す）、外す（nil を渡す）。いなければ false
@@ -162,6 +288,8 @@ end
 local function clear()
 	table.clear(joninList)
 	table.clear(honjinRangeOf)
+	table.clear(kotaiOf)
+	table.clear(poisonOf)
 	folder:ClearAllChildren()
 end
 
@@ -199,7 +327,8 @@ local function onStarted(info: StageService.StartInfo)
 	end
 end
 
--- 倒れていない上忍を、率いる部隊の位置へ合わせる。戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す
+-- 倒れていない上忍を、率いる部隊の位置へ合わせる。戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す。
+-- 個体として出ている上忍は、個体が位置を決めるので合わせない
 local function follow()
 	local battle = StageService.getPhase() == "Battle"
 	for _, jonin in joninList do
@@ -213,6 +342,8 @@ local function follow()
 				jonin.butai = nil
 				publish(jonin)
 			end
+		elseif kotaiOf[jonin.id] then
+			continue
 		elseif butai.position.x ~= jonin.position.x or butai.position.z ~= jonin.position.z then
 			jonin.position = { x = butai.position.x, z = butai.position.z }
 			publish(jonin)
@@ -273,11 +404,14 @@ local function round(value: number): number
 	return math.round(value * 10) / 10
 end
 
+-- 窓口の DamageJonin で反応を付けるときの、吹き飛ばす強さ（技の Knockback と同じ。刀セットの C1 ほど）
+local DEBUG_KNOCKBACK = 50
+
 local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpJonin",
 		"",
-		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・秘計の効果の補正・位置）を JSON で返す",
+		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・秘計の効果の補正・個体として出ているか・毒の残り秒数・位置）を JSON で返す",
 		function()
 			local result = {}
 			for _, jonin in joninList do
@@ -286,6 +420,7 @@ local function registerDebugCommands()
 					table.insert(hikeiHosei, hikeiId)
 				end
 				table.sort(hikeiHosei)
+				local poison = poisonOf[jonin.id]
 				table.insert(result, {
 					id = jonin.id,
 					name = jonin.displayName,
@@ -299,6 +434,8 @@ local function registerDebugCommands()
 					defense = round(jonin.stats.Defense),
 					shihaiArea = jonin.shihaiArea,
 					hikeiHosei = if #hikeiHosei > 0 then hikeiHosei else nil,
+					kotai = if kotaiOf[jonin.id] then true else nil,
+					poison = if poison then math.max(round(poison.untilTime - os.clock()), 0) else nil,
 					position = { round(jonin.position.x), round(jonin.position.z) },
 				})
 			end
@@ -352,6 +489,54 @@ local function registerDebugCommands()
 			return `{jonin.displayName} の体力を {jonin.health} / {jonin.stats.MaxHealth} にした{state}`
 		end
 	)
+	DebugCommand.register(
+		"DamageJonin",
+		`<キャラクター ID> <威力> [プレイヤー名] [{table.concat(
+			{ "None", "Flinch", "Knockback", "Launch" },
+			"|"
+		)}]`,
+		"被ダメージの受け口（damage）で上忍か首領に攻撃を当てる。威力は防御で軽減する前の値。プレイヤー名を渡すと、その人の攻撃として"
+			.. "撃破数に数え、反応（既定は None）の攻撃元をその人の位置にする（確認用）",
+		function(id, value, playerName, reaction)
+			local power = DebugCommand.toNumber(value, "威力")
+			local jonin = if type(id) == "string" then find(id) else nil
+			if not jonin then
+				return `{tostring(id)} は出撃したステージの上忍と首領にいない`
+			end
+			local player = if playerName ~= nil then DebugCommand.findPlayer(playerName) else nil
+			local kind = reaction or "None"
+			if not table.find({ "None", "Flinch", "Knockback", "Launch" }, kind) then
+				error(`反応は None、Flinch、Knockback、Launch のどれか（{tostring(kind)}）`, 0)
+			end
+			local hit: Hit? = nil
+			local root = player
+				and player.Character
+				and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if kind ~= "None" then
+				local origin = if root then root.Position else Vector3.new(jonin.position.x, 0, jonin.position.z + 5)
+				hit = { reaction = kind :: Config.Reaction, origin = origin, force = DEBUG_KNOCKBACK }
+			end
+			local before = jonin.health
+			local amount, defeated = JoninService.damage(jonin.id, power, player, hit)
+			local state = if defeated then "（倒れた）" else ""
+			return `{jonin.displayName} に {round(amount)} のダメージ（体力 {round(before)} → {round(
+				jonin.health
+			)}）{state}`
+		end
+	)
+	DebugCommand.register(
+		"PoisonJonin",
+		"<キャラクター ID> [プレイヤー名]",
+		"上忍か首領を毒にする。プレイヤー名を渡すと、毒でのとどめをその人の撃破に数える（確認用）",
+		function(id, playerName)
+			local player = if playerName ~= nil then DebugCommand.findPlayer(playerName) else nil
+			if type(id) ~= "string" or not JoninService.poison(id, player) then
+				return `{tostring(id)} は出撃したステージの上忍と首領にいないか、倒れている`
+			end
+			local jonin = find(id) :: Jonin.Jonin
+			return `{jonin.displayName} を毒にした（{Config.Poison.Duration} 秒）`
+		end
+	)
 end
 
 function JoninService.start()
@@ -386,6 +571,10 @@ function JoninService.start()
 			local fightOk, fightErr = pcall(fightJonin, now - last)
 			if not fightOk then
 				warn(`JoninService: 上忍同士を戦わせられなかった: {fightErr}`)
+			end
+			local poisonOk, poisonErr = pcall(updatePoison, now)
+			if not poisonOk then
+				warn(`JoninService: 毒のダメージを与えられなかった: {poisonErr}`)
 			end
 			last = now
 		end

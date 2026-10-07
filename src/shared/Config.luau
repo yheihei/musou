@@ -194,6 +194,15 @@ export type SpawnerSection = {
 	PlayerGap: number,
 }
 
+-- 実体化圏。プレイヤーの周りで、上忍と首領を個体として出す範囲と、個体の動き
+export type JittaikakenSection = {
+	AppearRadius: number,
+	DisappearRadius: number,
+	Interval: number,
+	HomeRadius: number,
+	CorpseLifetime: number,
+}
+
 export type KosenSection = {
 	StartDistance: number,
 	Zensenhaba: number,
@@ -382,6 +391,7 @@ export type Config = {
 	Jonin: EnemySection,
 	EnemyReaction: EnemyReactionSection,
 	Spawner: SpawnerSection,
+	Jittaikaken: JittaikakenSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
 	Hoshin: HoshinSection,
@@ -1388,6 +1398,16 @@ local Config: Config = {
 		-- 敵がプレイヤーの手前で止まるときの、敵の体の縁からプレイヤーの中心までの距離（スタッド）。
 		-- 敵はプレイヤーと重ならずに周りを囲む（攻撃が届く距離より手前で止まる）
 		PlayerGap = 2,
+	},
+
+	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）を個体として出し、全員のプレイヤーから離れたらデータに戻す。
+	-- 出現と消滅の半径に差を付け、縁を行き来しても出入りを繰り返さない。判定は Jittaikaken.luau にある（下忍は #76）
+	Jittaikaken = {
+		AppearRadius = 120, -- プレイヤーからこの距離（スタッド）まで近づいた上忍と首領を個体で出す
+		DisappearRadius = 160, -- 全員のプレイヤーからこの距離より離れた個体を消す。体力はデータに残る
+		Interval = 0.25, -- 出し入れを確かめ、個体の位置をデータへ写す間隔（秒）
+		HomeRadius = 6, -- 個体が戻る位置（率いる部隊の位置、首領は本陣）からこの距離（スタッド）より離れたら歩いて戻る
+		CorpseLifetime = 3, -- 倒れた個体を消すまでの秒数
 	},
 
 	-- 交戦。部隊どうしの押し合いの損害を Kosen.luau で計算する

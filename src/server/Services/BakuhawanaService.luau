@@ -13,10 +13,11 @@
 -- - 爆発で減らした部隊の兵数は、拠点の耐久に数えない（ButaiService.changeHeisu の silent）。
 --   兵数の減少の知らせは遅れて届くことがあり、制圧した軍の拠点の耐久に数えると、その場で取り返してしまうため
 -- - 割合を越えずに制圧されたとき（窓口の SetKyotenGun など）は、爆発せずに罠を外す
--- - 爆発は、拠点の範囲の中の相手の上忍・首領（JoninService.damage）・プレイヤー（ガードできない吹き飛びの攻撃）・
---   仮の湧き処理の敵（ダメージと吹き飛び）にダメージを与え、相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。
---   同じ軍は無傷
--- - 発動者がプレイヤーなら、倒した上忍・首領と減らした兵数を撃破数に足す。仮の湧き処理の敵のとどめも発動者の撃破に数える
+-- - 爆発は、拠点の範囲の中の相手の上忍・首領（被ダメージの受け口 JoninService.damage。個体は吹き飛ぶ）・
+--   プレイヤー（ガードできない吹き飛びの攻撃）・仮の湧き処理の敵（ダメージと吹き飛び）にダメージを与え、
+--   相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。同じ軍は無傷
+-- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す。倒した上忍・首領は受け口が、仮の湧き処理の敵はとどめとして、
+--   発動者の撃破に数える
 -- - 罠の目印（樽と「爆破罠」の札）は、仕掛けた軍にだけ見せる。プレイヤーは味方軍なので、味方軍が仕掛けた罠だけ置く
 -- - 爆発の仮の見た目（Explosion と広がる火の玉）を拠点の中心に出す
 
@@ -187,6 +188,8 @@ local function explode(kyotenId: string, trap: Trap)
 	local opponent = Gun.opponentOf(trap.gun)
 	local power = Config.Bakuhawana.Power
 	local center = KyotenService.positionOf(kyotenId)
+	local player = trap.player
+	local attacker = if player and player.Parent then player else nil
 	local kills = 0
 
 	for _, jonin in JoninService.list() do
@@ -195,10 +198,11 @@ local function explode(kyotenId: string, trap: Trap)
 			and not Jonin.isDefeated(jonin)
 			and KyotenService.contains(kyotenId, jonin.position)
 		then
-			local _, defeated = JoninService.damage(jonin.id, power)
-			if defeated then
-				kills += 1
-			end
+			-- 個体として出ていれば、拠点の中心から吹き飛ぶ。倒した上忍と首領は、受け口が発動者の撃破数に数える
+			local hit = if center
+				then { reaction = "Knockback" :: Config.Reaction, origin = center, force = Config.Bakuhawana.Knockback }
+				else nil
+			JoninService.damage(jonin.id, power, attacker, hit)
 		end
 	end
 
@@ -226,10 +230,8 @@ local function explode(kyotenId: string, trap: Trap)
 		end
 	end
 
-	local player = trap.player
 	if opponent == EnemyService.GUN and center then
 		local amount = Stats.damage(1, power, 0)
-		local attacker = if player and player.Parent then player else nil
 		for _, target in EnemyService.getTargets() do
 			local position: Vector3 = target.position
 			if KyotenService.contains(kyotenId, { x = position.X, z = position.Z }) then

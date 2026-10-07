@@ -6,13 +6,14 @@
 --
 -- - 近くに大火計地域が無ければ発動できず（NoTarget）、枚は未使用のまま残る。地域の中に相手がいなくても発動する
 -- - 地域の中かは、地域の目印のパーツの中心・向き・大きさで水平だけを見る
--- - 上忍と首領は、威力を防御で軽減したダメージを受ける（JoninService.damage）
+-- - 上忍と首領は、威力を防御で軽減したダメージを受ける（被ダメージの受け口 JoninService.damage。反応は無い）。
+--   発動者がプレイヤーなら、倒した上忍と首領は受け口が発動者の撃破数に数える
 -- - 部隊は兵数を減らす（ButaiService.changeHeisu）。潜んでいる伏兵部隊も地域の中にいれば焼く。
 --   減った兵数は拠点の耐久にも数える（ButaiService.heisuLost を KyotenService が受ける）
 -- - プレイヤー（敵軍が使ったとき）は、被ダメージの窓口でガードできない吹き飛びの攻撃を受ける
 -- - 仮の湧き処理の敵（味方軍が使ったとき）は、威力のダメージを受ける。発動者がプレイヤーなら、とどめを発動者の撃破に数える
 --   （発動者がプレイヤーでなければ、誰の撃破にもしない）
--- - 発動者がプレイヤーなら、倒した上忍・首領と減らした兵数を撃破数に足す
+-- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す
 -- - 同じ軍は対象にしない（味方を巻き込まない）
 -- - 地域の中に、炎の仮の見た目を FireTime 秒だけ出す
 
@@ -118,6 +119,7 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 	end
 	local opponent = Gun.opponentOf(context.gun)
 	local power = Config.Daikakei.Power
+	local player = context.player
 	local kills = 0
 
 	for _, jonin in JoninService.list() do
@@ -126,10 +128,8 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 			and not Jonin.isDefeated(jonin)
 			and insideOf(chiiki, jonin.position.x, jonin.position.z)
 		then
-			local _, defeated = JoninService.damage(jonin.id, power)
-			if defeated then
-				kills += 1
-			end
+			-- 倒した上忍と首領は、受け口が発動者の撃破数に数える
+			JoninService.damage(jonin.id, power, player)
 		end
 	end
 
@@ -157,7 +157,6 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 		end
 	end
 
-	local player = context.player
 	if opponent == EnemyService.GUN then
 		local amount = Stats.damage(1, power, 0)
 		for _, target in EnemyService.getTargets() do
