@@ -140,6 +140,8 @@ type Kotai = {
 	run: Run?,
 	-- 最後に型の判定を当てた結果（確認用）
 	lastHit: HitRecord?,
+	-- 最後に反応の最中でなく立っていた水平の位置（奈落に落ちたときに戻す先）
+	groundPoint: Kata.Point?,
 	-- モーションの ID から引く、読み込んだトラック
 	tracks: { [number]: AnimationTrack },
 }
@@ -356,12 +358,15 @@ local function syncHealth(kotai: Kotai, jonin: Jonin.Jonin)
 	end
 end
 
--- 奈落に落ちた個体を消し、データの位置を戻る位置へ戻す
+-- 奈落に落ちた個体を消し、データの位置を最後に立っていた位置（無ければ戻る位置）へ戻す。
+-- 部隊を失った上忍の戻る位置は今の位置（奈落の上）なので、立っていた位置を先に使う
 local function onFell(id: string)
+	local kotai = kotaiOf[id]
+	local point = if kotai then kotai.groundPoint else nil
 	despawn(id)
-	local home = JoninService.homeOf(id)
-	if home then
-		JoninService.setPosition(id, home)
+	local back = point or JoninService.homeOf(id)
+	if back then
+		JoninService.setPosition(id, back)
 	end
 end
 
@@ -381,7 +386,14 @@ local function spawn(jonin: Jonin.Jonin, now: number): Kotai?
 	if failedAt and now - failedAt < SPAWN_RETRY_TIME then
 		return nil
 	end
-	local model = templateOf(jonin.id):Clone()
+	-- 雛形の作成（HumanoidDescription の読み込み）は失敗することがある。失敗したら間を空けて作り直す
+	local ok, template = pcall(templateOf, jonin.id)
+	if not ok then
+		warn(`JoninKotaiService: {jonin.id} の個体の見た目を作れなかった: {template}`)
+		spawnFailedAt[jonin.id] = now
+		return nil
+	end
+	local model = (template :: Model):Clone()
 	model.Name = jonin.id
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
@@ -389,7 +401,8 @@ local function spawn(jonin: Jonin.Jonin, now: number): Kotai?
 	humanoid.Health = jonin.health
 	humanoid.WalkSpeed = jonin.stats.WalkSpeed
 	humanoid.BreakJointsOnDeath = false
-	Appearance.attachHealthBar(model, Colors.Gun[jonin.gun])
+	-- 名札と体力バーは、個体が消える距離まで見せる
+	Appearance.attachHealthBar(model, Colors.Gun[jonin.gun], Config.Jittaikaken.DisappearRadius)
 	model:SetAttribute("Gun", jonin.gun)
 	CollisionGroups.apply(model, CollisionGroups.kotaiGroupOf(jonin.gun))
 	if not Ground.placeCharacter(model, jonin.position.x, jonin.position.z) then
@@ -428,6 +441,7 @@ local function spawn(jonin: Jonin.Jonin, now: number): Kotai?
 		nextKataAt = Kata.nextTime(now, random:NextNumber()),
 		run = nil,
 		lastHit = nil,
+		groundPoint = nil,
 		tracks = {},
 	}
 	kotaiOf[id] = kotai
@@ -664,6 +678,7 @@ local function updateKotai(kotai: Kotai, jonin: Jonin.Jonin, now: number)
 		cancelRun(kotai, now)
 		return
 	end
+	kotai.groundPoint = { x = position.X, z = position.Z }
 	if kotai.run then
 		-- 型の最中は動かない
 		return
@@ -691,15 +706,18 @@ end
 local function onDamaged(id: string, _amount: number, hit: JoninService.Hit?, attacker: Player?)
 	local kotai = kotaiOf[id]
 	local jonin = JoninService.get(id)
-	if not kotai or kotai.dying or not jonin then
+	if not kotai or not jonin then
 		return
 	end
-	syncHealth(kotai, jonin)
 	local now = os.clock()
-	if attacker then
-		kotai.lastAttacker = attacker
-		kotai.lastAttackedAt = now
+	if not kotai.dying then
+		syncHealth(kotai, jonin)
+		if attacker then
+			kotai.lastAttacker = attacker
+			kotai.lastAttackedAt = now
+		end
 	end
+	-- 止めの一撃（倒れた後に届く）でも飛ばす。倒れた個体は着地して倒れたまま残る（Combat/Hanno）
 	if hit then
 		Hanno.react(kotai.body, hit, now, isNoFlinch(id))
 		if Hanno.busy(kotai.body, now) then
@@ -748,6 +766,30 @@ local function decideHikei(jonin: Jonin.Jonin, kotai: Kotai?, now: number)
 	end
 end
 
+-- 上忍か首領の個体を出し入れし、出ていれば進め、敵軍なら秘計の判断を呼ぶ。points は出撃メンバーの水平の位置
+local function step(jonin: Jonin.Jonin, points: { Jittaikaken.Point }, now: number)
+	local kotai: Kotai? = kotaiOf[jonin.id]
+	if Jonin.isDefeated(jonin) then
+		if kotai and not kotai.dying then
+			onDefeated(jonin.id)
+		end
+		return
+	end
+	local present = kotai ~= nil and not kotai.dying
+	local distance = Jittaikaken.nearestDistance(jonin.position, points)
+	local appear = Jittaikaken.shouldAppear(present, distance)
+	if appear and not kotai then
+		kotai = spawn(jonin, now)
+	elseif not appear and kotai and not kotai.dying then
+		despawn(jonin.id)
+		kotai = nil
+	end
+	if kotai and not kotai.dying then
+		updateKotai(kotai, jonin, now)
+	end
+	decideHikei(jonin, kotai, now)
+end
+
 -- 戦闘のフェーズの間、上忍と首領の個体を出し入れし、出ている個体を進め、敵軍の秘計の判断を呼ぶ
 local function tick()
 	if StageService.getPhase() ~= "Battle" then
@@ -760,27 +802,14 @@ local function tick()
 	local points = memberPoints()
 	local alive: { [string]: boolean } = {}
 	for _, jonin in JoninService.list() do
-		local kotai = kotaiOf[jonin.id]
-		if Jonin.isDefeated(jonin) then
-			if kotai and not kotai.dying then
-				onDefeated(jonin.id)
-			end
-			continue
+		if not Jonin.isDefeated(jonin) then
+			alive[jonin.id] = true
 		end
-		alive[jonin.id] = true
-		local present = kotai ~= nil and not kotai.dying
-		local distance = Jittaikaken.nearestDistance(jonin.position, points)
-		local appear = Jittaikaken.shouldAppear(present, distance)
-		if appear and not kotai then
-			kotai = spawn(jonin, now)
-		elseif not appear and kotai and not kotai.dying then
-			despawn(jonin.id)
-			kotai = nil
+		-- 1人の失敗で、ほかの上忍と首領の出し入れが止まらないよう、失敗は警告にして次へ進む
+		local ok, err = pcall(step, jonin, points, now)
+		if not ok then
+			warn(`JoninKotaiService: {jonin.id} の個体を進められなかった: {err}`)
 		end
-		if kotai and not kotai.dying then
-			updateKotai(kotai, jonin, now)
-		end
-		decideHikei(jonin, kotai, now)
 	end
 	-- データから消えた上忍と首領の個体を消す（倒れて消えるのを待つ個体は残す）
 	for id, kotai in table.clone(kotaiOf) do
@@ -929,6 +958,17 @@ function JoninKotaiService.start()
 
 	JoninService.damaged:Connect(onDamaged)
 	JoninService.defeated:Connect(onDefeated)
+	-- 出撃したら、上忍と首領の個体の雛形を先に作っておく（初めて出すときに出し入れを待たせない）
+	StageService.started:Connect(function()
+		task.spawn(function()
+			for _, jonin in JoninService.list() do
+				local ok, err = pcall(templateOf, jonin.id)
+				if not ok then
+					warn(`JoninKotaiService: {jonin.id} の個体の見た目を作れなかった: {err}`)
+				end
+			end
+		end)
+	end)
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
 		if next ~= "Battle" then
 			for id in table.clone(kotaiOf) do

@@ -96,8 +96,9 @@ function Appearance.attachNameTag(model: Model, characterId: string)
 	tag.Parent = head
 end
 
--- 名札の下に体力バーを足す。color はバーの色（軍の色など）。名札が無ければ何もしない。付け直すときは古いバーを外す
-function Appearance.attachHealthBar(model: Model, color: Color3)
+-- 名札の下に体力バーを足す。color はバーの色（軍の色など）。名札が無ければ何もしない。付け直すときは古いバーを外す。
+-- maxDistance を渡すと、名札とバーを見せる距離（スタッド）をその値にする
+function Appearance.attachHealthBar(model: Model, color: Color3, maxDistance: number?)
 	local head = model:FindFirstChild("Head")
 	local tag = head and head:FindFirstChild(NAME_TAG) :: BillboardGui?
 	if not tag then
@@ -106,6 +107,9 @@ function Appearance.attachHealthBar(model: Model, color: Color3)
 	local old = tag:FindFirstChild(HEALTH_BAR)
 	if old then
 		old:Destroy()
+	end
+	if maxDistance then
+		tag.MaxDistance = maxDistance
 	end
 	-- 名札の文字を上に寄せ、その下にバーを置く
 	tag.Size = UDim2.fromOffset(tag.Size.X.Offset, NAME_HEIGHT + BAR_GAP + BAR_HEIGHT)
