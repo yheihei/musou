@@ -17,6 +17,7 @@
 --   通れない軍（BlockedMikatagun・BlockedTekigun）・KyotenA から KyotenB へたどる経由点（KeiyutenCount と
 --   Keiyuten1、Keiyuten2…。Vector2 の X と Y にワールドの X と Z）を複製する
 -- - 求め直したら changed で知らせる
+-- - つながりが入っている兵站線の軍は gunOf で引ける（秘計の判断の落石）
 -- - 窓口の ShowHeitansen で、つながりの道筋を、入っている兵站線の軍の色の線で出す（確認用）
 
 local HttpService = game:GetService("HttpService")
@@ -108,6 +109,17 @@ function HeitansenService.connectedOf(gun: Gun.Gun): { string }
 		end
 	end
 	return ids
+end
+
+-- つながりが入っている兵站線の軍（つながりの Attribute の Heitansen と同じ。秘計の判断の落石が見る）。
+-- どちらの兵站線にも入っていないか、出撃したステージにそのつながりが無ければ nil
+function HeitansenService.gunOf(kyotenA: string, kyotenB: string): Gun.Gun?
+	local current = result
+	local tsunagari = findTsunagari(kyotenA, kyotenB)
+	if not current or not tsunagari then
+		return nil
+	end
+	return Heitansen.gunOf(current, tsunagari)
 end
 
 -- 地面から少し浮かせた位置

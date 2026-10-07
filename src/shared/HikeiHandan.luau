@@ -10,6 +10,14 @@
 --   - 鬼神化は、率いる部隊が交戦中のときか、首領の体力が上限の ShuryoHealthRate 以下のとき。もう鬼神化していれば使わない
 --   - 大喝は、大喝の半径以内に、強化の秘計の効果中の相手（プレイヤーか上忍・首領）がいるとき
 --   - 挑発は、挑発の半径以内に、誘い出されていない相手の上忍（首領は除く）がいるとき
+--   - 伏兵は、自分の軍の拠点の範囲の中にいて、その拠点の中心から FukuheiDistance 以内に相手の部隊かプレイヤーが
+--     来たとき（迫ったとき）。その拠点の範囲の中に自分の軍の伏兵部隊がもう潜んでいれば、重ねて使わない
+--   - 落石は、落石の届く距離（Hikei 節の TargetRange.Rakuseki）以内で一番近い落石地点の区間（つながり）が、
+--     相手の軍の兵站線に入っているとき。その地点に岩がもうあれば使わない（重ねて落とせない）
+--   - 大火計は、大火計の届く距離（TargetRange.Daikakei）以内で一番近い大火計地域の中の相手が DaikakeiAite 以上のとき
+--   - 大火計の相手は、プレイヤー・上忍・首領・部隊を1つずつ数える（上忍が率いる部隊は、上忍と部隊で2つ）
+--   - 伏兵と大火計は、潜んでいる伏兵部隊（見つからない）と兵数の無い部隊を相手に入れない
+--   - 一番近い落石地点と大火計地域は、サーバーが発動の処理と同じ選び方で選んで様子に入れる（判断と発動が同じ地点を選ぶ）
 --   - 兵糧庫は、中にいる自分の軍の通常拠点（本陣は除く）が、兵站線の末端（Heitansen.isMattan）のとき。
 --     もう兵糧庫の拠点では使わない
 --   - 爆破罠は、中にいる自分の軍の拠点（本陣も含む）の中心から BakuhawanaRadius 以内に、相手のプレイヤーがいるとき。
@@ -48,7 +56,18 @@ export type Unit = {
 	lured: boolean,
 }
 
--- 判断する上忍か首領が範囲の中にいる拠点（兵糧庫と爆破罠の判断に使う）
+-- 判断に使う、戦場の部隊
+export type Butai = {
+	id: string,
+	gun: Gun.Gun,
+	x: number,
+	z: number,
+	heisu: number,
+	-- 潜んでいる伏兵部隊か
+	fukuhei: boolean,
+}
+
+-- 判断する上忍か首領が範囲の中にいる拠点（伏兵・兵糧庫・爆破罠の判断に使う）
 export type Kyoten = {
 	id: string,
 	-- 今の所属の軍
@@ -66,6 +85,26 @@ export type Kyoten = {
 	-- 今の耐久と、爆破罠が爆発する耐久（耐久の上限 × Config.luau の Bakuhawana 節の Rate）
 	taikyu: number,
 	threshold: number,
+	-- 範囲の中に、判断する上忍か首領の軍の伏兵部隊が潜んでいるか
+	fukuhei: boolean,
+}
+
+-- 判断する上忍か首領から落石の届く距離以内で一番近い落石地点
+export type RakusekiChiten = {
+	id: string,
+	-- 塞ぐ区間（つながり）が入っている兵站線の軍。どちらの兵站線にも入っていなければ nil
+	heitansen: Gun.Gun?,
+	-- 岩を落としてあるか（落石の効果中）。岩のある地点には重ねて使えない
+	active: boolean,
+}
+
+-- 判断する上忍か首領から大火計の届く距離以内で一番近い大火計地域
+export type DaikakeiChiiki = {
+	id: string,
+	-- 地域の中にいるプレイヤーと上忍・首領（Situation の units のうち、地域の中のもの）
+	units: { Unit },
+	-- 地域の中にいる部隊（Situation の butai のうち、地域の中のもの）
+	butai: { Butai },
 }
 
 -- 判断する上忍か首領の様子の要約
@@ -86,8 +125,14 @@ export type Situation = {
 	hikei: { string },
 	-- 戦場のプレイヤーと、ほかの上忍・首領（倒れたものは入れない）。軍は問わない
 	units: { Unit },
+	-- 戦場の部隊（潜んでいる伏兵部隊も入れる）。軍は問わない
+	butai: { Butai },
 	-- 範囲の中にいる拠点。どの拠点の範囲にもいなければ nil
 	kyoten: Kyoten?,
+	-- 落石の届く距離（Config.luau の Hikei 節の TargetRange.Rakuseki）以内で一番近い落石地点。無ければ nil
+	rakuseki: RakusekiChiten?,
+	-- 大火計の届く距離（TargetRange.Daikakei）以内で一番近い大火計地域。無ければ nil
+	daikakei: DaikakeiChiiki?,
 }
 
 -- 判断の記録。敵軍全体で1つ持ち、ステージの開始ごとに作り直す
@@ -141,7 +186,57 @@ function HikeiHandan.playerDistanceOf(situation: Situation): number?
 	return nearest
 end
 
--- 秘計ごとの使う条件。秘計 ID の鍵で並べる（伏兵・落石・大火計は #132、兵糧庫・爆破罠は #133 が足す）
+-- 部隊が、判断する上忍か首領から見て数える相手か。相手の軍の部隊のうち、兵数があり、潜んでいないもの
+-- （潜んでいる伏兵部隊は見つからない）
+local function isAiteButai(situation: Situation, butai: Butai): boolean
+	return butai.gun ~= situation.gun and butai.heisu > 0 and not butai.fukuhei
+end
+
+-- 判断する上忍か首領が範囲の中にいる拠点の中心から、一番近い相手（部隊かプレイヤー）までの水平の距離。
+-- 拠点の範囲の外にいるか、数える相手がいなければ nil
+function HikeiHandan.kyotenAiteDistance(situation: Situation): number?
+	local kyoten = situation.kyoten
+	if kyoten == nil then
+		return nil
+	end
+	local best = math.huge
+	for _, butai in situation.butai do
+		if isAiteButai(situation, butai) then
+			local dx, dz = butai.x - kyoten.x, butai.z - kyoten.z
+			best = math.min(best, math.sqrt(dx * dx + dz * dz))
+		end
+	end
+	for _, unit in situation.units do
+		if unit.kind == "Player" and unit.gun ~= situation.gun then
+			local dx, dz = unit.x - kyoten.x, unit.z - kyoten.z
+			best = math.min(best, math.sqrt(dx * dx + dz * dz))
+		end
+	end
+	return if best < math.huge then best else nil
+end
+
+-- 判断する上忍か首領から一番近い大火計地域の中の相手の数。プレイヤー・上忍・首領・部隊を1つずつ数える
+-- （潜んでいる伏兵部隊と兵数の無い部隊は数えない）。地域が無ければ 0
+function HikeiHandan.daikakeiAiteCount(situation: Situation): number
+	local chiiki = situation.daikakei
+	if chiiki == nil then
+		return 0
+	end
+	local count = 0
+	for _, unit in chiiki.units do
+		if unit.gun ~= situation.gun then
+			count += 1
+		end
+	end
+	for _, butai in chiiki.butai do
+		if isAiteButai(situation, butai) then
+			count += 1
+		end
+	end
+	return count
+end
+
+-- 秘計ごとの使う条件。秘計 ID の鍵で並べる
 local conditions: { [string]: Condition } = {
 	-- 鬼神化は、率いる部隊が交戦中のときか、首領の体力が上限の ShuryoHealthRate 以下のとき。もう鬼神化していれば使わない
 	Kishinka = function(situation: Situation, params: Params): boolean
@@ -163,6 +258,25 @@ local conditions: { [string]: Condition } = {
 		return hasAite(situation, params.Chohatsu.Radius, function(unit: Unit): boolean
 			return unit.kind == "Jonin" and not unit.shuryo and not unit.lured
 		end)
+	end,
+	-- 伏兵は、自分の軍の拠点の範囲の中にいて、その拠点の中心から FukuheiDistance 以内に相手の部隊かプレイヤーが来たとき。
+	-- その拠点の範囲の中に自分の軍の伏兵部隊がもう潜んでいれば、重ねて使わない
+	Fukuhei = function(situation: Situation, params: Params): boolean
+		local kyoten = situation.kyoten
+		if kyoten == nil or kyoten.gun ~= situation.gun or kyoten.fukuhei then
+			return false
+		end
+		local distance = HikeiHandan.kyotenAiteDistance(situation)
+		return distance ~= nil and distance <= params.HikeiHandan.FukuheiDistance
+	end,
+	-- 落石は、一番近い落石地点の区間が相手の軍の兵站線に入っているとき。岩がもうあれば使わない
+	Rakuseki = function(situation: Situation, _params: Params): boolean
+		local chiten = situation.rakuseki
+		return chiten ~= nil and not chiten.active and chiten.heitansen == Gun.opponentOf(situation.gun)
+	end,
+	-- 大火計は、一番近い大火計地域の中の相手が DaikakeiAite 以上のとき
+	Daikakei = function(situation: Situation, params: Params): boolean
+		return situation.daikakei ~= nil and HikeiHandan.daikakeiAiteCount(situation) >= params.HikeiHandan.DaikakeiAite
 	end,
 	-- 兵糧庫は、中にいる自分の軍の通常拠点が兵站線の末端のとき。本陣・拠点の外・もう兵糧庫の拠点では使わない
 	-- （発動の確かめ Hikei.checkHyoroko と同じ決め方）

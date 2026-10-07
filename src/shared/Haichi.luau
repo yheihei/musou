@@ -121,13 +121,14 @@ local definitions: { [string]: Haichi } = {
 			{ id = "Teki2", gun = "Tekigun", jonin = "ShikenJonin2", hoshin = "Boei", kyoten = "Higashi" },
 			{ id = "Teki3", gun = "Tekigun", jonin = nil, hoshin = "Boei", kyoten = "TekiHonjin" },
 		},
-		-- 鬼神化・大喝・挑発を確かめる持ち込み。試験の上忍1 は Teki1 が交戦したら鬼神化、味方軍の上忍が近づいたら挑発、
-		-- 試験の上忍2 は鬼神化したプレイヤーが近づいたら大喝、試験の首領は体力が減ったら鬼神化を使う
+		-- 秘計の判断を確かめる持ち込み。試験の上忍1 は Teki1 が交戦したら鬼神化、味方軍の上忍が近づいたら挑発、
+		-- 区間が味方軍の兵站線に入っている落石地点に近づいたら落石、試験の上忍2 は鬼神化したプレイヤーが近づいたら大喝、
+		-- 東（敵軍の兵站線の末端）で兵糧庫、プレイヤーが東に近づいたら爆破罠、
+		-- 試験の首領は体力が減ったら鬼神化、本陣に味方軍の部隊かプレイヤーが迫ったら伏兵を使う
 		mochikomi = {
-			ShikenJonin1 = { "Kishinka", "Chohatsu" },
-			-- 試験の上忍2 は大喝に加え、東が敵軍の兵站線の末端なので東で兵糧庫を、プレイヤーが東に近づいたら爆破罠を使う
+			ShikenJonin1 = { "Kishinka", "Chohatsu", "Rakuseki" },
 			ShikenJonin2 = { "Daikatsu", "Hyoroko", "Bakuhawana" },
-			ShikenShuryo = { "Kishinka", "Daikatsu" },
+			ShikenShuryo = { "Kishinka", "Daikatsu", "Fukuhei" },
 		},
 		shikenMejirushi = {
 			kukakuSizeX = 800,

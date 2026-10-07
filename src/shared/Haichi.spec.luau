@@ -292,11 +292,11 @@ test(
 	end
 )
 
-test("試験用ステージの敵軍の上忍と首領は、鬼神化・大喝・挑発を持ち込む", function()
+test("試験用ステージの敵軍の上忍と首領の秘計の持ち込み", function()
 	expect(Haichi.mochikomiOf("Test")).toEqual({
-		ShikenJonin1 = { "Kishinka", "Chohatsu" },
+		ShikenJonin1 = { "Kishinka", "Chohatsu", "Rakuseki" },
 		ShikenJonin2 = { "Daikatsu", "Hyoroko", "Bakuhawana" },
-		ShikenShuryo = { "Kishinka", "Daikatsu" },
+		ShikenShuryo = { "Kishinka", "Daikatsu", "Fukuhei" },
 	})
 end)
 

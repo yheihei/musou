@@ -59,6 +59,11 @@ local function insideOf(chiiki: HaichiService.LoadedDaikakei, x: number, z: numb
 	return Mejirushi.insideBounds(offset.X, offset.Z, chiiki.size.X, chiiki.size.Z)
 end
 
+-- 水平の位置 (x, z) が大火計地域の中か。発動で焼く相手を選ぶのと同じ判定（秘計の判断が地域の中の相手を数える）
+function DaikakeiService.contains(chiiki: HaichiService.LoadedDaikakei, x: number, z: number): boolean
+	return insideOf(chiiki, x, z)
+end
+
 local function flamePart(position: Vector3, size: number, parent: Instance)
 	local part = Instance.new("Part")
 	part.Name = "Flame"

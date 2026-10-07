@@ -383,7 +383,7 @@ function HaichiService.nearestRakusekiChiten(position: Vector3): LoadedRakuseki?
 end
 
 -- 出撃しているステージの大火計地域のうち、position から距離の上限（TargetRange.Daikakei）以内で一番近いもの。
--- 距離は地域の縁までで、地域の中なら 0。無ければ nil
+-- 距離は地域の縁までの水平の距離で（高さは見ない）、地域の中なら 0。無ければ nil
 function HaichiService.nearestDaikakeiChiiki(position: Vector3): LoadedDaikakei?
 	local current = currentHikei
 	if not current then
@@ -391,7 +391,7 @@ function HaichiService.nearestDaikakeiChiiki(position: Vector3): LoadedDaikakei?
 	end
 	local candidates = {}
 	for _, chiiki in current.daikakei do
-		local offset = chiiki.cframe:PointToObjectSpace(position)
+		local offset = chiiki.cframe:PointToObjectSpace(Vector3.new(position.X, chiiki.cframe.Position.Y, position.Z))
 		table.insert(
 			candidates,
 			{ id = chiiki.id, distance = Hikei.distanceToArea(offset.X, offset.Z, chiiki.size.X, chiiki.size.Z) }

@@ -1144,6 +1144,8 @@ local SNAPSHOT = {
 		RetryInterval = 10,
 		ShuryoHealthRate = 0.5,
 		BakuhawanaRadius = 100,
+		FukuheiDistance = 100,
+		DaikakeiAite = 3,
 	},
 	Serifu = {
 		CharInterval = 0.04,

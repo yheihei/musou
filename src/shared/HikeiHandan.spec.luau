@@ -8,7 +8,15 @@ local test, expect = testkit.test, testkit.expect
 
 -- Config.luau の値を調整してもテストが揺れないよう、間隔と割合と半径を固定する
 local PARAMS: HikeiHandan.Params = {
-	HikeiHandan = { Interval = 1, UseInterval = 30, RetryInterval = 10, ShuryoHealthRate = 0.5, BakuhawanaRadius = 100 },
+	HikeiHandan = {
+		Interval = 1,
+		UseInterval = 30,
+		RetryInterval = 10,
+		ShuryoHealthRate = 0.5,
+		BakuhawanaRadius = 100,
+		FukuheiDistance = 100,
+		DaikakeiAite = 3,
+	},
 	Daikatsu = { Radius = 40 },
 	Chohatsu = { Radius = 100 },
 }
@@ -46,6 +54,27 @@ local function jonin(
 	}
 end
 
+local function butai(
+	id: string,
+	gun: "Mikatagun" | "Tekigun",
+	x: number,
+	z: number,
+	options: { heisu: number?, fukuhei: boolean? }?
+): HikeiHandan.Butai
+	local o = options or {}
+	return { id = id, gun = gun, x = x, z = z, heisu = o.heisu or 30, fukuhei = o.fukuhei == true }
+end
+
+-- 判断する上忍か首領が範囲の中にいる拠点。中心は (x, z)、既定は敵軍の拠点で、自分の軍の伏兵部隊は潜んでいない
+local function kyoten(
+	x: number,
+	z: number,
+	options: { gun: ("Mikatagun" | "Tekigun")?, fukuhei: boolean? }?
+): HikeiHandan.Kyoten
+	local o = options or {}
+	return { id = "Chuo", gun = o.gun or "Tekigun", x = x, z = z, fukuhei = o.fukuhei == true }
+end
+
 type Changes = {
 	id: string?,
 	gun: ("Mikatagun" | "Tekigun")?,
@@ -56,6 +85,10 @@ type Changes = {
 	kishinka: boolean?,
 	hikei: { string }?,
 	units: { HikeiHandan.Unit }?,
+	butai: { HikeiHandan.Butai }?,
+	kyoten: HikeiHandan.Kyoten?,
+	rakuseki: HikeiHandan.RakusekiChiten?,
+	daikakei: HikeiHandan.DaikakeiChiiki?,
 }
 
 -- (0, 0) にいる敵軍の上忍の様子。changes の項目だけ書き換える
@@ -73,6 +106,10 @@ local function situation(changes: Changes?): HikeiHandan.Situation
 		kishinka = c.kishinka == true,
 		hikei = c.hikei or { "Kishinka", "Daikatsu", "Chohatsu" },
 		units = c.units or {},
+		butai = c.butai or {},
+		kyoten = c.kyoten,
+		rakuseki = c.rakuseki,
+		daikakei = c.daikakei,
 	}
 end
 
@@ -150,6 +187,156 @@ test(
 	end
 )
 
+test(
+	"伏兵は、自分の軍の拠点の中にいて、拠点の中心から距離の上限の中に相手の部隊かプレイヤーが来たら使う（縁ちょうども入れる）",
+	function()
+		local function decideWith(butaiList: { HikeiHandan.Butai }, units: { HikeiHandan.Unit }): string?
+			local s = situation({ hikei = { "Fukuhei" }, kyoten = kyoten(0, 0), butai = butaiList, units = units })
+			return HikeiHandan.decide(s, PARAMS)
+		end
+		expect(decideWith({ butai("Mikata1", "Mikatagun", 0, 100) }, {})).toBe("Fukuhei")
+		expect(decideWith({ butai("Mikata1", "Mikatagun", 60, -80) }, {})).toBe("Fukuhei")
+		expect(decideWith({ butai("Mikata1", "Mikatagun", 0, 100.5) }, {})).toBe(nil)
+		expect(decideWith({}, { player("1", -100, 0) })).toBe("Fukuhei")
+		expect(decideWith({}, { player("1", -100.5, 0) })).toBe(nil)
+		expect(decideWith({}, {})).toBe(nil)
+	end
+)
+
+test("伏兵の迫った距離は、判断する上忍の位置でなく拠点の中心から測る", function()
+	-- 判断する上忍は (0, 0)、拠点の中心は (30, 0)
+	local function decideWith(x: number): string?
+		local units = { player("1", x, 0) }
+		return HikeiHandan.decide(situation({ hikei = { "Fukuhei" }, kyoten = kyoten(30, 0), units = units }), PARAMS)
+	end
+	expect(decideWith(130)).toBe("Fukuhei")
+	expect(decideWith(-80)).toBe(nil)
+	local s = situation({
+		kyoten = kyoten(30, 0),
+		units = { player("1", -80, 0) },
+		butai = { butai("Mikata1", "Mikatagun", 30, 80) },
+	})
+	expect(HikeiHandan.kyotenAiteDistance(s)).toBe(80)
+	expect(HikeiHandan.kyotenAiteDistance(situation({ units = { player("1", -80, 0) } }))).toBe(nil)
+end)
+
+test(
+	"伏兵は、拠点の外か相手の軍の拠点にいるときと、拠点にもう自分の軍の伏兵部隊が潜んでいるときは使わない",
+	function()
+		local near = { butai("Mikata1", "Mikatagun", 0, 50) }
+		local function decideIn(place: HikeiHandan.Kyoten?): string?
+			return HikeiHandan.decide(situation({ hikei = { "Fukuhei" }, kyoten = place, butai = near }), PARAMS)
+		end
+		expect(decideIn(kyoten(0, 0))).toBe("Fukuhei")
+		expect(decideIn(nil)).toBe(nil)
+		expect(decideIn(kyoten(0, 0, { gun = "Mikatagun" }))).toBe(nil)
+		expect(decideIn(kyoten(0, 0, { fukuhei = true }))).toBe(nil)
+	end
+)
+
+test(
+	"伏兵は、同じ軍の部隊、潜んでいる伏兵部隊、兵数の無い部隊、相手の上忍だけが迫っても使わない",
+	function()
+		local butaiList = {
+			butai("Teki2", "Tekigun", 0, 10),
+			butai("Fukuhei1", "Mikatagun", 0, 10, { fukuhei = true }),
+			butai("Mikata1", "Mikatagun", 0, 10, { heisu = 0 }),
+		}
+		local units = { jonin("ShikenJonin3", "Mikatagun", 0, 10), jonin("ShikenJonin2", "Tekigun", 0, 10) }
+		local s = situation({ hikei = { "Fukuhei" }, kyoten = kyoten(0, 0), butai = butaiList, units = units })
+		expect(HikeiHandan.decide(s, PARAMS)).toBe(nil)
+		expect(HikeiHandan.kyotenAiteDistance(s)).toBe(nil)
+	end
+)
+
+test("落石は、一番近い落石地点の区間が相手の軍の兵站線に入っていれば使う", function()
+	local chiten: HikeiHandan.RakusekiChiten = { id = "R2", heitansen = "Mikatagun", active = false }
+	expect(HikeiHandan.decide(situation({ hikei = { "Rakuseki" }, rakuseki = chiten }), PARAMS)).toBe("Rakuseki")
+end)
+
+test(
+	"落石は、届く地点が無いか、区間が自分の軍の兵站線かどちらにも入っていないか、岩がもうあれば使わない",
+	function()
+		local function decideWith(chiten: HikeiHandan.RakusekiChiten?): string?
+			return HikeiHandan.decide(situation({ hikei = { "Rakuseki" }, rakuseki = chiten }), PARAMS)
+		end
+		expect(decideWith(nil)).toBe(nil)
+		expect(decideWith({ id = "R1", heitansen = "Tekigun", active = false })).toBe(nil)
+		expect(decideWith({ id = "R1", heitansen = nil, active = false })).toBe(nil)
+		-- 味方軍の岩がある地点（区間は味方軍の兵站線のまま）
+		expect(decideWith({ id = "R2", heitansen = "Mikatagun", active = true })).toBe(nil)
+	end
+)
+
+test(
+	"大火計は、一番近い大火計地域の中の相手が数の下限以上なら使う。プレイヤー・上忍・首領・部隊を1つずつ数える",
+	function()
+		local function decideWith(units: { HikeiHandan.Unit }, butaiList: { HikeiHandan.Butai }): string?
+			local chiiki: HikeiHandan.DaikakeiChiiki = { id = "D1", units = units, butai = butaiList }
+			return HikeiHandan.decide(situation({ hikei = { "Daikakei" }, daikakei = chiiki }), PARAMS)
+		end
+		local jonin3 = jonin("ShikenJonin3", "Mikatagun", 0, 50)
+		local mikata1 = butai("Mikata1", "Mikatagun", 0, 50)
+		-- 上忍が率いる部隊とプレイヤーで3つ
+		expect(decideWith({ player("1", 5, 50), jonin3 }, { mikata1 })).toBe("Daikakei")
+		-- 上忍が率いる部隊だけなら2つ
+		expect(decideWith({ jonin3 }, { mikata1 })).toBe(nil)
+		-- プレイヤー2人と首領で3つ
+		local hayate = jonin("Hayate", "Mikatagun", 0, 60, { shuryo = true })
+		expect(decideWith({ player("1", 5, 50), player("2", -5, 50), hayate }, {})).toBe("Daikakei")
+		-- 部隊3つ
+		local butaiList = { mikata1, butai("Mikata2", "Mikatagun", 10, 50), butai("Tsuika1", "Mikatagun", -10, 50) }
+		expect(decideWith({}, butaiList)).toBe("Daikakei")
+	end
+)
+
+test(
+	"大火計は、届く地域が無ければ使わず、同じ軍、潜んでいる伏兵部隊、兵数の無い部隊は数えない",
+	function()
+		expect(HikeiHandan.decide(situation({ hikei = { "Daikakei" }, daikakei = nil }), PARAMS)).toBe(nil)
+		local chiiki: HikeiHandan.DaikakeiChiiki = {
+			id = "D1",
+			units = {
+				player("1", 0, 50),
+				jonin("ShikenJonin2", "Tekigun", 0, 50),
+				jonin("ShikenShuryo", "Tekigun", 0, 50, { shuryo = true }),
+			},
+			butai = {
+				butai("Mikata1", "Mikatagun", 0, 50),
+				butai("Teki2", "Tekigun", 0, 50),
+				butai("Fukuhei1", "Mikatagun", 0, 50, { fukuhei = true }),
+				butai("Mikata2", "Mikatagun", 0, 50, { heisu = 0 }),
+			},
+		}
+		local s = situation({ hikei = { "Daikakei" }, daikakei = chiiki })
+		expect(HikeiHandan.daikakeiAiteCount(s)).toBe(2)
+		expect(HikeiHandan.decide(s, PARAMS)).toBe(nil)
+		expect(HikeiHandan.daikakeiAiteCount(situation())).toBe(0)
+	end
+)
+
+test("伏兵・落石・大火計は、味方軍の上忍と首領は条件がそろっても使わない", function()
+	-- 敵軍の上忍から見て3枚のどれでも使う様子を、軍を入れ替えて味方軍の上忍に渡す
+	local function changesFor(gun: "Mikatagun" | "Tekigun", hikeiId: string): Changes
+		local aite: "Mikatagun" | "Tekigun" = if gun == "Tekigun" then "Mikatagun" else "Tekigun"
+		local inside = { butai("Aite1", aite, 0, 50), butai("Aite2", aite, 10, 50), butai("Aite3", aite, -10, 50) }
+		return {
+			id = if gun == "Tekigun" then "ShikenJonin1" else "ShikenJonin3",
+			gun = gun,
+			hikei = { hikeiId },
+			kyoten = kyoten(0, 0, { gun = gun }),
+			butai = { butai("Aite1", aite, 0, 50) },
+			rakuseki = { id = "R1", heitansen = aite, active = false },
+			daikakei = { id = "D1", units = {}, butai = inside },
+		}
+	end
+	for _, hikeiId in { "Fukuhei", "Rakuseki", "Daikakei" } do
+		expect(HikeiHandan.hasCondition(hikeiId)).toBe(true)
+		expect(HikeiHandan.decide(situation(changesFor("Tekigun", hikeiId)), PARAMS)).toBe(hikeiId)
+		expect(HikeiHandan.decide(situation(changesFor("Mikatagun", hikeiId)), PARAMS)).toBe(nil)
+	end
+end)
+
 test("条件のそろった秘計が2枚以上あれば、枚の順で先の秘計を使う", function()
 	local units = { jonin("ShikenJonin3", "Mikatagun", 20, 0) }
 	local first = situation({ kosen = true, hikei = { "Kishinka", "Chohatsu" }, units = units })
@@ -161,12 +348,12 @@ end)
 test("使える秘計に無い秘計と、使う条件の無い秘計は使わない", function()
 	expect(HikeiHandan.decide(situation({ kosen = true, hikei = { "Chohatsu" } }), PARAMS)).toBe(nil)
 	expect(HikeiHandan.decide(situation({ kosen = true, hikei = {} }), PARAMS)).toBe(nil)
-	local skipped = situation({ kosen = true, hikei = { "Rakuseki", "Kishinka" } })
+	local skipped = situation({ kosen = true, hikei = { "Nowhere", "Kishinka" } })
 	expect(HikeiHandan.decide(skipped, PARAMS)).toBe("Kishinka")
 	expect(HikeiHandan.hasCondition("Kishinka")).toBe(true)
 	expect(HikeiHandan.hasCondition("Daikatsu")).toBe(true)
 	expect(HikeiHandan.hasCondition("Chohatsu")).toBe(true)
-	expect(HikeiHandan.hasCondition("Rakuseki")).toBe(false)
+	expect(HikeiHandan.hasCondition("Nowhere")).toBe(false)
 end)
 
 test("味方軍の上忍と首領は、条件がそろっても秘計を使わない", function()

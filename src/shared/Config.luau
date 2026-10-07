@@ -366,6 +366,8 @@ export type HikeiHandanSection = {
 	RetryInterval: number,
 	ShuryoHealthRate: number,
 	BakuhawanaRadius: number,
+	FukuheiDistance: number,
+	DaikakeiAite: number,
 }
 
 export type PartySection = {
@@ -1740,7 +1742,9 @@ local Config: Config = {
 	-- 秘計の判断。敵軍の上忍と首領が、考える間隔（Jittaikaken 節の Interval）ごとに秘計を使うかを決める。
 	-- 判断は HikeiHandan.luau にある。鬼神化は率いる部隊が交戦中か首領の体力が減ったとき、
 	-- 大喝は Daikatsu 節の Radius 以内に強化の秘計の効果中の相手がいるとき、
-	-- 挑発は Chohatsu 節の Radius 以内に誘い出されていない相手の上忍がいるときに使う
+	-- 挑発は Chohatsu 節の Radius 以内に誘い出されていない相手の上忍がいるときに使う。
+	-- 伏兵は中にいる拠点に相手が FukuheiDistance まで迫ったとき、落石は一番近い落石地点の区間が相手の軍の兵站線にあるとき、
+	-- 大火計は一番近い大火計地域の中の相手が DaikakeiAite 以上のときに使う（地点と地域を選ぶ距離は Hikei 節の TargetRange）
 	HikeiHandan = {
 		Interval = 1, -- 上忍と首領ごとに、秘計を使うかを判断する間隔（秒）。考える間隔ごとに呼ばれるのを間引く
 		UseInterval = 30, -- 敵軍のだれかが秘計を使ってから、敵軍のだれかが次の秘計を使えるまでの秒数（敵軍全体の使用間隔）
@@ -1749,6 +1753,12 @@ local Config: Config = {
 		-- 爆破罠は、中にいる自分の軍の拠点の中心からこの距離（スタッド）以内にプレイヤーが来たら使う。
 		-- 本陣（110 × 110）の隅（約 78）より遠くし、プレイヤーが拠点に入る前に仕掛ける
 		BakuhawanaRadius = 100,
+		-- 伏兵を使う、中にいる自分の軍の拠点に迫った相手（部隊かプレイヤー）の、拠点の中心からの距離の上限（スタッド）。
+		-- 伏兵部隊が奇襲する距離（Fukuhei 節の KishuRadius）より遠くで潜ませる
+		FukuheiDistance = 100,
+		-- 大火計を使う、一番近い大火計地域の中の相手の数の下限（これ以上で使う）。
+		-- プレイヤー・上忍・首領・部隊を1つずつ数える（上忍が率いる部隊は、上忍と部隊で2つ）
+		DaikakeiAite = 3,
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

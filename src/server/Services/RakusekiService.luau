@@ -49,6 +49,11 @@ type Active = {
 -- 落石地点 ID から引く、岩を落とした落石地点
 local active: { [string]: Active } = {}
 
+-- 落石地点に岩を落としてあるか（どちらの軍の岩でも。岩のある地点には重ねて使えない。秘計の判断が見る）
+function RakusekiService.isActive(chitenId: string): boolean
+	return active[chitenId] ~= nil
+end
+
 -- 区間の向きに直角な水平の向き（単位ベクトル）。両端の拠点が無ければ東西
 local function acrossOf(kyotenA: string, kyotenB: string): Vector3
 	local a = KyotenService.centerOf(kyotenA)
