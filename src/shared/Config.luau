@@ -365,6 +365,7 @@ export type HikeiHandanSection = {
 	UseInterval: number,
 	RetryInterval: number,
 	ShuryoHealthRate: number,
+	BakuhawanaRadius: number,
 }
 
 export type PartySection = {
@@ -1745,6 +1746,9 @@ local Config: Config = {
 		UseInterval = 30, -- 敵軍のだれかが秘計を使ってから、敵軍のだれかが次の秘計を使えるまでの秒数（敵軍全体の使用間隔）
 		RetryInterval = 10, -- 発動できなかった秘計を、同じ上忍か首領が試し直すまでの秒数
 		ShuryoHealthRate = 0.5, -- 首領が鬼神化を使う、体力の上限に対する割合の上限（これ以下で使う）
+		-- 爆破罠は、中にいる自分の軍の拠点の中心からこの距離（スタッド）以内にプレイヤーが来たら使う。
+		-- 本陣（110 × 110）の隅（約 78）より遠くし、プレイヤーが拠点に入る前に仕掛ける
+		BakuhawanaRadius = 100,
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

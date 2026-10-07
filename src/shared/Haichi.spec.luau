@@ -295,7 +295,7 @@ test(
 test("試験用ステージの敵軍の上忍と首領は、鬼神化・大喝・挑発を持ち込む", function()
 	expect(Haichi.mochikomiOf("Test")).toEqual({
 		ShikenJonin1 = { "Kishinka", "Chohatsu" },
-		ShikenJonin2 = { "Daikatsu" },
+		ShikenJonin2 = { "Daikatsu", "Hyoroko", "Bakuhawana" },
 		ShikenShuryo = { "Kishinka", "Daikatsu" },
 	})
 end)
@@ -306,7 +306,7 @@ test(
 		local first = Haichi.mochikomiOf("Test")
 		table.insert(first.ShikenJonin2, "Kishinka")
 		first.ShikenJonin3 = { "Kishinka" }
-		expect(Haichi.mochikomiOf("Test").ShikenJonin2).toEqual({ "Daikatsu" })
+		expect(Haichi.mochikomiOf("Test").ShikenJonin2).toEqual({ "Daikatsu", "Hyoroko", "Bakuhawana" })
 		expect(Haichi.mochikomiOf("Test").ShikenJonin3).toBe(nil)
 		expect(Haichi.mochikomiOf("Nowhere")).toEqual({})
 		local haichi = testHaichi(function(copy)

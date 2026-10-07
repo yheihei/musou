@@ -1,5 +1,6 @@
 --!strict
 local Haichi = require("./Haichi")
+local Hikei = require("./Hikei")
 local HikeiHandan = require("./HikeiHandan")
 local testkit = require("@testkit")
 
@@ -7,7 +8,7 @@ local test, expect = testkit.test, testkit.expect
 
 -- Config.luau の値を調整してもテストが揺れないよう、間隔と割合と半径を固定する
 local PARAMS: HikeiHandan.Params = {
-	HikeiHandan = { Interval = 1, UseInterval = 30, RetryInterval = 10, ShuryoHealthRate = 0.5 },
+	HikeiHandan = { Interval = 1, UseInterval = 30, RetryInterval = 10, ShuryoHealthRate = 0.5, BakuhawanaRadius = 100 },
 	Daikatsu = { Radius = 40 },
 	Chohatsu = { Radius = 100 },
 }
@@ -273,5 +274,178 @@ test(
 		-- もう一度発動できなければ、その時刻から試し直しを待つ
 		HikeiHandan.recordFailure(state, "ShikenJonin1", "Kishinka", 15)
 		expect(HikeiHandan.usableOf(state, "ShikenJonin1", mochikomi, {}, 20, PARAMS)).toEqual({ "Chohatsu" })
+	end
+)
+
+type KyotenChanges = {
+	id: string?,
+	gun: ("Mikatagun" | "Tekigun")?,
+	honjin: boolean?,
+	x: number?,
+	z: number?,
+	mattan: boolean?,
+	hyoroko: boolean?,
+	bakuhawana: boolean?,
+	taikyu: number?,
+}
+
+-- (0, 0) を中心にした、敵軍の兵站線の末端の通常拠点（耐久 30、爆発する耐久 10）。changes の項目だけ書き換える
+local function kyoten(changes: KyotenChanges?): HikeiHandan.Kyoten
+	local c = changes or {}
+	return {
+		id = c.id or "Higashi",
+		gun = c.gun or "Tekigun",
+		honjin = c.honjin == true,
+		x = c.x or 0,
+		z = c.z or 0,
+		mattan = c.mattan ~= false,
+		hyoroko = c.hyoroko == true,
+		bakuhawana = c.bakuhawana == true,
+		taikyu = c.taikyu or 30,
+		threshold = 10,
+	}
+end
+
+-- 拠点 inside の範囲の中にいる上忍の様子。inside が nil なら拠点の外
+local function inKyoten(inside: HikeiHandan.Kyoten?, changes: Changes?): HikeiHandan.Situation
+	local result = situation(changes)
+	result.kyoten = inside
+	return result
+end
+
+-- 拠点 inside の中で、兵糧庫だけを使えるときの判断
+local function decideHyoroko(inside: HikeiHandan.Kyoten?): string?
+	return HikeiHandan.decide(inKyoten(inside, { hikei = { "Hyoroko" } }), PARAMS)
+end
+
+-- 拠点 inside の中で、爆破罠だけを使えるときの判断。units は戦場のプレイヤーと上忍・首領
+local function decideBakuhawana(inside: HikeiHandan.Kyoten?, units: { HikeiHandan.Unit }): string?
+	return HikeiHandan.decide(inKyoten(inside, { hikei = { "Bakuhawana" }, units = units }), PARAMS)
+end
+
+test("兵糧庫は、中にいる自分の軍の通常拠点が兵站線の末端なら使う", function()
+	expect(decideHyoroko(kyoten())).toBe("Hyoroko")
+	expect(HikeiHandan.hasCondition("Hyoroko")).toBe(true)
+end)
+
+test(
+	"兵糧庫は、末端でない拠点・本陣・相手の軍の拠点・もう兵糧庫の拠点と、拠点の外では使わない",
+	function()
+		expect(decideHyoroko(kyoten({ mattan = false }))).toBe(nil)
+		-- 本陣は末端に数えないうえ、兵糧庫の対象でもない（Hikei.checkHyoroko の NoTarget）
+		expect(decideHyoroko(kyoten({ id = "TekiHonjin", honjin = true }))).toBe(nil)
+		-- 中央を制圧されたあとも中にいる、相手の軍の拠点
+		expect(decideHyoroko(kyoten({ id = "Chuo", gun = "Mikatagun" }))).toBe(nil)
+		expect(decideHyoroko(kyoten({ hyoroko = true }))).toBe(nil)
+		expect(decideHyoroko(nil)).toBe(nil)
+	end
+)
+
+test(
+	"爆破罠は、中にいる自分の軍の拠点の中心から半径の中にプレイヤーがいれば使う（縁ちょうども入れ、本陣も含む）",
+	function()
+		expect(decideBakuhawana(kyoten(), { player("1", 0, 0) })).toBe("Bakuhawana")
+		expect(decideBakuhawana(kyoten(), { player("1", 60, -80) })).toBe("Bakuhawana")
+		expect(decideBakuhawana(kyoten(), { player("1", 0, 100.5) })).toBe(nil)
+		-- 2人のうち1人でも半径の中にいれば使う
+		expect(decideBakuhawana(kyoten(), { player("1", 0, 300), player("2", 30, 40) })).toBe("Bakuhawana")
+		local honjin = kyoten({ id = "TekiHonjin", honjin = true, mattan = false, taikyu = 50 })
+		expect(decideBakuhawana(honjin, { player("1", 0, 50) })).toBe("Bakuhawana")
+		expect(HikeiHandan.hasCondition("Bakuhawana")).toBe(true)
+	end
+)
+
+test("爆破罠の距離は、上忍の位置でなく、中にいる拠点の中心から測る", function()
+	-- 上忍は (0, 0)、拠点の中心は東へ 30 ずれた (30, 0)
+	local shifted = kyoten({ x = 30 })
+	expect(decideBakuhawana(shifted, { player("1", 130, 0) })).toBe("Bakuhawana")
+	expect(decideBakuhawana(shifted, { player("1", -90, 0) })).toBe(nil)
+end)
+
+test(
+	"爆破罠は、もう罠のある拠点・耐久が爆発する耐久を下回った拠点・相手の軍の拠点と、拠点の外では使わない",
+	function()
+		local near = { player("1", 0, 10) }
+		expect(decideBakuhawana(kyoten({ bakuhawana = true }), near)).toBe(nil)
+		expect(decideBakuhawana(kyoten({ taikyu = 9.9 }), near)).toBe(nil)
+		-- ちょうど爆発する耐久ならまだ仕掛けられる（下回ったときに爆発する）
+		expect(decideBakuhawana(kyoten({ taikyu = 10 }), near)).toBe("Bakuhawana")
+		expect(decideBakuhawana(kyoten({ id = "Chuo", gun = "Mikatagun" }), near)).toBe(nil)
+		expect(decideBakuhawana(nil, near)).toBe(nil)
+	end
+)
+
+test(
+	"爆破罠は、近くにいるのが上忍だけなら、プレイヤーが近づくまで使わない",
+	function()
+		local units = { jonin("ShikenJonin3", "Mikatagun", 0, 10), jonin("ShikenJonin1", "Tekigun", 5, 0) }
+		expect(decideBakuhawana(kyoten(), units)).toBe(nil)
+		expect(HikeiHandan.playerDistanceOf(inKyoten(kyoten(), { units = units }))).toBe(nil)
+		expect(HikeiHandan.playerDistanceOf(inKyoten(nil, { units = { player("1", 0, 10) } }))).toBe(nil)
+		local players = { player("1", 0, 50), player("2", 0, -30) }
+		expect(HikeiHandan.playerDistanceOf(inKyoten(kyoten(), { units = players }))).toBe(30)
+	end
+)
+
+test(
+	"判断で兵糧庫と爆破罠を選ぶのは、発動の確かめ（Hikei.checkHyoroko・checkBakuhawana）を通る拠点のときだけ",
+	function()
+		local near = { player("1", 0, 10) }
+		for _, gun in { "Mikatagun", "Tekigun" } :: { "Mikatagun" | "Tekigun" } do
+			for _, honjin in { false, true } do
+				for _, active in { false, true } do
+					for _, taikyu in { 9, 10, 30 } do
+						local inside = kyoten({
+							gun = gun,
+							honjin = honjin,
+							hyoroko = active,
+							bakuhawana = active,
+							taikyu = taikyu,
+						})
+						local hyorokoOk = Hikei.checkHyoroko({ gun = gun, honjin = honjin, active = active }, "Tekigun")
+							== nil
+						expect(decideHyoroko(inside) == "Hyoroko").toBe(hyorokoOk)
+						local bakuhawanaTarget = { gun = gun, taikyu = taikyu, threshold = 10, active = active }
+						local bakuhawanaOk = Hikei.checkBakuhawana(bakuhawanaTarget, "Tekigun") == nil
+						expect(decideBakuhawana(inside, near) == "Bakuhawana").toBe(bakuhawanaOk)
+					end
+				end
+			end
+		end
+	end
+)
+
+test("味方軍の上忍と首領は、兵糧庫と爆破罠の条件がそろっても使わない", function()
+	-- 自分の軍の兵站線の末端の通常拠点の中にいる（敵軍の上忍なら兵糧庫を使う様子）
+	local nishi = kyoten({ id = "Nishi", gun = "Mikatagun" })
+	local changes: Changes = {
+		id = "ShikenJonin3",
+		gun = "Mikatagun",
+		hikei = { "Hyoroko", "Bakuhawana" },
+		units = { player("1", 0, 10) },
+	}
+	expect(HikeiHandan.decide(inKyoten(nishi, changes), PARAMS)).toBe(nil)
+end)
+
+test(
+	"試験用ステージの試験の上忍2 は、東で兵糧庫を使い、プレイヤーが東に近づいたら爆破罠を使う",
+	function()
+		-- 位置は区画の中心からのスタッド。東の中心は (220, -60)、出撃地点は (0, 200)
+		local mejirushi = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi
+		local center = mejirushi.kyoten.Higashi
+		local function decideAt(hikei: { string }, inside: HikeiHandan.Kyoten, x: number, z: number): string?
+			return HikeiHandan.decide(inKyoten(inside, { hikei = hikei, units = { player("1", x, z) } }), PARAMS)
+		end
+		local mochikomi = Haichi.mochikomiOf("Test").ShikenJonin2
+		expect(mochikomi).toEqual({ "Daikatsu", "Hyoroko", "Bakuhawana" })
+		-- 開始時の東は敵軍の兵站線の末端（Heitansen.spec で確かめる）。出撃地点は東の中心から約 341 離れている
+		local higashi = kyoten({ x = center.x, z = center.z })
+		expect(decideAt(mochikomi, higashi, 0, 200)).toBe("Hyoroko")
+		local hyoroko = kyoten({ x = center.x, z = center.z, hyoroko = true })
+		expect(decideAt({ "Daikatsu", "Bakuhawana" }, hyoroko, 0, 200)).toBe(nil)
+		-- プレイヤーが東の中心へ移ると爆破罠を仕掛ける。仕掛けた後は、残る大喝の条件がそろわないので何も使わない
+		expect(decideAt({ "Daikatsu", "Bakuhawana" }, hyoroko, center.x, center.z)).toBe("Bakuhawana")
+		local trapped = kyoten({ x = center.x, z = center.z, hyoroko = true, bakuhawana = true })
+		expect(decideAt({ "Daikatsu" }, trapped, center.x, center.z)).toBe(nil)
 	end
 )

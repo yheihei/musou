@@ -1143,6 +1143,7 @@ local SNAPSHOT = {
 		UseInterval = 30,
 		RetryInterval = 10,
 		ShuryoHealthRate = 0.5,
+		BakuhawanaRadius = 100,
 	},
 	Serifu = {
 		CharInterval = 0.04,

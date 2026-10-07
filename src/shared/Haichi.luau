@@ -125,7 +125,8 @@ local definitions: { [string]: Haichi } = {
 		-- 試験の上忍2 は鬼神化したプレイヤーが近づいたら大喝、試験の首領は体力が減ったら鬼神化を使う
 		mochikomi = {
 			ShikenJonin1 = { "Kishinka", "Chohatsu" },
-			ShikenJonin2 = { "Daikatsu" },
+			-- 試験の上忍2 は大喝に加え、東が敵軍の兵站線の末端なので東で兵糧庫を、プレイヤーが東に近づいたら爆破罠を使う
+			ShikenJonin2 = { "Daikatsu", "Hyoroko", "Bakuhawana" },
 			ShikenShuryo = { "Kishinka", "Daikatsu" },
 		},
 		shikenMejirushi = {

@@ -20,6 +20,7 @@
 --   発動者の撃破に数える
 -- - 罠の目印（樽と「爆破罠」の札）は、仕掛けた軍にだけ見せる。プレイヤーは味方軍なので、味方軍が仕掛けた罠だけ置く
 -- - 爆発の仮の見た目（Explosion と広がる火の玉）を拠点の中心に出す
+-- - 罠を仕掛けた拠点かを hasTrap で引ける（秘計の判断が、もう罠のある拠点に使わないために引く）
 
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -251,6 +252,11 @@ local function explode(kyotenId: string, trap: Trap)
 		showBlast(center, blastRadiusOf(kyotenId))
 	end
 	HikeiService.finishEffect(trap.effect, "Ended")
+end
+
+-- 爆破罠を仕掛けた拠点か（発動の確かめの AlreadyActive と同じ見方）
+function BakuhawanaService.hasTrap(kyotenId: string): boolean
+	return traps[kyotenId] ~= nil
 end
 
 local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailure?)

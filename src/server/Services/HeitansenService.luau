@@ -11,6 +11,7 @@
 --   指定は拠点が制圧されると外れる
 -- - 孤立した拠点は守備を補充しない。孤立は KyotenService.setKoritsuProvider で渡し、
 --   拠点の Attribute の Koritsu・NeverIsolated で複製する
+-- - 拠点が自分の軍の兵站線の末端か（Heitansen.isMattan）を isMattan で引ける（秘計の判断の兵糧庫が使う）
 -- - つながりごとに ReplicatedStorage.Tsunagari の下へ Haichi.pairKey の名前（拠点A-拠点B）で Configuration を置き、
 --   Attribute で両端（KyotenA・KyotenB）・入っている兵站線の軍（Heitansen。どちらにも入っていなければ無し）・
 --   通れない軍（BlockedMikatagun・BlockedTekigun）・KyotenA から KyotenB へたどる経由点（KeiyutenCount と
@@ -79,6 +80,16 @@ function HeitansenService.isKoritsu(kyotenId: string): boolean
 	local current = result
 	local kyoten = KyotenService.get(kyotenId)
 	return current ~= nil and kyoten ~= nil and current[kyoten.gun].isolated[kyotenId] == true
+end
+
+-- 拠点が自分の軍の兵站線の末端か（Heitansen.isMattan）。拠点が無いときと、出撃していないときは false
+function HeitansenService.isMattan(kyotenId: string): boolean
+	local current = result
+	local kyoten = KyotenService.get(kyotenId)
+	if not current or not kyoten then
+		return false
+	end
+	return Heitansen.isMattan(current, tsunagariList, { id = kyoten.id, gun = kyoten.gun, honjin = kyoten.honjin })
 end
 
 -- つながりを通れない軍（落石で塞いだ軍）。出撃したステージにそのつながりが無いか、どの軍も通れるなら空

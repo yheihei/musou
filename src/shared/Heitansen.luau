@@ -8,6 +8,9 @@
 --   ただし、そこから先の拠点へは兵站線を延ばさない
 -- - どちらの軍にも属さない拠点は、どちらの軍の結果にも入れない
 -- - 表に無い拠点を指すつながりは無視する（目印との突き合わせは読み込み時に行う）
+-- - 兵站線の末端は、本陣でない拠点のうち、その拠点の軍の兵站線に入っているつながり（gunOf）でほかの拠点と
+--   結ばれているのが1本だけの拠点（その先へ兵站線が延びていない拠点）。孤立した拠点と、2本以上で結ばれている拠点
+--   （その先へ延びているか、環の上にある）は末端でない
 
 local Gun = require("./Gun")
 
@@ -116,6 +119,23 @@ function Heitansen.gunOf(result: Result, tsunagari: Tsunagari): Gun.Gun?
 		end
 	end
 	return nil
+end
+
+-- 拠点がその拠点の軍の兵站線の末端か。本陣でない拠点のうち、その軍の兵站線に入っているつながり（gunOf）で
+-- ほかの拠点と結ばれているのが1本だけなら末端。どちらの軍にも属さない拠点と本陣は末端でない
+function Heitansen.isMattan(result: Result, tsunagariList: { Tsunagari }, kyoten: Kyoten): boolean
+	local gun = kyoten.gun
+	if gun == nil or kyoten.honjin then
+		return false
+	end
+	local count = 0
+	for _, tsunagari in tsunagariList do
+		local touches = tsunagari.kyotenA == kyoten.id or tsunagari.kyotenB == kyoten.id
+		if touches and Heitansen.gunOf(result, tsunagari) == gun then
+			count += 1
+		end
+	end
+	return count == 1
 end
 
 return Heitansen

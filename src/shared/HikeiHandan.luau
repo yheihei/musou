@@ -10,6 +10,12 @@
 --   - 鬼神化は、率いる部隊が交戦中のときか、首領の体力が上限の ShuryoHealthRate 以下のとき。もう鬼神化していれば使わない
 --   - 大喝は、大喝の半径以内に、強化の秘計の効果中の相手（プレイヤーか上忍・首領）がいるとき
 --   - 挑発は、挑発の半径以内に、誘い出されていない相手の上忍（首領は除く）がいるとき
+--   - 兵糧庫は、中にいる自分の軍の通常拠点（本陣は除く）が、兵站線の末端（Heitansen.isMattan）のとき。
+--     もう兵糧庫の拠点では使わない
+--   - 爆破罠は、中にいる自分の軍の拠点（本陣も含む）の中心から BakuhawanaRadius 以内に、相手のプレイヤーがいるとき。
+--     もう罠のある拠点と、耐久が爆発する耐久をもう下回った拠点では使わない
+--   - 兵糧庫と爆破罠は、発動の確かめ（Hikei.checkHyoroko・checkBakuhawana）に同じ拠点の値を渡して決める。
+--     判断で選んだ兵糧庫と爆破罠は、発動で NoTarget・AlreadyActive・LowTaikyu にならない
 -- - 上忍と首領ごとに、Interval 秒に1回だけ判断する（考える間隔ごとに呼ばれるのを間引く）
 -- - 敵軍のだれかが秘計を使ったら、UseInterval 秒の間は敵軍のだれも判断しない（敵軍全体の使用間隔）
 -- - 発動できなかった秘計は、RetryInterval 秒の間、同じ上忍か首領は選ばない（毎回試し直さない）
@@ -17,6 +23,7 @@
 
 local Config = require("./Config")
 local Gun = require("./Gun")
+local Hikei = require("./Hikei")
 
 -- 判断に使う Config.luau の節。HikeiHandan 節と、大喝と挑発の半径（Daikatsu 節と Chohatsu 節の Radius）
 export type Params = {
@@ -41,6 +48,26 @@ export type Unit = {
 	lured: boolean,
 }
 
+-- 判断する上忍か首領が範囲の中にいる拠点（兵糧庫と爆破罠の判断に使う）
+export type Kyoten = {
+	id: string,
+	-- 今の所属の軍
+	gun: Gun.Gun,
+	honjin: boolean,
+	-- 中心の水平の位置
+	x: number,
+	z: number,
+	-- 今の所属の軍の兵站線の末端か（Heitansen.isMattan）
+	mattan: boolean,
+	-- 兵糧庫にした拠点か
+	hyoroko: boolean,
+	-- 爆破罠を仕掛けた拠点か
+	bakuhawana: boolean,
+	-- 今の耐久と、爆破罠が爆発する耐久（耐久の上限 × Config.luau の Bakuhawana 節の Rate）
+	taikyu: number,
+	threshold: number,
+}
+
 -- 判断する上忍か首領の様子の要約
 export type Situation = {
 	-- キャラクター ID
@@ -59,6 +86,8 @@ export type Situation = {
 	hikei: { string },
 	-- 戦場のプレイヤーと、ほかの上忍・首領（倒れたものは入れない）。軍は問わない
 	units: { Unit },
+	-- 範囲の中にいる拠点。どの拠点の範囲にもいなければ nil
+	kyoten: Kyoten?,
 }
 
 -- 判断の記録。敵軍全体で1つ持ち、ステージの開始ごとに作り直す
@@ -92,6 +121,26 @@ local function hasAite(situation: Situation, radius: number, matches: (unit: Uni
 	return false
 end
 
+-- 判断する上忍か首領が中にいる拠点の中心から、一番近い相手のプレイヤーまでの水平の距離（爆破罠の判断に使う）。
+-- 拠点の外にいるか、相手のプレイヤーがいなければ nil
+function HikeiHandan.playerDistanceOf(situation: Situation): number?
+	local kyoten = situation.kyoten
+	if not kyoten then
+		return nil
+	end
+	local nearest: number? = nil
+	for _, unit in situation.units do
+		if unit.kind == "Player" and unit.gun ~= situation.gun then
+			local dx, dz = unit.x - kyoten.x, unit.z - kyoten.z
+			local distance = math.sqrt(dx * dx + dz * dz)
+			if nearest == nil or distance < nearest then
+				nearest = distance
+			end
+		end
+	end
+	return nearest
+end
+
 -- 秘計ごとの使う条件。秘計 ID の鍵で並べる（伏兵・落石・大火計は #132、兵糧庫・爆破罠は #133 が足す）
 local conditions: { [string]: Condition } = {
 	-- 鬼神化は、率いる部隊が交戦中のときか、首領の体力が上限の ShuryoHealthRate 以下のとき。もう鬼神化していれば使わない
@@ -114,6 +163,35 @@ local conditions: { [string]: Condition } = {
 		return hasAite(situation, params.Chohatsu.Radius, function(unit: Unit): boolean
 			return unit.kind == "Jonin" and not unit.shuryo and not unit.lured
 		end)
+	end,
+	-- 兵糧庫は、中にいる自分の軍の通常拠点が兵站線の末端のとき。本陣・拠点の外・もう兵糧庫の拠点では使わない
+	-- （発動の確かめ Hikei.checkHyoroko と同じ決め方）
+	Hyoroko = function(situation: Situation, _params: Params): boolean
+		local kyoten = situation.kyoten
+		if not kyoten or not kyoten.mattan then
+			return false
+		end
+		local target: Hikei.HyorokoTarget = { gun = kyoten.gun, honjin = kyoten.honjin, active = kyoten.hyoroko }
+		return Hikei.checkHyoroko(target, situation.gun) == nil
+	end,
+	-- 爆破罠は、中にいる自分の軍の拠点（本陣も含む）の中心から BakuhawanaRadius 以内に、相手のプレイヤーがいるとき。
+	-- もう罠のある拠点と、耐久が爆発する耐久をもう下回った拠点では使わない（発動の確かめ Hikei.checkBakuhawana と同じ決め方）
+	Bakuhawana = function(situation: Situation, params: Params): boolean
+		local kyoten = situation.kyoten
+		if not kyoten then
+			return false
+		end
+		local target: Hikei.BakuhawanaTarget = {
+			gun = kyoten.gun,
+			taikyu = kyoten.taikyu,
+			threshold = kyoten.threshold,
+			active = kyoten.bakuhawana,
+		}
+		if Hikei.checkBakuhawana(target, situation.gun) ~= nil then
+			return false
+		end
+		local distance = HikeiHandan.playerDistanceOf(situation)
+		return distance ~= nil and distance <= params.HikeiHandan.BakuhawanaRadius
 	end,
 }
 

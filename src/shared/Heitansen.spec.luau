@@ -1,5 +1,6 @@
 --!strict
 local Gun = require("./Gun")
+local Haichi = require("./Haichi")
 local Heitansen = require("./Heitansen")
 local testkit = require("@testkit")
 
@@ -165,3 +166,77 @@ test("通れないつながりと、孤立した拠点へのつながりは兵�
 	expect(Heitansen.gunOf(result, list[2])).toBe(nil)
 	expect(Heitansen.isConnected(result, "Mikatagun", "B")).toBe(false)
 end)
+
+-- 拠点 id が、tsunagari のつながりで求めた兵站線の末端か
+local function isMattan(list: { Heitansen.Kyoten }, tsunagari: { Heitansen.Tsunagari }, id: string): boolean
+	return Heitansen.isMattan(Heitansen.compute(list, tsunagari), tsunagari, find(list, id))
+end
+
+test(
+	"本陣でない拠点のうち、兵站線に入っているつながりが1本だけの拠点は末端",
+	function()
+		local list = kyotenList()
+		-- B と C の間は両軍の境目で、どちらの兵站線にも入らない。B は A とだけ、C は敵軍の本陣とだけ結ばれる
+		expect(isMattan(list, tsunagariList(), "B")).toBe(true)
+		expect(isMattan(list, tsunagariList(), "D")).toBe(true)
+		expect(isMattan(list, tsunagariList(), "C")).toBe(true)
+		-- A は本陣・B・D と結ばれ、その先へ兵站線が延びている
+		expect(isMattan(list, tsunagariList(), "A")).toBe(false)
+		-- 本陣は兵站線の起点なので、1本だけで結ばれていても末端でない
+		expect(isMattan(list, tsunagariList(), "MikataHonjin")).toBe(false)
+		expect(isMattan(list, tsunagariList(), "TekiHonjin")).toBe(false)
+	end
+)
+
+test("孤立した拠点と、どちらの軍にも属さない拠点は末端でない", function()
+	local list = kyotenList()
+	find(list, "A").gun = "Tekigun"
+	expect(isMattan(list, tsunagariList(), "B")).toBe(false)
+	expect(isMattan(list, tsunagariList(), "D")).toBe(false)
+	-- 相手の軍に取られた A も、取った軍の兵站線から孤立している
+	expect(isMattan(list, tsunagariList(), "A")).toBe(false)
+
+	local neutral = kyotenList()
+	find(neutral, "D").gun = nil
+	expect(isMattan(neutral, tsunagariList(), "D")).toBe(false)
+end)
+
+test(
+	"通れないつながりは数えないので、その先が孤立すると手前の拠点が末端になる",
+	function()
+		local tsunagari = tsunagariList()
+		-- A-B と A-D を味方軍にとって通れなくする
+		tsunagari[2].blocked = { Mikatagun = true }
+		tsunagari[5].blocked = { Mikatagun = true }
+		expect(isMattan(kyotenList(), tsunagari, "A")).toBe(true)
+		expect(isMattan(kyotenList(), tsunagari, "B")).toBe(false)
+		-- 敵軍だけが通れないつながりは、味方軍の末端を変えない
+		local forTekigun = tsunagariList()
+		forTekigun[2].blocked = { Tekigun = true }
+		expect(isMattan(kyotenList(), forTekigun, "A")).toBe(false)
+		expect(isMattan(kyotenList(), forTekigun, "B")).toBe(true)
+	end
+)
+
+test("環の上の拠点は、2本で結ばれているので末端でない", function()
+	local tsunagari = tsunagariList()
+	table.insert(tsunagari, { kyotenA = "D", kyotenB = "B" })
+	expect(isMattan(kyotenList(), tsunagari, "B")).toBe(false)
+	expect(isMattan(kyotenList(), tsunagari, "D")).toBe(false)
+end)
+
+test(
+	"試験用ステージの開始時は、敵軍の東と味方軍の西が末端で、中央を制圧すると東は孤立して末端でなくなる",
+	function()
+		local haichi = Haichi.get("Test") :: Haichi.Haichi
+		local list: { Heitansen.Kyoten } = {}
+		for _, kyoten in haichi.kyoten do
+			table.insert(list, { id = kyoten.id, gun = kyoten.gun, honjin = kyoten.honjin })
+		end
+		expect(isMattan(list, haichi.tsunagari, "Higashi")).toBe(true)
+		expect(isMattan(list, haichi.tsunagari, "Nishi")).toBe(true)
+		expect(isMattan(list, haichi.tsunagari, "Chuo")).toBe(false)
+		find(list, "Chuo").gun = "Mikatagun"
+		expect(isMattan(list, haichi.tsunagari, "Higashi")).toBe(false)
+	end
+)

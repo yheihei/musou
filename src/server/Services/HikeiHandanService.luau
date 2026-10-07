@@ -8,6 +8,9 @@
 -- - 上忍と首領ごとに Interval 秒に1回だけ判断する。敵軍のだれかが使ってから UseInterval 秒の間は、敵軍のだれも判断しない
 -- - 判断するときは様子の要約（率いる部隊が交戦中か、鬼神化しているか、体力、戦場のプレイヤーとほかの上忍・首領の
 --   位置と、強化の秘計の効果中か、誘い出されているか）を作り、使える秘計から条件のそろった秘計を選ぶ
+-- - 様子の要約には、範囲の中にいる拠点（所属・本陣か・中心・兵站線の末端か・兵糧庫か・爆破罠があるか・耐久と
+--   爆発する耐久）も入れる。拠点は秘計の発動と同じ KyotenService.kyotenAt でデータの位置から引き、兵糧庫か
+--   （HyorokoService.isHyoroko）と爆破罠があるか（BakuhawanaService.hasTrap）も発動の確かめと同じ値を使う
 -- - 使える秘計は、持ち込みのうち、まだ使っておらず、試し直しを待っていない枚。発動できなかった秘計は
 --   RetryInterval 秒の間、同じ上忍か首領は選ばない
 -- - 秘計は必ず秘計の入口（HikeiService.useByJonin）で使う。1戦1枚1回と、発動できなかった枚が残ることは入口が持つ。
@@ -20,19 +23,25 @@ local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Bakuhawana = require(ReplicatedStorage.Shared.Bakuhawana)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local HikeiHandan = require(ReplicatedStorage.Shared.HikeiHandan)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
+local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local BakuhawanaService = require(script.Parent.BakuhawanaService)
 local ButaiService = require(script.Parent.ButaiService)
 local ChohatsuService = require(script.Parent.ChohatsuService)
+local HeitansenService = require(script.Parent.HeitansenService)
 local HikeiService = require(script.Parent.HikeiService)
+local HyorokoService = require(script.Parent.HyorokoService)
 local JoninKotaiService = require(script.Parent.JoninKotaiService)
 local JoninService = require(script.Parent.JoninService)
 local KishinkaService = require(script.Parent.KishinkaService)
+local KyotenService = require(script.Parent.KyotenService)
 local StageService = require(script.Parent.StageService)
 
 -- 上忍か首領が最後に秘計を使おうとした結果（確認用）
@@ -123,6 +132,29 @@ local function unitsAround(jonin: Jonin.Jonin): { HikeiHandan.Unit }
 	return units
 end
 
+-- 上忍か首領が範囲の中にいる拠点の様子（兵糧庫と爆破罠の判断に使う）。どの拠点の範囲にもいなければ nil。
+-- 拠点・兵糧庫か・罠があるか・爆発する耐久は、秘計の発動（HyorokoService・BakuhawanaService）と同じ引き方にする
+local function kyotenOf(jonin: Jonin.Jonin): HikeiHandan.Kyoten?
+	local kyotenId = KyotenService.kyotenAt(jonin.position)
+	local kyoten = if kyotenId then KyotenService.get(kyotenId) else nil
+	local center = if kyotenId then KyotenService.centerOf(kyotenId) else nil
+	if not kyotenId or not kyoten or not center then
+		return nil
+	end
+	return {
+		id = kyotenId,
+		gun = kyoten.gun,
+		honjin = kyoten.honjin,
+		x = center.x,
+		z = center.z,
+		mattan = HeitansenService.isMattan(kyotenId),
+		hyoroko = HyorokoService.isHyoroko(kyotenId),
+		bakuhawana = BakuhawanaService.hasTrap(kyotenId),
+		taikyu = kyoten.taikyu,
+		threshold = Bakuhawana.threshold(Kyoten.maxTaikyu(kyoten.honjin)),
+	}
+end
+
 -- 上忍か首領の様子の要約。hikei は使える秘計（枚の順）
 local function summarize(jonin: Jonin.Jonin, hikei: { string }): HikeiHandan.Situation
 	local butai = jonin.butai
@@ -138,6 +170,7 @@ local function summarize(jonin: Jonin.Jonin, hikei: { string }): HikeiHandan.Sit
 		kishinka = KishinkaService.isActive(jonin.id),
 		hikei = hikei,
 		units = unitsAround(jonin),
+		kyoten = kyotenOf(jonin),
 	}
 end
 
@@ -219,6 +252,27 @@ local function labelOf(unit: HikeiHandan.Unit): string
 	return unit.id
 end
 
+-- 窓口に出す、上忍か首領が中にいる拠点の様子と、拠点の中心から一番近いプレイヤーまでの距離（player）。
+-- 拠点の外にいれば nil
+local function describeKyoten(summary: HikeiHandan.Situation): { [string]: any }?
+	local kyoten = summary.kyoten
+	if not kyoten then
+		return nil
+	end
+	local distance = HikeiHandan.playerDistanceOf(summary)
+	return {
+		id = kyoten.id,
+		gun = kyoten.gun,
+		honjin = kyoten.honjin,
+		mattan = kyoten.mattan,
+		hyoroko = kyoten.hyoroko,
+		bakuhawana = kyoten.bakuhawana,
+		taikyu = round(kyoten.taikyu),
+		threshold = round(kyoten.threshold),
+		player = if distance then round(distance) else nil,
+	}
+end
+
 -- 窓口に出す、敵軍の上忍か首領の判断の様子
 local function describe(jonin: Jonin.Jonin, now: number): { [string]: any }
 	local mochikomi, used = HikeiService.getJoninMochikomi(jonin.id)
@@ -268,6 +322,7 @@ local function describe(jonin: Jonin.Jonin, now: number): { [string]: any }
 		attempt = if attempt
 			then { hikei = attempt.hikei, ok = attempt.ok, reason = attempt.reason, ago = round(now - attempt.at) }
 			else nil,
+		kyoten = describeKyoten(summary),
 	}
 end
 
@@ -277,6 +332,7 @@ local function registerDebugCommands()
 		"",
 		"敵軍の上忍と首領の秘計の判断の様子を JSON で返す。敵軍全体の使用間隔の残り秒数（wait）、敵軍が最後に使った秘計（last）、"
 			.. "上忍と首領ごとの持ち込み・使用済み・今の様子で選ぶ秘計（choice）・率いる部隊が交戦中か・鬼神化しているか・体力・"
+			.. "中にいる拠点（kyoten。兵站線の末端か・兵糧庫か・爆破罠があるか・耐久と爆発する耐久・中心から一番近いプレイヤーまでの距離）・"
 			.. "次の判断までの秒数・試し直しを待つ秘計・周りの相手（大喝と挑発の半径の広い方の中）・最後に使おうとした結果",
 		function()
 			local now = os.clock()
