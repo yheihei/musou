@@ -17,7 +17,7 @@ local PARAMS: HikeiHandan.Params = {
 		FukuheiDistance = 100,
 		DaikakeiAite = 3,
 	},
-	Daikatsu = { Radius = 40 },
+	Daikatsu = { Radius = 40, Attack = 0.7, Defense = 0.7, Shiki = 15 },
 	Chohatsu = { Radius = 100 },
 }
 

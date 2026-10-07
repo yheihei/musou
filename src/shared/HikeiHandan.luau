@@ -33,11 +33,12 @@ local Config = require("./Config")
 local Gun = require("./Gun")
 local Hikei = require("./Hikei")
 
--- 判断に使う Config.luau の節。HikeiHandan 節と、大喝と挑発の半径（Daikatsu 節と Chohatsu 節の Radius）
+-- 判断に使う Config.luau の節。HikeiHandan 節と、大喝と挑発の半径（Daikatsu 節と Chohatsu 節の Radius）。
+-- 省いたときに Config をそのまま渡せるよう、節の型は Config.luau と同じにする
 export type Params = {
 	HikeiHandan: Config.HikeiHandanSection,
-	Daikatsu: { Radius: number },
-	Chohatsu: { Radius: number },
+	Daikatsu: Config.DaikatsuSection,
+	Chohatsu: Config.ChohatsuSection,
 }
 
 -- 判断に使う、戦場のプレイヤーと上忍・首領
