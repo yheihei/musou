@@ -15,6 +15,7 @@ local function testHaichi(changes: ((Haichi.Haichi) -> ())?): Haichi.Haichi
 		kyoten = table.clone(source.kyoten),
 		tsunagari = table.clone(source.tsunagari),
 		butai = {},
+		mochikomi = Haichi.mochikomiOf(source.stageId),
 		shikenMejirushi = nil,
 	}
 	for _, butai in source.butai do
@@ -290,3 +291,58 @@ test(
 		expect(contains(problems, "大火計地域 D9 が区画の範囲からはみ出す")).toBe(true)
 	end
 )
+
+test("試験用ステージの敵軍の上忍と首領は、鬼神化・大喝・挑発を持ち込む", function()
+	expect(Haichi.mochikomiOf("Test")).toEqual({
+		ShikenJonin1 = { "Kishinka", "Chohatsu" },
+		ShikenJonin2 = { "Daikatsu" },
+		ShikenShuryo = { "Kishinka", "Daikatsu" },
+	})
+end)
+
+test(
+	"持ち込みは写しで返し、配置の構成の無いステージは空。持ち込みが無くても検証は通る",
+	function()
+		local first = Haichi.mochikomiOf("Test")
+		table.insert(first.ShikenJonin2, "Kishinka")
+		first.ShikenJonin3 = { "Kishinka" }
+		expect(Haichi.mochikomiOf("Test").ShikenJonin2).toEqual({ "Daikatsu" })
+		expect(Haichi.mochikomiOf("Test").ShikenJonin3).toBe(nil)
+		expect(Haichi.mochikomiOf("Nowhere")).toEqual({})
+		local haichi = testHaichi(function(copy)
+			copy.mochikomi = nil
+		end)
+		expect(Haichi.validate(haichi, TEST_STAGE)).toEqual({})
+	end
+)
+
+test(
+	"秘計を持ち込む味方軍の上忍と首領、配置にいないキャラクターを見つける",
+	function()
+		local haichi = testHaichi(function(copy)
+			local mochikomi = copy.mochikomi :: { [string]: { string } }
+			mochikomi.ShikenJonin3 = { "Kishinka" }
+			mochikomi.Hayate = { "Daikatsu" }
+			mochikomi.Jin = { "Chohatsu" }
+		end)
+		expect(Haichi.validate(haichi, TEST_STAGE)).toEqual({
+			"秘計を持ち込む Hayate は敵軍の上忍でも首領でもない",
+			"秘計を持ち込む Jin は敵軍の上忍でも首領でもない",
+			"秘計を持ち込む ShikenJonin3 は敵軍の上忍でも首領でもない",
+		})
+	end
+)
+
+test("上限を超える持ち込み、重なり、定義に無い秘計を見つける", function()
+	local haichi = testHaichi(function(copy)
+		local mochikomi = copy.mochikomi :: { [string]: { string } }
+		mochikomi.ShikenJonin1 = { "Kishinka", "Chohatsu", "Daikatsu", "Fukuhei" }
+		mochikomi.ShikenJonin2 = { "Daikatsu", "Daikatsu" }
+		mochikomi.ShikenShuryo = { "Kishinka", "Nowhere" }
+	end)
+	expect(Haichi.validate(haichi, TEST_STAGE)).toEqual({
+		"ShikenJonin1 の秘計の持ち込みを受け付けない（HikeiLimit）",
+		"ShikenJonin2 の秘計の持ち込みを受け付けない（HikeiDuplicate）",
+		"ShikenShuryo の秘計の持ち込みを受け付けない（UnknownHikei）",
+	})
+end)

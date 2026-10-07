@@ -1138,6 +1138,12 @@ local SNAPSHOT = {
 	Chohatsu = {
 		Radius = 100,
 	},
+	HikeiHandan = {
+		Interval = 1,
+		UseInterval = 30,
+		RetryInterval = 10,
+		ShuryoHealthRate = 0.5,
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,

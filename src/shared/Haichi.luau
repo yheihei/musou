@@ -2,6 +2,7 @@
 -- ステージの配置の構成（ADR 0006）。拠点の種類と開始時の軍、拠点どうしのつながり、部隊（率いる上忍・方針・開始時の拠点）を
 -- ステージ ID で引く。位置と形はプレースの目印に置く。試験用ステージだけは、目印の位置もここに持つ。
 -- 首領は Stages.luau の両軍の首領を引き、本陣から出す。部隊の兵数は Config.luau の Butai 節にある。
+-- 敵軍の上忍と首領が持ち込む秘計も、キャラクター ID ごとにここに持つ（味方軍の上忍と首領は秘計を持ち込まない）。
 -- 構成の整合の検証と、構成とプレースの目印の突き合わせもここに置く。
 -- 落石地点と大火計地域は目印だけで完結させ（ADR 0006）、参照する拠点とつながりの有無を読み込み時にここで確かめる。
 -- Roblox の API は使わない。
@@ -10,6 +11,7 @@ local Characters = require("./Characters")
 local Config = require("./Config")
 local Gun = require("./Gun")
 local Heitansen = require("./Heitansen")
+local Hikei = require("./Hikei")
 local Stages = require("./Stages")
 
 export type Kyoten = {
@@ -82,6 +84,8 @@ export type Haichi = {
 	kyoten: { Kyoten },
 	tsunagari: { Tsunagari },
 	butai: { Butai },
+	-- 敵軍の上忍と首領が持ち込む秘計（枚の順）。キャラクター ID から引く。持ち込まない上忍と首領は入れない
+	mochikomi: { [string]: { string } }?,
 	-- 目印の位置をコードに持つ試験用ステージだけにある
 	shikenMejirushi: ShikenMejirushi?,
 }
@@ -116,6 +120,13 @@ local definitions: { [string]: Haichi } = {
 			{ id = "Teki1", gun = "Tekigun", jonin = "ShikenJonin1", hoshin = "Koryaku", kyoten = "Chuo" },
 			{ id = "Teki2", gun = "Tekigun", jonin = "ShikenJonin2", hoshin = "Boei", kyoten = "Higashi" },
 			{ id = "Teki3", gun = "Tekigun", jonin = nil, hoshin = "Boei", kyoten = "TekiHonjin" },
+		},
+		-- 鬼神化・大喝・挑発を確かめる持ち込み。試験の上忍1 は Teki1 が交戦したら鬼神化、味方軍の上忍が近づいたら挑発、
+		-- 試験の上忍2 は鬼神化したプレイヤーが近づいたら大喝、試験の首領は体力が減ったら鬼神化を使う
+		mochikomi = {
+			ShikenJonin1 = { "Kishinka", "Chohatsu" },
+			ShikenJonin2 = { "Daikatsu" },
+			ShikenShuryo = { "Kishinka", "Daikatsu" },
 		},
 		shikenMejirushi = {
 			kukakuSizeX = 800,
@@ -199,6 +210,16 @@ end
 function Haichi.heisuOf(stageId: string, butaiId: string): number?
 	local stage = Config.Butai.Heisu[stageId]
 	return if stage then stage[butaiId] else nil
+end
+
+-- 敵軍の上忍と首領が持ち込む秘計を、キャラクター ID から引く表で返す（表は写し）。配置の構成か持ち込みが無ければ空
+function Haichi.mochikomiOf(stageId: string): { [string]: { string } }
+	local haichi = definitions[stageId]
+	local result: { [string]: { string } } = {}
+	for id, ids in (if haichi then haichi.mochikomi else nil) or {} do
+		result[id] = table.clone(ids)
+	end
+	return result
 end
 
 local function clanOf(stage: Stages.Stage, gun: Gun.Gun): Characters.ClanId
@@ -440,6 +461,34 @@ function Haichi.validate(haichi: Haichi, stage: Stages.Stage): { string }
 				table.insert(problems, `上忍 {jonin} が部隊 {joninOf[jonin]} と {butai.id} を率いている`)
 			end
 			joninOf[jonin] = butai.id
+		end
+	end
+
+	-- 秘計を持ち込めるのは敵軍の上忍と首領だけ。上限と重なりは持ち込みの検証（Hikei.checkMochikomi）で確かめる
+	local tekigunIds: { [string]: boolean } = {}
+	for _, butai in haichi.butai do
+		local jonin = butai.jonin
+		if butai.gun == "Tekigun" and jonin then
+			tekigunIds[jonin] = true
+		end
+	end
+	local tekigunShuryo = stage.shuryo.tekigun
+	if tekigunShuryo then
+		tekigunIds[tekigunShuryo] = true
+	end
+	local mochikomi = haichi.mochikomi or {}
+	local mochikomiIds = {}
+	for id in mochikomi do
+		table.insert(mochikomiIds, id)
+	end
+	table.sort(mochikomiIds)
+	for _, id in mochikomiIds do
+		if not tekigunIds[id] then
+			table.insert(problems, `秘計を持ち込む {id} は敵軍の上忍でも首領でもない`)
+		end
+		local reject = Hikei.checkMochikomi(mochikomi[id], {})
+		if reject then
+			table.insert(problems, `{id} の秘計の持ち込みを受け付けない（{reject}）`)
 		end
 	end
 

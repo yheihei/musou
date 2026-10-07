@@ -1,0 +1,355 @@
+--!strict
+-- 秘計の判断。敵軍の上忍と首領が、戦場の様子を見て、持ち込んだ秘計を使うかを決めて使う。
+-- 判断は ReplicatedStorage.Shared.HikeiHandan、間隔と割合は Config.luau の HikeiHandan 節にある。
+-- 持ち込みは、出撃したときに HikeiService が配置の構成（Haichi.mochikomiOf）から決める。
+--
+-- - 判断は JoninKotaiService.setHikeiDecider で登録する。考える間隔（Config.luau の Jittaikaken 節の Interval）ごとに、
+--   倒れていない敵軍の上忍と首領ごとに呼ばれる（個体として出ていなくても呼ばれ、窓口の SetJoninAI false の間は呼ばれない）
+-- - 上忍と首領ごとに Interval 秒に1回だけ判断する。敵軍のだれかが使ってから UseInterval 秒の間は、敵軍のだれも判断しない
+-- - 判断するときは様子の要約（率いる部隊が交戦中か、鬼神化しているか、体力、戦場のプレイヤーとほかの上忍・首領の
+--   位置と、強化の秘計の効果中か、誘い出されているか）を作り、使える秘計から条件のそろった秘計を選ぶ
+-- - 使える秘計は、持ち込みのうち、まだ使っておらず、試し直しを待っていない枚。発動できなかった秘計は
+--   RetryInterval 秒の間、同じ上忍か首領は選ばない
+-- - 秘計は必ず秘計の入口（HikeiService.useByJonin）で使う。1戦1枚1回と、発動できなかった枚が残ることは入口が持つ。
+--   使ったときと使えなかったときは、コンソールに [HikeiHandan] の行を出す
+-- - 味方軍の上忍と首領は判断しない（入口が呼ばないうえに、ここと判断でも軍を確かめる）
+-- - 敵軍のだれかが秘計を使ったら（HikeiService.activated。窓口の UseHikei も含む）、敵軍全体の使用間隔を始める
+-- - 出撃とロビーのフェーズへの戻りで、判断の記録を空にする
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Gun = require(ReplicatedStorage.Shared.Gun)
+local Hikei = require(ReplicatedStorage.Shared.Hikei)
+local HikeiHandan = require(ReplicatedStorage.Shared.HikeiHandan)
+local Jonin = require(ReplicatedStorage.Shared.Jonin)
+local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
+local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local ButaiService = require(script.Parent.ButaiService)
+local ChohatsuService = require(script.Parent.ChohatsuService)
+local HikeiService = require(script.Parent.HikeiService)
+local JoninKotaiService = require(script.Parent.JoninKotaiService)
+local JoninService = require(script.Parent.JoninService)
+local KishinkaService = require(script.Parent.KishinkaService)
+local StageService = require(script.Parent.StageService)
+
+-- 上忍か首領が最後に秘計を使おうとした結果（確認用）
+type Attempt = {
+	hikei: string,
+	ok: boolean,
+	-- 発動できなかった理由。発動したら nil
+	reason: Hikei.UseFailure?,
+	-- 使おうとした時刻（os.clock）
+	at: number,
+}
+
+-- 敵軍が最後に使った秘計（確認用）
+type LastUse = {
+	-- 使った上忍か首領のキャラクター ID
+	user: string,
+	hikei: string,
+	-- 使った時刻（os.clock）
+	at: number,
+}
+
+local HikeiHandanService = {}
+
+-- 判断の記録（敵軍全体の使用間隔・判断の周期・試し直しの待ち）。時刻は os.clock（考える間隔の時刻と同じ）
+local state: HikeiHandan.State = HikeiHandan.newState()
+-- キャラクター ID から引く、最後に秘計を使おうとした結果
+local attemptOf: { [string]: Attempt } = {}
+local lastUse: LastUse? = nil
+
+-- 倒れていない人のキャラクターの HumanoidRootPart。倒れているかキャラクターが無ければ nil
+local function aliveRoot(player: Player): BasePart?
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+	return root
+end
+
+-- 強化の秘計の効果中の対象の ID（プレイヤーは UserId の文字列、上忍と首領はキャラクター ID）
+local function kyokaTargets(): { [string]: boolean }
+	local now = HikeiService.now()
+	local targets: { [string]: boolean } = {}
+	for _, effect in HikeiService.getEffects() do
+		local definition = Hikei.get(effect.hikei)
+		if definition and definition.kyoka and now < effect.expiresAt then
+			targets[effect.target] = true
+		end
+	end
+	return targets
+end
+
+-- 判断に使う、戦場のプレイヤー（倒れていない出撃メンバー）と、jonin 以外の倒れていない上忍・首領
+local function unitsAround(jonin: Jonin.Jonin): { HikeiHandan.Unit }
+	local kyoka = kyokaTargets()
+	local units: { HikeiHandan.Unit } = {}
+	for _, member in StageService.getMembers() do
+		local root = aliveRoot(member)
+		if root then
+			local id = tostring(member.UserId)
+			table.insert(units, {
+				kind = "Player",
+				id = id,
+				gun = "Mikatagun",
+				x = root.Position.X,
+				z = root.Position.Z,
+				kyoka = kyoka[id] == true,
+				shuryo = false,
+				lured = false,
+			})
+		end
+	end
+	for _, other in JoninService.list() do
+		if other.id ~= jonin.id and not Jonin.isDefeated(other) then
+			table.insert(units, {
+				kind = "Jonin",
+				id = other.id,
+				gun = other.gun,
+				x = other.position.x,
+				z = other.position.z,
+				kyoka = kyoka[other.id] == true,
+				shuryo = other.shuryo,
+				lured = ChohatsuService.isLured(other.id),
+			})
+		end
+	end
+	return units
+end
+
+-- 上忍か首領の様子の要約。hikei は使える秘計（枚の順）
+local function summarize(jonin: Jonin.Jonin, hikei: { string }): HikeiHandan.Situation
+	local butai = jonin.butai
+	return {
+		id = jonin.id,
+		gun = jonin.gun,
+		shuryo = jonin.shuryo,
+		x = jonin.position.x,
+		z = jonin.position.z,
+		health = jonin.health,
+		maxHealth = jonin.stats.MaxHealth,
+		kosen = butai ~= nil and ButaiService.aiteOf(butai) ~= nil,
+		kishinka = KishinkaService.isActive(jonin.id),
+		hikei = hikei,
+		units = unitsAround(jonin),
+	}
+end
+
+-- 使える秘計 hikei から条件のそろった秘計を選び、秘計の入口で使わせる。mochikomi は持ち込み（枚の番号を引く）。
+-- 使おうとした秘計と、発動したか、発動できなかった理由を返す。条件のそろう秘計が無ければ nil。
+-- 使ったときと使えなかったときは、コンソールに1行出す
+local function tryUse(
+	jonin: Jonin.Jonin,
+	mochikomi: { string },
+	hikei: { string },
+	now: number
+): (string?, boolean, Hikei.UseFailure?)
+	local hikeiId = HikeiHandan.decide(summarize(jonin, hikei))
+	local slot = if hikeiId then table.find(mochikomi, hikeiId) else nil
+	if not hikeiId or not slot then
+		return nil, false, nil
+	end
+	local ok, _, failure = HikeiService.useByJonin(jonin.id, slot)
+	attemptOf[jonin.id] = { hikei = hikeiId, ok = ok, reason = failure, at = now }
+	if ok then
+		HikeiHandan.recordUse(state, now)
+		print(`[HikeiHandan] {jonin.displayName} が {hikeiId} を使った`)
+	else
+		HikeiHandan.recordFailure(state, jonin.id, hikeiId, now)
+		print(`[HikeiHandan] {jonin.displayName} は {hikeiId} を使えなかった（{failure}）`)
+	end
+	return hikeiId, ok, failure
+end
+
+-- 考える間隔ごとに呼ばれる判断。敵軍の上忍か首領の判断の周期が来ていて、敵軍全体の使用間隔が明けていれば、
+-- 条件のそろった秘計を使う
+local function decide(situation: JoninKotaiService.Situation)
+	local jonin = situation.jonin
+	if jonin.gun ~= "Tekigun" or Jonin.isDefeated(jonin) then
+		return
+	end
+	if not HikeiHandan.isDue(state, jonin.id, situation.now) then
+		return
+	end
+	local mochikomi, used = HikeiService.getJoninMochikomi(jonin.id)
+	local hikei = HikeiHandan.usableOf(state, jonin.id, mochikomi, used, situation.now)
+	if #hikei > 0 then
+		tryUse(jonin, mochikomi, hikei, situation.now)
+	end
+end
+
+-- 敵軍のだれかが秘計を使ったら、敵軍全体の使用間隔を始める（判断で使ったときも、窓口で使わせたときも）
+local function onActivated(user: string, _userName: string, gun: Gun.Gun, hikeiId: string)
+	if gun ~= "Tekigun" then
+		return
+	end
+	local now = os.clock()
+	HikeiHandan.recordUse(state, now)
+	lastUse = { user = user, hikei = hikeiId, at = now }
+end
+
+-- 判断の記録を空にする
+local function reset()
+	state = HikeiHandan.newState()
+	table.clear(attemptOf)
+	lastUse = nil
+end
+
+local function round(value: number): number
+	return math.round(value * 10) / 10
+end
+
+local function listOf(ids: { string }): string
+	return if #ids > 0 then table.concat(ids, "、") else "なし"
+end
+
+-- 窓口に出す名前。プレイヤーは名前、上忍と首領はキャラクター ID
+local function labelOf(unit: HikeiHandan.Unit): string
+	if unit.kind == "Player" then
+		local userId = tonumber(unit.id)
+		local player = if userId then Players:GetPlayerByUserId(userId) else nil
+		return if player then player.Name else unit.id
+	end
+	return unit.id
+end
+
+-- 窓口に出す、敵軍の上忍か首領の判断の様子
+local function describe(jonin: Jonin.Jonin, now: number): { [string]: any }
+	local mochikomi, used = HikeiService.getJoninMochikomi(jonin.id)
+	local summary = summarize(jonin, HikeiHandan.usableOf(state, jonin.id, mochikomi, used, now))
+	local retry: { [string]: number } = {}
+	local waiting = false
+	for _, hikeiId in mochikomi do
+		local remaining = HikeiHandan.retryWaitOf(state, jonin.id, hikeiId, now)
+		if remaining > 0 then
+			retry[hikeiId] = round(remaining)
+			waiting = true
+		end
+	end
+	-- 大喝と挑発の半径の広い方の中にいる相手
+	local radius = math.max(Config.Daikatsu.Radius, Config.Chohatsu.Radius)
+	local aite = {}
+	for _, unit in summary.units do
+		local dx, dz = unit.x - summary.x, unit.z - summary.z
+		local distance = math.sqrt(dx * dx + dz * dz)
+		if unit.gun ~= jonin.gun and distance <= radius then
+			table.insert(aite, {
+				id = labelOf(unit),
+				distance = round(distance),
+				kyoka = if unit.kyoka then true else nil,
+				shuryo = if unit.shuryo then true else nil,
+				lured = if unit.lured then true else nil,
+			})
+		end
+	end
+	table.sort(aite, function(a, b)
+		return a.distance < b.distance
+	end)
+	local nextAt = state.nextAt[jonin.id]
+	local attempt = attemptOf[jonin.id]
+	return {
+		id = jonin.id,
+		mochikomi = mochikomi,
+		used = used,
+		choice = HikeiHandan.decide(summary),
+		kosen = summary.kosen,
+		kishinka = summary.kishinka,
+		health = round(jonin.health),
+		maxHealth = round(jonin.stats.MaxHealth),
+		nextIn = if nextAt then round(math.max(nextAt - now, 0)) else 0,
+		retry = if waiting then retry else nil,
+		aite = aite,
+		attempt = if attempt
+			then { hikei = attempt.hikei, ok = attempt.ok, reason = attempt.reason, ago = round(now - attempt.at) }
+			else nil,
+	}
+end
+
+local function registerDebugCommands()
+	DebugCommand.register(
+		"DumpHikeiHandan",
+		"",
+		"敵軍の上忍と首領の秘計の判断の様子を JSON で返す。敵軍全体の使用間隔の残り秒数（wait）、敵軍が最後に使った秘計（last）、"
+			.. "上忍と首領ごとの持ち込み・使用済み・今の様子で選ぶ秘計（choice）・率いる部隊が交戦中か・鬼神化しているか・体力・"
+			.. "次の判断までの秒数・試し直しを待つ秘計・周りの相手（大喝と挑発の半径の広い方の中）・最後に使おうとした結果",
+		function()
+			local now = os.clock()
+			local list = {}
+			for _, jonin in JoninService.list() do
+				if jonin.gun == "Tekigun" and not Jonin.isDefeated(jonin) then
+					table.insert(list, describe(jonin, now))
+				end
+			end
+			local last = lastUse
+			return HttpService:JSONEncode({
+				wait = round(HikeiHandan.waitOf(state, now)),
+				last = if last then { jonin = last.user, hikei = last.hikei, ago = round(now - last.at) } else nil,
+				jonin = list,
+			})
+		end
+	)
+	DebugCommand.register(
+		"DecideHikei",
+		"<キャラクター ID>",
+		"敵軍の上忍か首領に、判断の周期・敵軍全体の使用間隔・試し直しの待ちを待たずに判断させ、条件のそろった秘計を"
+			.. "秘計の入口で使わせる。使ったら敵軍全体の使用間隔が始まる。SetJoninAI false でも判断させる（確認用）",
+		function(id)
+			local jonin = if type(id) == "string" then JoninService.get(id) else nil
+			if not jonin then
+				return `{tostring(id)} は出撃したステージの上忍と首領にいない`
+			end
+			if Jonin.isDefeated(jonin) then
+				return `{jonin.displayName} は倒れている`
+			end
+			if jonin.gun ~= "Tekigun" then
+				return `{jonin.displayName} は味方軍なので、秘計を使わない`
+			end
+			local mochikomi, used = HikeiService.getJoninMochikomi(jonin.id)
+			local hikei = {}
+			for _, hikeiId in mochikomi do
+				if not table.find(used, hikeiId) then
+					table.insert(hikei, hikeiId)
+				end
+			end
+			local hikeiId, ok, failure = tryUse(jonin, mochikomi, hikei, os.clock())
+			if not hikeiId then
+				local usable = listOf(hikei)
+				return `{jonin.displayName} は条件のそろう秘計が無いので、使わなかった（使える秘計 {usable}）`
+			end
+			if not ok then
+				return `{jonin.displayName} は {hikeiId} を使えなかった（{failure}）`
+			end
+			return `{jonin.displayName} が {hikeiId} を使った`
+		end
+	)
+	DebugCommand.register(
+		"ResetHikeiHandan",
+		"",
+		"敵軍の秘計の判断の記録（敵軍全体の使用間隔・判断の周期・試し直しの待ち・最後の結果）を空にする。"
+			.. "持ち込みと使用済みは変えない（確認用）",
+		function()
+			reset()
+			return "敵軍の秘計の判断の記録を空にした（敵軍全体の使用間隔の待ちも外した）"
+		end
+	)
+end
+
+function HikeiHandanService.start()
+	JoninKotaiService.setHikeiDecider(decide)
+	HikeiService.activated:Connect(onActivated)
+	StageService.started:Connect(reset)
+	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
+		if next == "Lobby" then
+			reset()
+		end
+	end)
+	registerDebugCommands()
+end
+
+return HikeiHandanService

@@ -4,7 +4,7 @@
 -- 各秘計の中身（伏兵部隊や落石の岩など）は、各秘計の issue が register で処理を登録する。
 --
 -- - 発動者はプレイヤーと NPC の上忍・首領。プレイヤーは Remotes.Action（ActionService.onHikei）から、
---   上忍と首領は useByJonin（敵軍の AI）から使う
+--   上忍と首領は useByJonin（敵軍の秘計の判断。HikeiHandanService）から使う
 -- - 確かめる順は、戦闘のフェーズ、発動者が倒れていないか、枚の持ち込み、使用済み、処理の登録
 -- - 処理が効果を出せなかった枚（対象が無いなど）は未使用のまま残す。処理のエラーも未使用のまま警告にする
 -- - 発動したら使用済みにし、発動者の位置で、発動者の軍が得をする士気の出来事を知らせる（ShikiService）
@@ -13,6 +13,7 @@
 -- - 秘計の見た目は workspace.Hikei の下の秘計ごとのフォルダ（folderOf）に置く
 -- - 出撃（StageService.started）で、ロビーで選んだ秘計を出撃メンバーの持ち込みとして決め、ステージの終わりまで変えない。
 --   1枚も選んでいない人には、誰も選んでいない秘計を配る（Hikei.assignMochikomi）。上限より少なくても出撃できる
+-- - 敵軍の上忍と首領の持ち込みは、出撃で持ち込みを空にした後に、配置の構成（Haichi.mochikomiOf）から決める
 -- - 出撃で効果と使用記録を空にする。決着とロビーのフェーズへの戻りで残った効果を全部解除し、
 --   ロビーのフェーズへ戻ったら持ち込みも外す
 -- - プレイヤーの持ち込みと使用済みは、Player の Attribute の HikeiMochikomi・HikeiUsed（秘計 ID をカンマでつないだ文字列）で
@@ -29,6 +30,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
+local Haichi = require(ReplicatedStorage.Shared.Haichi)
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local HikeiNotice = require(ReplicatedStorage.Shared.HikeiNotice)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
@@ -182,6 +184,12 @@ end
 -- プレイヤーの持ち込み（枚の順）
 function HikeiService.getMochikomi(player: Player): { string }
 	return table.clone(mochikomiOf[userIdOf(player)] or {})
+end
+
+-- 上忍か首領の持ち込みと、そのうちこの戦いで使用済みの秘計（どちらも枚の順）
+function HikeiService.getJoninMochikomi(joninId: string): ({ string }, { string })
+	local mochikomi = mochikomiOf[joninId] or {}
+	return table.clone(mochikomi), Hikei.usedOf(usage, joninId, mochikomi)
 end
 
 -- 使用記録を空にし、プレイヤーの使用済みの Attribute を書き直す
@@ -352,7 +360,7 @@ function HikeiService.useByJonin(joninId: string, slot: number): (boolean, strin
 end
 
 -- 出撃したら、前のステージの効果を解除し、ロビーで選んだ秘計を持ち込みとして決めて、使用記録を空にする。
--- 1枚も選んでいない人には、誰も選んでいない秘計を配る
+-- 1枚も選んでいない人には、誰も選んでいない秘計を配る。敵軍の上忍と首領の持ち込みは配置の構成から決める
 local function onStarted(info: StageService.StartInfo)
 	finishAll()
 	table.clear(mochikomiOf)
@@ -365,6 +373,13 @@ local function onStarted(info: StageService.StartInfo)
 		local reject = setMochikomiOf(userIdOf(member), mochikomi)
 		if reject then
 			warn(`HikeiService: {member.Name} の持ち込みを決められなかった（{reject}）`)
+		end
+	end
+	-- 持ち込みを空にした後で決める（StageService.started を受けるほかのサービスとの順に頼らない）
+	for joninId, mochikomi in Haichi.mochikomiOf(info.stageId) do
+		local reject = HikeiService.setJoninMochikomi(joninId, mochikomi)
+		if reject then
+			warn(`HikeiService: {joninId} の持ち込みを決められなかった（{reject}）`)
 		end
 	end
 	HikeiService.resetUsage()

@@ -359,6 +359,14 @@ export type ChohatsuSection = {
 	Radius: number,
 }
 
+-- 秘計の判断。敵軍の上忍と首領が秘計を使うかを決める間隔と条件
+export type HikeiHandanSection = {
+	Interval: number,
+	UseInterval: number,
+	RetryInterval: number,
+	ShuryoHealthRate: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -439,6 +447,7 @@ export type Config = {
 	Daikakei: DaikakeiSection,
 	Bakuhawana: BakuhawanaSection,
 	Chohatsu: ChohatsuSection,
+	HikeiHandan: HikeiHandanSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1725,6 +1734,17 @@ local Config: Config = {
 	-- Jittaikaken 節の HomeRadius の距離で止まる
 	Chohatsu = {
 		Radius = 100, -- 発動者からこの距離（スタッド）までの相手の上忍が対象（実体化圏の AppearRadius より内）
+	},
+
+	-- 秘計の判断。敵軍の上忍と首領が、考える間隔（Jittaikaken 節の Interval）ごとに秘計を使うかを決める。
+	-- 判断は HikeiHandan.luau にある。鬼神化は率いる部隊が交戦中か首領の体力が減ったとき、
+	-- 大喝は Daikatsu 節の Radius 以内に強化の秘計の効果中の相手がいるとき、
+	-- 挑発は Chohatsu 節の Radius 以内に誘い出されていない相手の上忍がいるときに使う
+	HikeiHandan = {
+		Interval = 1, -- 上忍と首領ごとに、秘計を使うかを判断する間隔（秒）。考える間隔ごとに呼ばれるのを間引く
+		UseInterval = 30, -- 敵軍のだれかが秘計を使ってから、敵軍のだれかが次の秘計を使えるまでの秒数（敵軍全体の使用間隔）
+		RetryInterval = 10, -- 発動できなかった秘計を、同じ上忍か首領が試し直すまでの秒数
+		ShuryoHealthRate = 0.5, -- 首領が鬼神化を使う、体力の上限に対する割合の上限（これ以下で使う）
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある
