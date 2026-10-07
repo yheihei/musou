@@ -161,3 +161,48 @@ test(
 		expect(jonin.hikeiHosei.Kishinka).toBe(nil)
 	end
 )
+
+test(
+	"目的地へまっすぐ歩いた位置を返し、目的地の手前で止まるまでは着いていない",
+	function()
+		local position, arrived = Jonin.approach({ x = 0, z = 0 }, { x = 30, z = 40 }, 7, 6)
+		expect(position.x).toBeNear(4.2)
+		expect(position.z).toBeNear(5.6)
+		expect(arrived).toBe(false)
+	end
+)
+
+test("目的地から止まる距離のところで止まり、着いたと返す", function()
+	local position, arrived = Jonin.approach({ x = -3010, z = 0 }, { x = -3000, z = 0 }, 7, 6)
+	expect(position.x).toBeNear(-3006)
+	expect(position.z).toBeNear(0)
+	expect(arrived).toBe(true)
+	-- ちょうど届く距離でも着いたと返す
+	local exact, exactArrived = Jonin.approach({ x = 0, z = 0 }, { x = 13, z = 0 }, 7, 6)
+	expect(exact.x).toBeNear(7)
+	expect(exactArrived).toBe(true)
+end)
+
+test(
+	"もう止まる距離の内にいれば動かずに着いたと返し、引数の表は書き換えない",
+	function()
+		local start = { x = 1, z = 2 }
+		local target = { x = 4, z = 6 }
+		local position, arrived = Jonin.approach(start, target, 7, 6)
+		expect(position).toEqual({ x = 1, z = 2 })
+		expect(arrived).toBe(true)
+		expect(start).toEqual({ x = 1, z = 2 })
+		expect(target).toEqual({ x = 4, z = 6 })
+		local same, sameArrived = Jonin.approach({ x = 0, z = 0 }, { x = 0, z = 0 }, 7, 0)
+		expect(same).toEqual({ x = 0, z = 0 })
+		expect(sameArrived).toBe(true)
+	end
+)
+
+test("歩く距離が 0 以下なら動かない", function()
+	local position, arrived = Jonin.approach({ x = 0, z = 0 }, { x = 100, z = 0 }, 0, 6)
+	expect(position).toEqual({ x = 0, z = 0 })
+	expect(arrived).toBe(false)
+	local back = Jonin.approach({ x = 0, z = 0 }, { x = 100, z = 0 }, -5, 6)
+	expect(back).toEqual({ x = 0, z = 0 })
+end)

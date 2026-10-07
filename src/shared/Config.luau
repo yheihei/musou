@@ -326,6 +326,11 @@ export type BakuhawanaSection = {
 	Knockback: number,
 }
 
+-- 秘計の挑発。発動者の周りの相手の上忍を、発動者のもとへ誘い出す
+export type ChohatsuSection = {
+	Radius: number,
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -404,6 +409,7 @@ export type Config = {
 	Daikatsu: DaikatsuSection,
 	Daikakei: DaikakeiSection,
 	Bakuhawana: BakuhawanaSection,
+	Chohatsu: ChohatsuSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1556,6 +1562,14 @@ local Config: Config = {
 		Power = 80, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
 		HeisuRate = 0.5, -- 拠点の中の相手の部隊の兵数を減らす割合（端数は切り上げる）
 		Knockback = 60, -- 仮の湧き処理の敵を吹き飛ばす強さ（技の Knockback と同じ。EnemyReaction 節で軌道にする）
+	},
+
+	-- 秘計の挑発。発動者から Radius 以内の相手の上忍（首領は除く）を、効果時間の間、発動者のもとへ誘い出す。
+	-- 誘い出す時間は Hikei 節の Duration.Chohatsu。対象の選び方は Chohatsu.luau にある。
+	-- 誘い出された上忍は、上忍の歩く速さ（Stats 節の WalkSpeed）で発動者へ向かい、
+	-- Jittaikaken 節の HomeRadius の距離で止まる
+	Chohatsu = {
+		Radius = 100, -- 発動者からこの距離（スタッド）までの相手の上忍が対象（実体化圏の AppearRadius より内）
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

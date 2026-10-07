@@ -7,6 +7,7 @@
 -- 秘計の効果（鬼神化など）の補正は、秘計 ID ごとに setHikeiHosei で足し外しする。
 -- 敵軍の上忍と首領の体力は、出撃したときのパーティーの人数で上げる（PartySize.modifiersOf）。
 -- 体力が 0 になると倒れる。率いていた部隊は残し、士気だけを下げる（Butai.loseJonin）。
+-- 部隊を離れて歩く上忍（秘計の挑発で誘い出された上忍など）は、approach で目的地へ進める。
 -- 位置は水平の (x, z) で持つ。Roblox の API は使わない。
 
 local Characters = require("./Characters")
@@ -170,6 +171,23 @@ end
 function Jonin.setHikeiHosei(jonin: Jonin, hikeiId: string, modifiers: { Stats.Modifier }?)
 	jonin.hikeiHosei[hikeiId] = if modifiers then table.clone(modifiers) else nil
 	jonin.stats = statsOf(jonin.shuryo, jonin.modifiers, jonin.shihaiArea, jonin.hikeiHosei)
+end
+
+-- position から target へまっすぐ distance だけ歩いた位置と、target から stopDistance 以内に着いたかを返す。
+-- target から stopDistance の距離で止まり、もうその内にいれば動かない（個体が出ていない上忍をデータのまま歩かせる）
+function Jonin.approach(position: Point, target: Point, distance: number, stopDistance: number): (Point, boolean)
+	local dx, dz = target.x - position.x, target.z - position.z
+	local gap = math.sqrt(dx * dx + dz * dz)
+	local remaining = gap - stopDistance
+	if remaining <= 0 then
+		return { x = position.x, z = position.z }, true
+	end
+	local step = math.max(distance, 0)
+	local arrived = step >= remaining
+	if arrived then
+		step = remaining
+	end
+	return { x = position.x + dx / gap * step, z = position.z + dz / gap * step }, arrived
 end
 
 return Jonin

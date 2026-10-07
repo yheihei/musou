@@ -15,9 +15,15 @@
 -- - 毒（酉花の奥義「毒手裏剣」。Config.luau の Poison 節）は、データの上で間隔ごとに体力を減らす。個体が消えても続く。
 --   毒でのとどめは、毒を付けたプレイヤーの撃破に数える。毒の間にもう一度付けると、残りの時間を Duration に戻す
 -- - 個体として出ている上忍（setKotai）は、個体が位置を決める（JoninKotaiService が setPosition で写す）。
---   部隊への追従はしない。個体が戻る位置は homeOf（率いる部隊の位置、首領は本陣の中心）
+--   部隊への追従はしない。個体が戻る位置は homeOf（率いる部隊の位置、首領は本陣の中心、目的地を差し替えていればその目的地）
+-- - 上忍の目的地は外から差し替えられる（overrideMokutekichi。秘計の挑発が使う）。差し替えている間は部隊に追従しない。
+--   個体が出ていれば個体が目的地へ歩き、出ていなければデータの位置を上忍の歩く速さ（Stats 節の WalkSpeed）で、
+--   部隊を進める間隔ごとに目的地へ進める。目的地から Config.luau の Jittaikaken 節の HomeRadius の距離で止める
+-- - 差し替えを外したら（releaseMokutekichi）、いきなり部隊の位置へ移さず、率いる部隊へ歩いて戻る。
+--   個体が出ていなければデータの位置を歩く速さで進め、部隊の位置から HomeRadius 以内に着いたら部隊への追従に戻す
 -- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
---   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）
+--   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）。
+--   目的地を差し替えている上忍と、部隊へ戻る途中の上忍は、部隊から離れているので戦わせない
 -- - 部隊を進める間隔ごとに、上忍と首領が自分の軍の支配エリアの中かを確かめ、中なら攻撃と防御を上げる（Jonin.setShihaiArea）。
 --   中かどうかは ShihaiAreaService が setShihaiAreaProvider で渡す関数で引き、関数が無ければ外とみなす
 -- - 秘計の効果（鬼神化など）の補正は、各秘計の処理が setHikeiHosei で足し外しする
@@ -77,6 +83,10 @@ local honjinRangeOf: { [string]: { cframe: CFrame, size: Vector3 } } = {}
 local kotaiOf: { [string]: boolean } = {}
 -- キャラクター ID から引く、毒の中身
 local poisonOf: { [string]: Poison } = {}
+-- キャラクター ID から引く、差し替えた目的地を返す関数（秘計の挑発で誘い出された上忍など）
+local overrideOf: { [string]: () -> Jonin.Point? } = {}
+-- 差し替えを外した後、率いる部隊へ歩いて戻る途中の上忍のキャラクター ID
+local returningOf: { [string]: boolean } = {}
 
 -- 軍と位置を受け、その軍の支配エリアの中かを返す関数（ShihaiAreaService が渡す）
 local shihaiAreaProvider: ((gun: Gun.Gun, position: Jonin.Point) -> boolean)? = nil
@@ -131,7 +141,7 @@ function JoninService.setShihaiAreaProvider(provider: (gun: Gun.Gun, position: J
 	shihaiAreaProvider = provider
 end
 
--- 体力を書き換える。倒れたら、率いていた部隊は残して士気だけ下げ、毒を外す。
+-- 体力を書き換える。倒れたら、率いていた部隊は残して士気だけ下げ、毒と目的地の差し替えを外す。
 -- attacker を渡すと、倒れたときにその人の撃破数に1を足す。いなければ false
 function JoninService.setHealth(id: string, value: number, attacker: Player?): boolean
 	local jonin = find(id)
@@ -143,6 +153,8 @@ function JoninService.setHealth(id: string, value: number, attacker: Player?): b
 		local butai = jonin.butai
 		jonin.butai = nil
 		poisonOf[jonin.id] = nil
+		overrideOf[jonin.id] = nil
+		returningOf[jonin.id] = nil
 		if butai then
 			ButaiService.loseJonin(butai)
 		end
@@ -238,11 +250,17 @@ function JoninService.isKotai(id: string): boolean
 	return kotaiOf[id] == true
 end
 
--- 個体が戻る位置。率いる部隊があればその位置、首領は本陣の中心、部隊を失った上忍は今の位置。いなければ nil
+-- 個体が戻る位置。目的地を差し替えていればその目的地（関数が nil を返したら今の位置）、率いる部隊があればその位置、
+-- 首領は本陣の中心、部隊を失った上忍は今の位置。いなければ nil
 function JoninService.homeOf(id: string): Jonin.Point?
 	local jonin = find(id)
 	if not jonin then
 		return nil
+	end
+	local override = overrideOf[id]
+	if override then
+		local target = override()
+		return if target then { x = target.x, z = target.z } else { x = jonin.position.x, z = jonin.position.z }
 	end
 	local butai = if jonin.butai then ButaiService.get(jonin.butai) else nil
 	if butai then
@@ -254,6 +272,36 @@ function JoninService.homeOf(id: string): Jonin.Point?
 		return { x = center.X, z = center.Z }
 	end
 	return { x = jonin.position.x, z = jonin.position.z }
+end
+
+-- 上忍の目的地を差し替える（秘計の挑発）。mokutekichi は今の目的地を返す関数で、nil を返したら今の位置にとどまる。
+-- 差し替えている間は部隊に追従せず、目的地へ歩く。首領と、いないか倒れた上忍は差し替えずに false
+function JoninService.overrideMokutekichi(id: string, mokutekichi: () -> Jonin.Point?): boolean
+	local jonin = find(id)
+	if not jonin or jonin.shuryo or Jonin.isDefeated(jonin) then
+		return false
+	end
+	overrideOf[id] = mokutekichi
+	returningOf[id] = nil
+	return true
+end
+
+-- 差し替えた目的地を外す。率いる部隊があれば、歩いて部隊へ戻ってから追従に戻る。差し替えていなければ false
+function JoninService.releaseMokutekichi(id: string): boolean
+	if not overrideOf[id] then
+		return false
+	end
+	overrideOf[id] = nil
+	local jonin = find(id)
+	if jonin and jonin.butai and not Jonin.isDefeated(jonin) then
+		returningOf[id] = true
+	end
+	return true
+end
+
+-- 部隊から離れているか（目的地を差し替えているか、部隊へ戻る途中か）
+local function isAway(id: string): boolean
+	return overrideOf[id] ~= nil or returningOf[id] == true
 end
 
 -- 秘計 hikeiId の効果の補正を足すか（modifiers を渡す）、外す（nil を渡す）。いなければ false
@@ -290,6 +338,8 @@ local function clear()
 	table.clear(honjinRangeOf)
 	table.clear(kotaiOf)
 	table.clear(poisonOf)
+	table.clear(overrideOf)
+	table.clear(returningOf)
 	folder:ClearAllChildren()
 end
 
@@ -327,24 +377,66 @@ local function onStarted(info: StageService.StartInfo)
 	end
 end
 
+-- データの位置を、上忍の歩く速さで dt 秒ぶん target へ進める。target から HomeRadius 以内に着いたら true
+local function walk(jonin: Jonin.Jonin, target: Jonin.Point, dt: number): boolean
+	local position, arrived =
+		Jonin.approach(jonin.position, target, jonin.stats.WalkSpeed * dt, Config.Jittaikaken.HomeRadius)
+	if position.x ~= jonin.position.x or position.z ~= jonin.position.z then
+		JoninService.setPosition(jonin.id, position)
+	end
+	return arrived
+end
+
+-- 部隊へ戻る途中の上忍を進める。個体が出ていなければデータの位置を dt 秒ぶん歩かせる（個体は JoninKotaiService が歩かせる）。
+-- 部隊の位置から HomeRadius 以内に着いたら戻る途中を終え、true を返す（部隊への追従に戻る）
+local function walkBack(jonin: Jonin.Jonin, butai: Butai.Butai, dt: number): boolean
+	local arrived: boolean
+	if kotaiOf[jonin.id] then
+		local dx, dz = butai.position.x - jonin.position.x, butai.position.z - jonin.position.z
+		arrived = dx * dx + dz * dz <= Config.Jittaikaken.HomeRadius ^ 2
+	else
+		arrived = walk(jonin, butai.position, dt)
+	end
+	if arrived then
+		returningOf[jonin.id] = nil
+	end
+	return arrived
+end
+
 -- 倒れていない上忍を、率いる部隊の位置へ合わせる。戦闘のフェーズで部隊が消えていたら、率いる部隊を外してその場に残す。
+-- 目的地を差し替えた上忍と部隊へ戻る途中の上忍は、合わせずに dt 秒ぶん歩かせる。
 -- 個体として出ている上忍は、個体が位置を決めるので合わせない
-local function follow()
+local function follow(dt: number)
 	local battle = StageService.getPhase() == "Battle"
 	for _, jonin in joninList do
-		local id = jonin.butai
-		if not id or Jonin.isDefeated(jonin) then
+		if Jonin.isDefeated(jonin) then
 			continue
 		end
-		local butai = ButaiService.get(id)
-		if not butai then
-			if battle then
-				jonin.butai = nil
-				publish(jonin)
+		local id = jonin.butai
+		local butai = if id then ButaiService.get(id) else nil
+		if id and not butai and battle then
+			jonin.butai = nil
+			returningOf[jonin.id] = nil
+			publish(jonin)
+		end
+		local override = overrideOf[jonin.id]
+		if override then
+			local target = if kotaiOf[jonin.id] then nil else override()
+			if target then
+				walk(jonin, target, dt)
 			end
-		elseif kotaiOf[jonin.id] then
 			continue
-		elseif butai.position.x ~= jonin.position.x or butai.position.z ~= jonin.position.z then
+		end
+		if not butai or kotaiOf[jonin.id] then
+			if butai and returningOf[jonin.id] then
+				walkBack(jonin, butai, dt)
+			end
+			continue
+		end
+		if returningOf[jonin.id] and not walkBack(jonin, butai, dt) then
+			continue
+		end
+		if butai.position.x ~= jonin.position.x or butai.position.z ~= jonin.position.z then
 			jonin.position = { x = butai.position.x, z = butai.position.z }
 			publish(jonin)
 		end
@@ -370,7 +462,8 @@ local function joninSide(jonin: Jonin.Jonin, butai: Butai.Butai): Kosen.JoninSid
 	}
 end
 
--- 交戦中の部隊どうしが両方とも上忍に率いられていれば、上忍同士を dt 秒戦わせる。戦闘のフェーズの外では戦わせない
+-- 交戦中の部隊どうしが両方とも上忍に率いられていれば、上忍同士を dt 秒戦わせる。戦闘のフェーズの外では戦わせない。
+-- 部隊から離れている上忍（目的地を差し替えているか、部隊へ戻る途中）は戦わせない
 local function fightJonin(dt: number)
 	if StageService.getPhase() ~= "Battle" or dt <= 0 then
 		return
@@ -378,14 +471,21 @@ local function fightJonin(dt: number)
 	local fought: { [string]: boolean } = {}
 	for _, jonin in table.clone(joninList) do
 		local butaiId = jonin.butai
-		if not butaiId or fought[jonin.id] or Jonin.isDefeated(jonin) then
+		if not butaiId or fought[jonin.id] or Jonin.isDefeated(jonin) or isAway(jonin.id) then
 			continue
 		end
 		local butai = ButaiService.get(butaiId)
 		local aiteId = ButaiService.aiteOf(butaiId)
 		local aite = if aiteId then ButaiService.get(aiteId) else nil
 		local other = if aite and aite.jonin then find(aite.jonin) else nil
-		if not butai or not aite or not other or other.butai ~= aite.id or Jonin.isDefeated(other) then
+		if
+			not butai
+			or not aite
+			or not other
+			or other.butai ~= aite.id
+			or Jonin.isDefeated(other)
+			or isAway(other.id)
+		then
 			continue
 		end
 		fought[jonin.id] = true
@@ -411,7 +511,8 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpJonin",
 		"",
-		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・秘計の効果の補正・個体として出ているか・毒の残り秒数・位置）を JSON で返す",
+		"出撃したステージの上忍と首領（体力・攻撃・防御・支配エリアの中か・秘計の効果の補正・個体として出ているか・毒の残り秒数・"
+			.. "差し替えた目的地・部隊へ戻る途中か・位置）を JSON で返す",
 		function()
 			local result = {}
 			for _, jonin in joninList do
@@ -421,6 +522,7 @@ local function registerDebugCommands()
 				end
 				table.sort(hikeiHosei)
 				local poison = poisonOf[jonin.id]
+				local mokutekichi = if overrideOf[jonin.id] then JoninService.homeOf(jonin.id) else nil
 				table.insert(result, {
 					id = jonin.id,
 					name = jonin.displayName,
@@ -436,6 +538,8 @@ local function registerDebugCommands()
 					hikeiHosei = if #hikeiHosei > 0 then hikeiHosei else nil,
 					kotai = if kotaiOf[jonin.id] then true else nil,
 					poison = if poison then math.max(round(poison.untilTime - os.clock()), 0) else nil,
+					mokutekichi = if mokutekichi then { round(mokutekichi.x), round(mokutekichi.z) } else nil,
+					returning = if returningOf[jonin.id] then true else nil,
 					position = { round(jonin.position.x), round(jonin.position.z) },
 				})
 			end
@@ -560,7 +664,7 @@ function JoninService.start()
 			task.wait(Config.Butai.MoveInterval)
 			local now = os.clock()
 			-- 1回の失敗で追従と戦いが止まらないよう、失敗は警告にして次の間隔で続ける
-			local ok, err = pcall(follow)
+			local ok, err = pcall(follow, now - last)
 			if not ok then
 				warn(`JoninService: 上忍を部隊に合わせられなかった: {err}`)
 			end
