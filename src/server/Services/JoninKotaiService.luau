@@ -1,7 +1,7 @@
 --!strict
--- 実体化圏で、上忍と首領（両軍）の個体を出し入れし、敵軍の個体を出撃メンバーと戦わせる。データ（体力・位置・率いる部隊）は
--- JoninService が持ち、ここは Humanoid のモデルを出して、データの位置と体力に合わせる。半径と間隔は Config.luau の Jittaikaken 節、
--- 出す・消すの判定は ReplicatedStorage.Shared.Jittaikaken にある（下忍の個体は #76）。
+-- 実体化圏で、上忍と首領（両軍）の個体を出し入れし、敵軍の個体を出撃メンバーと、味方軍の個体を敵の下忍と戦わせる。
+-- データ（体力・位置・率いる部隊）は JoninService が持ち、ここは Humanoid のモデルを出して、データの位置と体力に合わせる。
+-- 半径と間隔は Config.luau の Jittaikaken 節、出す・消すの判定は ReplicatedStorage.Shared.Jittaikaken にある（下忍の個体は #76）。
 -- 戦い方の判断は ReplicatedStorage.Shared.Kata、型と数値は Config.luau の Kata 節にある。
 --
 -- - 戦闘のフェーズの間、Interval ごとに、出撃して残っているメンバーとの水平の距離で出し入れを決める。
@@ -23,12 +23,16 @@
 --
 -- 戦い（考える間隔は出し入れと同じ Interval）
 -- - 戦う相手は軍ごとの Aite（狙う相手の候補の一覧と、攻撃の当て方）で決める。敵軍の個体の相手は出撃メンバー。
---   味方軍の個体の相手はまだ無く（#122 が setAite で渡す）、戻る位置へ戻るだけ
+--   味方軍の個体の相手は敵の下忍で、下忍の個体（#76）ができるまでは仮の湧き処理の敵（EnemyService の下忍と上忍）。
+--   味方軍の個体は、プレイヤーと敵軍の上忍・首領の個体を狙わず、型も当てない（上忍同士は部隊の交戦でデータの上で戦う）
+-- - 仮の湧き処理の敵は防御を持たないので、味方軍の個体の与ダメージは 型の倍率 × 攻撃 のまま（EnemyService.damage で当てる）。
+--   攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない。味方軍の上忍と首領は秘計を使わない（判断を呼ばない）
 -- - 狙う相手は、最後に攻撃してきた相手（Kata 節の AttackerMemory 秒以内）か、一番近い相手。間合い（Maai）まで近づく。
 --   上忍は戻る位置から ChaseRadius の円の中、首領は本陣の範囲の中を追いかけ、外へは出ない（縁へ寄せる）。
 --   狙える相手がいなければ、戻る位置へ戻る
 -- - 型を選べる時刻になったら、間合いに入っている型から重みで1つ選ぶ（首領は首領だけの型も選ぶ）。
---   狙う相手の方を向いて止まり、予備動作の間は足元に判定の範囲を描いて体を光らせる。向きは変えないので、範囲を見て避けられる
+--   狙う相手の方を向いて止まり、予備動作の間は足元に判定の範囲を描いて体を光らせる（敵軍は赤、味方軍は青）。
+--   向きは変えないので、範囲を見て避けられる
 -- - 判定は攻撃判定の形（HitShape）で出し、プレイヤーへのダメージは被ダメージの窓口（DamageService.damage）を通す。
 --   威力は 型の倍率 × 攻撃（支配エリアと秘計の補正込み）で、防御の軽減・無敵・ガードは窓口が決める。後隙の間も動かない
 -- - 型の時間は攻撃の速さで割る。型を出し終えたら、Interval 秒（に乱数の秒数を足した後）に次の型を選ぶ
@@ -54,12 +58,14 @@ local Kata = require(ReplicatedStorage.Shared.Kata)
 local Motions = require(ReplicatedStorage.Shared.Motions)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
+local Stats = require(ReplicatedStorage.Shared.Stats)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local CollisionGroups = require(script.Parent.Parent.CollisionGroups)
 local Hanno = require(script.Parent.Parent.Combat.Hanno)
 local Hitbox = require(script.Parent.Parent.Combat.Hitbox)
 local Vfx = require(script.Parent.Parent.Combat.Vfx)
 local DamageService = require(script.Parent.DamageService)
+local EnemyService = require(script.Parent.EnemyService)
 local JoninService = require(script.Parent.JoninService)
 local KyotenService = require(script.Parent.KyotenService)
 local StageService = require(script.Parent.StageService)
@@ -159,8 +165,12 @@ local POISON_SECONDARY_COLOR = Color3.fromRGB(40, 110, 30)
 -- 地面が見つからず出せなかった個体を、出し直すまで待つ秒数（警告を出し続けないため）
 local SPAWN_RETRY_TIME = 5
 
--- 予備動作で地面に描く範囲と体の光の色、判定を出したときの仮エフェクトの色
-local YOBIDOSA_COLOR = Color3.fromRGB(255, 60, 40)
+-- 予備動作で地面に描く範囲と体の光の色、判定を出したときの仮エフェクトの色。
+-- 予備動作は軍で色を分ける（味方軍の型はプレイヤーに当たらないので、避ける合図の赤にしない）
+local YOBIDOSA_COLORS: { [Gun.Gun]: Color3 } = {
+	Tekigun = Color3.fromRGB(255, 60, 40),
+	Mikatagun = Color3.fromRGB(60, 150, 255),
+}
 local KATA_COLOR = Color3.fromRGB(255, 160, 80)
 -- プレイヤーの体の水平の半径（型の判定に使う。胴の幅の半分に少し足す）
 local PLAYER_RADIUS = 1.5
@@ -265,8 +275,44 @@ local MEMBER_AITE: Aite = {
 	end,
 }
 
+-- 味方軍の個体の命中の音を最後に鳴らした時刻（os.clock）
+local lastEnemyHitSoundAt = -math.huge
+
+-- 味方軍の個体の相手。敵の下忍の個体（#76）ができるまでは、仮の湧き処理の敵（下忍と上忍）に攻撃を当てる。
+-- プレイヤーと上忍・首領の個体は候補に入れない。仮の湧き処理の敵は防御を持たないので、与ダメージは威力のまま
+-- （Stats.damage の防御 0）。攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない
+local ENEMY_AITE: Aite = {
+	list = function(): { HitShape.Target<Instance> }
+		local targets: { HitShape.Target<Instance> } = {}
+		for _, target in EnemyService.getTargets() do
+			table.insert(targets, { ref = target.ref, position = target.position, radius = target.radius })
+		end
+		return targets
+	end,
+	hit = function(ref: Instance, origin: Vector3, power: number, hit: Config.HitDef): HitResult?
+		if not ref:IsA("Model") then
+			return nil
+		end
+		local model = ref :: Model
+		local amount = Stats.damage(1, power, 0)
+		local reaction = { reaction = hit.Reaction, origin = origin, force = hit.Knockback }
+		if not EnemyService.damage(model, amount, nil, reaction) then
+			return nil
+		end
+		Vfx.hit(model)
+		-- まとめて当てたときに重ならないよう、命中の音は間隔を空けて鳴らす
+		local now = os.clock()
+		if now - lastEnemyHitSoundAt >= Config.Sound.HitInterval then
+			lastEnemyHitSoundAt = now
+			SoundPlayer.playAt("Hit", model:GetPivot().Position)
+		end
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		return { result = "Hit", amount = amount, health = if humanoid then humanoid.Health else nil }
+	end,
+}
+
 -- 軍から引く、個体が戦う相手
-local aiteByGun: { [Gun.Gun]: Aite } = { Tekigun = MEMBER_AITE }
+local aiteByGun: { [Gun.Gun]: Aite } = { Tekigun = MEMBER_AITE, Mikatagun = ENEMY_AITE }
 
 -- 軍 gun の個体が戦う相手を決める（nil で戦わせない）。相手の一覧と攻撃の当て方を渡せば、同じ戦い方を使える
 function JoninKotaiService.setAite(gun: Gun.Gun, aite: Aite?)
@@ -605,15 +651,16 @@ local function startRun(
 	local run: Run = { id = entry.id, look = look, marks = {}, track = nil }
 	kotai.run = run
 	-- 予備動作の見た目。判定ごとに足元へ範囲を描き、体を光らせる
+	local color = YOBIDOSA_COLORS[kotai.gun]
 	local groundY = kotai.root.Position.Y - kotai.body.standHeight
 	for _, hit in entry.def.Hits do
 		local shape = HitShape.fromDef(hit.Shape, Config.Hitbox.Height)
 		local rotated = HitShape.rotate(origin, hit.Yaw or 0)
-		for _, part in Vfx.area(shape, rotated, groundY, YOBIDOSA_COLOR, yobiDosa) do
+		for _, part in Vfx.area(shape, rotated, groundY, color, yobiDosa) do
 			table.insert(run.marks, part)
 		end
 	end
-	table.insert(run.marks, Vfx.glow(kotai.model, YOBIDOSA_COLOR, yobiDosa))
+	table.insert(run.marks, Vfx.glow(kotai.model, color, yobiDosa))
 	run.track = playMotion(kotai, entry.id, duration)
 	task.delay(yobiDosa, swing, kotai, run)
 	for _, scheduled in ActionState.hits(timeline) do
@@ -892,10 +939,10 @@ local function registerDebugCommands()
 	)
 	DebugCommand.register(
 		"UseKata",
-		"<キャラクター ID> <型 ID> [プレイヤー名]",
-		"上忍か首領の個体に型を1回出させる。プレイヤー名を渡すとその人へ、省くと一番近い出撃メンバーへ向けて出す。"
-			.. "首領だけの型は首領だけが出せる。SetJoninAI false でも出す（確認用）",
-		function(id, kataId, playerName)
+		"<キャラクター ID> <型 ID> [相手の名前]",
+		"上忍か首領の個体に型を1回出させる。相手の名前（敵軍はプレイヤー名、味方軍は仮の湧き処理の敵の名前）を渡すと"
+			.. "その相手へ、省くと一番近い相手へ向けて出す。首領だけの型は首領だけが出せる。SetJoninAI false でも出す（確認用）",
+		function(id, kataId, aiteName)
 			local jonin = if type(id) == "string" then JoninService.get(id) else nil
 			if not jonin then
 				return `{tostring(id)} は出撃したステージの上忍と首領にいない`
@@ -923,21 +970,21 @@ local function registerDebugCommands()
 			if running then
 				return `{jonin.displayName} は型 {running.id} を出している最中`
 			end
-			local player = if playerName ~= nil then DebugCommand.findPlayer(playerName) else nil
+			local name = if aiteName ~= nil then tostring(aiteName) else nil
 			local here = kotai.root.Position
 			local chosen: HitShape.Target<Instance>? = nil
 			local best = math.huge
 			for _, target in aite.list() do
 				local at: Vector3 = target.position
 				local distance = Vector3.new(at.X - here.X, 0, at.Z - here.Z).Magnitude
-				if (player == nil or target.ref == player) and distance < best then
+				if (name == nil or target.ref.Name == name) and distance < best then
 					chosen, best = target, distance
 				end
 			end
 			if not chosen then
-				return if player
-					then `{player.Name} は出撃メンバーにいないか、倒れている`
-					else "狙える出撃メンバーがいない"
+				return if name
+					then `{name} は {jonin.displayName} の戦う相手にいないか、倒れている`
+					else `{jonin.displayName} の戦う相手がいない`
 			end
 			kotai.target = chosen.ref
 			startRun(kotai, jonin, entry, chosen.position, aite, now)

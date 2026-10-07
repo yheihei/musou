@@ -398,7 +398,8 @@ function EnemyService.damage(model: Model, amount: number, attacker: Player?, hi
 		return false
 	end
 
-	-- とどめを刺した人の撃破に数える。攻撃した人がいなければ（NPC の秘計など）、前に攻撃した人の撃破にもしない
+	-- とどめを刺した人の撃破に数える。攻撃した人がいなければ（NPC の秘計、味方軍の上忍と首領の型など）、
+	-- 前に攻撃した人の撃破にもしない
 	enemy.lastHitBy = attacker
 	enemy.hits += 1
 	enemy.firstHitAt = enemy.firstHitAt or os.clock()
