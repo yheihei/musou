@@ -8,6 +8,7 @@ local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local Controllers = script:WaitForChild("Controllers")
 
 local PartyClient = require(script:WaitForChild("PartyClient"))
+local TitleController = require(Controllers:WaitForChild("TitleController"))
 local InputController = require(Controllers:WaitForChild("InputController"))
 local HUDController = require(Controllers:WaitForChild("HUDController"))
 local BattleStatusController = require(Controllers:WaitForChild("BattleStatusController"))
@@ -26,6 +27,8 @@ local BgmController = require(Controllers:WaitForChild("BgmController"))
 
 -- 入室直後の PartyState を受け取るため、画面より先に始める
 PartyClient.start()
+-- 入室したらタイトル画面を出す。出撃前の画面と非公式の表記は、タイトル画面を閉じるまで出さないので、それらより先に始める
+TitleController.start()
 InputController.start()
 HUDController.start()
 BattleStatusController.start()

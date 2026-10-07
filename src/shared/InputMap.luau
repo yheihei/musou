@@ -86,6 +86,15 @@ InputMap.Skip = {
 	labels = { Keyboard = "F", Gamepad = "R1" },
 } :: Operation
 
+-- タイトル画面の「はじめる」。タイトル画面を出している間だけ受け付ける。画面のボタンのクリックとタッチのほか、Enter でも押せる。
+-- ゲームパッドは、選んだ「はじめる」を A で押す（Roblox 標準の画面の操作）ので、割り当ては持たずに表記だけを持つ
+InputMap.Hajimeru = {
+	trigger = "Press",
+	keyboard = { "KeyCode.Return", "KeyCode.KeypadEnter" },
+	gamepad = {},
+	labels = { Keyboard = "Enter", Gamepad = "A" },
+} :: Operation
+
 -- ジャンプと秘計の表記。ジャンプは Roblox 標準の割り当てなので表記だけを持つ。秘計は枚をまとめて出す
 InputMap.JumpLabels = { Keyboard = "Space", Gamepad = "A" } :: Labels
 InputMap.HikeiLabels = { Keyboard = "1〜3", Gamepad = "十字キー" } :: Labels
@@ -135,6 +144,7 @@ function InputMap.all(): { { name: string, device: "keyboard" | "gamepad", input
 		add(`Hikei{slot}`, binding)
 	end
 	add("Skip", InputMap.Skip)
+	add("Hajimeru", InputMap.Hajimeru)
 	return result
 end
 

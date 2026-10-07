@@ -22,6 +22,7 @@ Ui.Layer = {
 	Dialogue = 80,
 	Selection = 90,
 	Result = 100,
+	Title = 110,
 }
 
 -- 右上のミニマップの一辺と、画面の上端・右端からの余白（ピクセル）。

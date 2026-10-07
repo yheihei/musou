@@ -2,12 +2,14 @@
 -- 出撃メンバーでない人（ロビーのフェーズの全員と、出撃中に入った待機中の人）に、
 -- 画面の隅へ非公式ファンゲームの表記を出す。待機中の人には待機中であることも出す。
 -- 文言は ReplicatedStorage.Shared.Notice にある。
+-- タイトル画面（TitleController）を出している間は、どちらも出さない（タイトル画面に同じ表記を出す）。
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Notice = require(ReplicatedStorage.Shared.Notice)
 local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
+local TitleController = require(script.Parent.TitleController)
 
 local NoticeController = {}
 
@@ -123,11 +125,13 @@ function NoticeController.start()
 		local isWaiting = me ~= nil and me.waiting
 		-- PartyState が届く前はロビーにいるものとして表記を出す
 		local inLobby = state == nil or state.phase == "Lobby"
-		unofficial.Enabled = inLobby or isWaiting
-		waiting.Enabled = isWaiting
+		local titleOpen = TitleController.isOpen()
+		unofficial.Enabled = (inLobby or isWaiting) and not titleOpen
+		waiting.Enabled = isWaiting and not titleOpen
 	end
 
 	PartyClient.changed:Connect(refresh)
+	TitleController.changed:Connect(refresh)
 	refresh()
 end
 

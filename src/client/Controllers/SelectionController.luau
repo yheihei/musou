@@ -5,6 +5,7 @@
 -- 先回りして変えない。拒否の理由は SelectionRejected で届き、パネルの下に出す。
 -- 欄は src/client/Selection の下にある。
 --
+-- - タイトル画面（TitleController）を出している間は出さない（後ろのボタンをゲームパッドで選べないように）
 -- - ゲームパッドのときは、画面が開いたら最初のボタンを選ぶ（スティックと十字キーで移動、A で決定）
 -- - 拒否の音は Cancel
 
@@ -16,6 +17,7 @@ local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
+local TitleController = require(script.Parent.TitleController)
 local SelectionFolder = script.Parent.Parent:WaitForChild("Selection")
 local SectionKit = require(SelectionFolder:WaitForChild("SectionKit"))
 local StageSection = require(SelectionFolder:WaitForChild("StageSection"))
@@ -183,7 +185,11 @@ function SelectionController.start()
 	local function refresh()
 		local state = PartyClient.get()
 		local me = PartyClient.me()
-		local visible = state ~= nil and state.phase == "Lobby" and me ~= nil and not me.waiting
+		local visible = state ~= nil
+			and state.phase == "Lobby"
+			and me ~= nil
+			and not me.waiting
+			and not TitleController.isOpen()
 		gui.screen.Enabled = visible
 		if state and visible then
 			for _, section in sections do
@@ -204,6 +210,7 @@ function SelectionController.start()
 	end
 
 	PartyClient.changed:Connect(refresh)
+	TitleController.changed:Connect(refresh)
 	local rejected = remotes:WaitForChild("SelectionRejected") :: RemoteEvent
 	rejected.OnClientEvent:Connect(function(reason: RemoteSchema.RejectReason)
 		SoundPlayer.playUi("Cancel")

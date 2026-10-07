@@ -14,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Party = require(ReplicatedStorage.Shared.Party)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
+local Title = require(ReplicatedStorage.Shared.Title)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 
 local PartyService = {}
@@ -165,6 +166,25 @@ local function registerDebugCommands()
 				return `プライベートサーバーの持ち主の上書きを外した（持ち主 {describeOwner()}、リーダー {leaderName}）`
 			end
 			return `プライベートサーバーの持ち主を {describeOwner()} に上書きした（リーダー {leaderName}）`
+		end
+	)
+	-- タイトル画面はクライアントだけで出すので、Player の Attribute を書き換えて本人のクライアントに出させる
+	DebugCommand.register(
+		"ShowTitle",
+		"<プレイヤー名>",
+		"本人の画面にタイトル画面をもう一度出す（入り直さずに確かめる用。出撃メンバーがステージに出ている間は出さない）",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local member = Party.get(party, player.UserId)
+			if not Title.canShow(party.phase, member ~= nil and not member.waiting) then
+				error(
+					`{player.Name} は出撃メンバーとしてステージに出ているので、タイトル画面を出さない`,
+					0
+				)
+			end
+			local count = (player:GetAttribute(Title.REQUEST_ATTRIBUTE) :: number? or 0) + 1
+			player:SetAttribute(Title.REQUEST_ATTRIBUTE, count)
+			return `{player.Name} の画面にタイトル画面を出した（{Title.REQUEST_ATTRIBUTE} を {count} にした）`
 		end
 	)
 end

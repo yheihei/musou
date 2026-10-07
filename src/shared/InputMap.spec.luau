@@ -117,6 +117,23 @@ test("スキップは押したときに1回送り、取り消しの入力は無�
 end)
 
 test(
+	"はじめるは Enter で押す。ゲームパッドは選んだボタンを A で押すので、割り当てを持たずに表記だけを持つ",
+	function()
+		expect(InputMap.Hajimeru.trigger).toBe("Press")
+		expect(InputMap.Hajimeru.keyboard).toEqual({ "KeyCode.Return", "KeyCode.KeypadEnter" })
+		expect(InputMap.Hajimeru.gamepad).toEqual({})
+		expect(InputMap.Hajimeru.labels).toEqual({ Keyboard = "Enter", Gamepad = "A" })
+		local names = {}
+		for _, entry in InputMap.all() do
+			if entry.name == "Hajimeru" then
+				table.insert(names, entry.input)
+			end
+		end
+		expect(names).toEqual({ "KeyCode.Return", "KeyCode.KeypadEnter" })
+	end
+)
+
+test(
 	"画面の操作の案内は設計のボタン表と同じ順で、どれにも PC とゲームパッドの表記がある",
 	function()
 		local names = {}
