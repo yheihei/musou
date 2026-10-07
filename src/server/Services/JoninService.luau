@@ -21,7 +21,8 @@
 --   個体が出ていれば個体が目的地へ歩き、出ていなければデータの位置を上忍の歩く速さ（Stats 節の WalkSpeed）で、
 --   部隊を進める間隔ごとに目的地へ進める。目的地から Config.luau の Jittaikaken 節の HomeRadius の距離で止める
 -- - 差し替えを外したら（releaseMokutekichi）、いきなり部隊の位置へ移さず、率いる部隊へ歩いて戻る。
---   個体が出ていなければデータの位置を歩く速さで進め、部隊の位置から HomeRadius 以内に着いたら部隊への追従に戻す
+--   個体が出ていなければデータの位置を歩く速さで進め、部隊の位置から HomeRadius 以内に着いたら部隊への追従に戻す。
+--   個体が出ていれば、部隊の位置から個体の追いかける範囲（Kata 節の ChaseRadius）の中に入ったら戻り終えたとみなす
 -- - 交戦中の部隊どうしが両方とも上忍に率いられていれば、部隊を進める間隔ごとに上忍同士も戦わせる
 --   （ReplicatedStorage.Shared.Kosen の joninStep。味方軍の上忍は士気の差がしきい値以上のときだけ削れる）。
 --   目的地を差し替えている上忍と、部隊へ戻る途中の上忍は、部隊から離れているので戦わせない
@@ -89,6 +90,8 @@ local poisonOf: { [string]: Poison } = {}
 local overrideOf: { [string]: () -> Jonin.Point? } = {}
 -- 差し替えを外した後、率いる部隊へ歩いて戻る途中の上忍のキャラクター ID
 local returningOf: { [string]: boolean } = {}
+-- 部隊を失った上忍のキャラクター ID から引く、部隊を失ったときの位置（個体が戻る位置）
+local strandedAt: { [string]: Jonin.Point } = {}
 
 -- 軍と位置を受け、その軍の支配エリアの中かを返す関数（ShihaiAreaService が渡す）
 local shihaiAreaProvider: ((gun: Gun.Gun, position: Jonin.Point) -> boolean)? = nil
@@ -251,7 +254,7 @@ function JoninService.isKotai(id: string): boolean
 end
 
 -- 個体が戻る位置。目的地を差し替えていればその目的地（関数が nil を返したら今の位置）、率いる部隊があればその位置、
--- 首領は本陣の中心、部隊を失った上忍は今の位置。いなければ nil
+-- 首領は本陣の中心、部隊を失った上忍は部隊を失ったときの位置（分からなければ今の位置）。いなければ nil
 function JoninService.homeOf(id: string): Jonin.Point?
 	local jonin = find(id)
 	if not jonin then
@@ -270,6 +273,11 @@ function JoninService.homeOf(id: string): Jonin.Point?
 	if range then
 		local center = range.cframe.Position
 		return { x = center.X, z = center.Z }
+	end
+	-- 戻る位置を今の位置にすると、個体の追いかける範囲が個体と一緒に動いてしまうので、部隊を失った位置にとどめる
+	local stranded = strandedAt[id]
+	if stranded then
+		return { x = stranded.x, z = stranded.z }
 	end
 	return { x = jonin.position.x, z = jonin.position.z }
 end
@@ -340,6 +348,7 @@ local function clear()
 	table.clear(poisonOf)
 	table.clear(overrideOf)
 	table.clear(returningOf)
+	table.clear(strandedAt)
 	folder:ClearAllChildren()
 end
 
@@ -388,12 +397,14 @@ local function walk(jonin: Jonin.Jonin, target: Jonin.Point, dt: number): boolea
 end
 
 -- 部隊へ戻る途中の上忍を進める。個体が出ていなければデータの位置を dt 秒ぶん歩かせる（個体は JoninKotaiService が歩かせる）。
--- 部隊の位置から HomeRadius 以内に着いたら戻る途中を終え、true を返す（部隊への追従に戻る）
+-- 部隊の位置から HomeRadius 以内（個体が出ていれば ChaseRadius 以内）に着いたら戻る途中を終え、true を返す（部隊への追従に戻る）
 local function walkBack(jonin: Jonin.Jonin, butai: Butai.Butai, dt: number): boolean
 	local arrived: boolean
 	if kotaiOf[jonin.id] then
+		-- 個体は、部隊の位置から追いかける範囲（Kata 節の ChaseRadius）の中で相手と戦うので、
+		-- その中に入ったら戻り終えたとみなす（戦っている間に戻る途中のまま残らないように）
 		local dx, dz = butai.position.x - jonin.position.x, butai.position.z - jonin.position.z
-		arrived = dx * dx + dz * dz <= Config.Jittaikaken.HomeRadius ^ 2
+		arrived = dx * dx + dz * dz <= Config.Kata.ChaseRadius ^ 2
 	else
 		arrived = walk(jonin, butai.position, dt)
 	end
@@ -417,6 +428,7 @@ local function follow(dt: number)
 		if id and not butai and battle then
 			jonin.butai = nil
 			returningOf[jonin.id] = nil
+			strandedAt[jonin.id] = { x = jonin.position.x, z = jonin.position.z }
 			publish(jonin)
 		end
 		local override = overrideOf[jonin.id]

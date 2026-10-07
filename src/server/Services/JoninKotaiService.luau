@@ -6,6 +6,7 @@
 --
 -- - 戦闘のフェーズの間、Interval ごとに、出撃して残っているメンバーとの水平の距離で出し入れを決める。
 --   AppearRadius 以内に入ったら出し、全員から DisappearRadius より離れたら消す。戦闘のフェーズが終わったら全部消す
+--   （倒れて消えるのを待つ個体は、決着の後も CorpseLifetime 秒だけ残す）
 -- - 見た目は仮の見た目の共通関数（Appearance.createModel）の名札と武器に、軍の色の体力バーを足す。
 --   出す位置の高さは地面の高さの共通関数（Ground.placeCharacter）で決める
 -- - 体はプレイヤーにもほかの個体にもぶつからない（CollisionGroups の Enemy と Mikatagun）
@@ -585,6 +586,10 @@ local function applyHit(
 	hit: Config.HitDef,
 	aite: Aite
 )
+	-- 飛び道具の当たりは遅れて届く。決着して戦闘のフェーズが終わっていたら当てない
+	if StageService.getPhase() ~= "Battle" then
+		return
+	end
 	local result = aite.hit(ref, origin, power, hit)
 	if result then
 		kotai.lastHit = {
@@ -650,6 +655,8 @@ local function startRun(
 	local look: Vector3 = origin.look
 	local run: Run = { id = entry.id, look = look, marks = {}, track = nil }
 	kotai.run = run
+	-- 見た目やモーションの用意で失敗しても型の最中のまま残らないよう、終わりは先に予約する
+	task.delay(duration, finishRun, kotai, run)
 	-- 予備動作の見た目。判定ごとに足元へ範囲を描き、体を光らせる
 	local color = YOBIDOSA_COLORS[kotai.gun]
 	local groundY = kotai.root.Position.Y - kotai.body.standHeight
@@ -666,7 +673,6 @@ local function startRun(
 	for _, scheduled in ActionState.hits(timeline) do
 		task.delay(scheduled.at, fireHit, kotai, run, scheduled.hit, aite)
 	end
-	task.delay(duration, finishRun, kotai, run)
 end
 
 -- 相手 aite と戦う。狙う相手を選んで間合いまで近づき、型を選べる時刻なら型を出す。狙える相手がいなければ false を返す
@@ -793,6 +799,16 @@ local function onDefeated(id: string)
 	end)
 end
 
+-- 戦闘のフェーズが終わったら、倒れていない個体を消す。倒れて消えるのを待つ個体は、止めの一撃の演出を見せるため
+-- CorpseLifetime の後に消す（onDefeated の予約）
+local function despawnStanding()
+	for id, kotai in table.clone(kotaiOf) do
+		if not kotai.dying then
+			despawn(id)
+		end
+	end
+end
+
 -- 敵軍の上忍か首領が考えるたびに、登録した秘計の判断を呼ぶ。個体として出ていなくても呼ぶ。AI を止めている間は呼ばない
 local function decideHikei(jonin: Jonin.Jonin, kotai: Kotai?, now: number)
 	local decider = hikeiDecider
@@ -840,9 +856,7 @@ end
 -- 戦闘のフェーズの間、上忍と首領の個体を出し入れし、出ている個体を進め、敵軍の秘計の判断を呼ぶ
 local function tick()
 	if StageService.getPhase() ~= "Battle" then
-		for id in table.clone(kotaiOf) do
-			despawn(id)
-		end
+		despawnStanding()
 		return
 	end
 	local now = os.clock()
@@ -1018,9 +1032,7 @@ function JoninKotaiService.start()
 	end)
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
 		if next ~= "Battle" then
-			for id in table.clone(kotaiOf) do
-				despawn(id)
-			end
+			despawnStanding()
 			table.clear(spawnFailedAt)
 		end
 	end)
