@@ -13,7 +13,8 @@
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）。
 --   倒したプレイヤー（攻撃した人）がいれば、その人の撃破数に1を足す。defeated で、倒した人と一緒に知らせる（両軍、首領を含む）
 -- - 毒（酉花の奥義「毒手裏剣」。Config.luau の Poison 節）は、データの上で間隔ごとに体力を減らす。個体が消えても続く。
---   毒でのとどめは、毒を付けたプレイヤーの撃破に数える。毒の間にもう一度付けると、残りの時間を Duration に戻す
+--   毒でのとどめは、毒を付けたプレイヤーの撃破に数える。毒の間にもう一度付けると、残りの時間を Duration に戻す。
+--   与える回数は Duration を Interval で割った回数（8 秒・1 秒おきなら 8 回）で数える
 -- - 個体として出ている上忍（setKotai）は、個体が位置を決める（JoninKotaiService が setPosition で写す）。
 --   部隊への追従はしない。個体が戻る位置は homeOf（率いる部隊の位置、首領は本陣の中心、目的地を差し替えていればその目的地）
 -- - 上忍の目的地は外から差し替えられる（overrideMokutekichi。秘計の挑発が使う）。差し替えている間は部隊に追従しない。
@@ -64,9 +65,10 @@ export type Hit = {
 type Poison = {
 	-- 毒を付けたプレイヤー
 	attacker: Player?,
-	-- 次に毒のダメージを与える時刻と、毒が切れる時刻（os.clock）
+	-- 次に毒のダメージを与える時刻（os.clock）
 	nextTick: number,
-	untilTime: number,
+	-- 残りの毒のダメージの回数
+	ticks: number,
 }
 
 local JoninService = {}
@@ -192,17 +194,18 @@ function JoninService.poison(id: string, attacker: Player?): boolean
 	if not jonin or Jonin.isDefeated(jonin) then
 		return false
 	end
-	local now = os.clock()
+	-- 時刻の足し算の誤差で回数がぶれないよう、回数で数える
+	local ticks = math.max(math.round(Config.Poison.Duration / Config.Poison.Interval), 1)
 	local current = poisonOf[id]
 	if current then
-		current.untilTime = now + Config.Poison.Duration
+		current.ticks = ticks
 		current.attacker = attacker or current.attacker
 		return true
 	end
 	poisonOf[id] = {
 		attacker = attacker,
-		nextTick = now + Config.Poison.Interval,
-		untilTime = now + Config.Poison.Duration,
+		nextTick = os.clock() + Config.Poison.Interval,
+		ticks = ticks,
 	}
 	return true
 end
@@ -216,17 +219,13 @@ end
 local function updatePoison(now: number)
 	for id, poison in table.clone(poisonOf) do
 		local jonin = find(id)
-		while
-			jonin
-			and not Jonin.isDefeated(jonin)
-			and now >= poison.nextTick
-			and poison.nextTick <= poison.untilTime
-		do
+		while jonin and not Jonin.isDefeated(jonin) and poison.ticks > 0 and now >= poison.nextTick do
 			poison.nextTick += Config.Poison.Interval
+			poison.ticks -= 1
 			local attacker = if poison.attacker and poison.attacker.Parent then poison.attacker else nil
 			JoninService.setHealth(id, jonin.health - Config.Poison.Damage, attacker)
 		end
-		if not jonin or Jonin.isDefeated(jonin) or now >= poison.untilTime then
+		if not jonin or Jonin.isDefeated(jonin) or poison.ticks <= 0 then
 			poisonOf[id] = nil
 		end
 	end
@@ -537,7 +536,12 @@ local function registerDebugCommands()
 					shihaiArea = jonin.shihaiArea,
 					hikeiHosei = if #hikeiHosei > 0 then hikeiHosei else nil,
 					kotai = if kotaiOf[jonin.id] then true else nil,
-					poison = if poison then math.max(round(poison.untilTime - os.clock()), 0) else nil,
+					poison = if poison
+						then math.max(
+							round(poison.nextTick - os.clock() + (poison.ticks - 1) * Config.Poison.Interval),
+							0
+						)
+						else nil,
 					mokutekichi = if mokutekichi then { round(mokutekichi.x), round(mokutekichi.z) } else nil,
 					returning = if returningOf[jonin.id] then true else nil,
 					position = { round(jonin.position.x), round(jonin.position.z) },
