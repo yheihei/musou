@@ -38,12 +38,8 @@ local HEADLINE_SIZE = 64
 local BACKDROP_TRANSPARENCY = 0.45
 -- 押した後、フェーズが変わらなければボタンを戻すまでの秒数
 local PENDING_TIME = 3
--- ゲームパッドで最初のボタンを選べるようになる、入室からの秒数（time()）
-local SELECT_AFTER_START = 3
 -- ゲームパッドで最初のボタンを選ぶまでの、画面を開いてからの秒数（戦闘中に押していた A で押してしまわないように）
 local SELECT_AFTER_OPEN = 1
--- キャラクターの Humanoid を待つ秒数の上限
-local HUMANOID_TIMEOUT = 10
 
 type Gui = {
 	screen: ScreenGui,
@@ -331,23 +327,14 @@ function ResultController.start()
 
 	-- ゲームパッドのとき、最初のボタンを選ぶ。
 	-- 入室直後に選ぶと、ゲームパッドをつないだままテストプレイを始めたときに Studio が落ちる（出撃前の画面と同じ）。
-	-- そのため、入室から SELECT_AFTER_START 秒たち、キャラクターが出てから選ぶ。
+	-- そのため、Ui.waitForSelectable で入室から決まった秒数たち、キャラクターが出るまで待ってから選ぶ。
 	-- 画面を開いてからも SELECT_AFTER_OPEN 秒待つ。待つ間に画面を閉じたか、ボタンを押したら選ばない
 	local selectToken = 0
 	local function selectFirstButton()
 		selectToken += 1
 		local token = selectToken
 		task.spawn(function()
-			if not game:IsLoaded() then
-				game.Loaded:Wait()
-			end
-			local player = Players.LocalPlayer
-			local character = player.Character or player.CharacterAdded:Wait()
-			character:WaitForChild("Humanoid", HUMANOID_TIMEOUT)
-			local rest = math.max(SELECT_AFTER_START, openedAt + SELECT_AFTER_OPEN) - time()
-			if rest > 0 then
-				task.wait(rest)
-			end
+			Ui.waitForSelectable(openedAt + SELECT_AFTER_OPEN)
 			if
 				token ~= selectToken
 				or not gui.screen.Enabled

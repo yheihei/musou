@@ -1,6 +1,6 @@
 --!strict
 -- 画面の共通部品。Instance の生成、書体と文字の大きさ、画面の配色、ボタン、
--- 入力の種類とボタン表記の切り替え、ScreenGui の重なり順をまとめる。
+-- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ScreenGui の重なり順をまとめる。
 -- 軍・クラン・キャラクターの色は ReplicatedStorage.Shared.Colors に置く。
 
 local Players = game:GetService("Players")
@@ -215,6 +215,28 @@ end
 -- 入力の種類が変わったときに呼ぶ
 function Ui.onInputKindChanged(callback: (InputKind) -> ()): RBXScriptConnection
 	return kindChanged.Event:Connect(callback)
+end
+
+-- ゲームパッドで画面のボタンを選べるようになる、入室からの秒数（time()）と、キャラクターの Humanoid を待つ秒数の上限
+local SELECT_AFTER_START = 3
+local HUMANOID_TIMEOUT = 10
+
+-- ゲームパッドで画面のボタンを選んでよくなる（GuiService.SelectedObject を設定してよくなる）まで待つ。
+-- 入室直後に選ぶと、ゲームパッドをつないだままテストプレイを始めたときに Studio が落ちる。
+-- そのため、入室から SELECT_AFTER_START 秒たち、キャラクターが出るまで待つ。
+-- notBefore（time() の時刻）を渡すと、その時刻になるまでも待つ。
+-- 待った後に、画面を閉じていないかなどを呼び出し元で確かめてから選ぶ
+function Ui.waitForSelectable(notBefore: number?)
+	if not game:IsLoaded() then
+		game.Loaded:Wait()
+	end
+	local player = Players.LocalPlayer
+	local character = player.Character or player.CharacterAdded:Wait()
+	character:WaitForChild("Humanoid", HUMANOID_TIMEOUT)
+	local rest = math.max(SELECT_AFTER_START, notBefore or 0) - time()
+	if rest > 0 then
+		task.wait(rest)
+	end
 end
 
 export type Labels = {
