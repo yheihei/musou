@@ -97,7 +97,8 @@ local defeatedEvent = Instance.new("BindableEvent")
 -- 上忍か首領が倒れたときに、そのキャラクター ID と、倒したプレイヤー（いなければ nil）で発火する。両軍、首領も含む
 JoninService.defeated = defeatedEvent.Event
 local damagedEvent = Instance.new("BindableEvent")
--- damage でダメージを与えたときに、キャラクター ID・与えたダメージ・反応の中身（Hit。無ければ nil）で発火する
+-- damage でダメージを与えたときに、キャラクター ID・与えたダメージ・反応の中身（Hit。無ければ nil）・
+-- 攻撃したプレイヤー（いなければ nil）で発火する
 JoninService.damaged = damagedEvent.Event
 
 local function find(id: string): Jonin.Jonin?
@@ -183,7 +184,7 @@ function JoninService.damage(id: string, power: number, attacker: Player?, hit: 
 	end
 	local amount = Stats.damage(1, power, jonin.stats.Defense)
 	JoninService.setHealth(id, jonin.health - amount, attacker)
-	damagedEvent:Fire(id, amount, hit)
+	damagedEvent:Fire(id, amount, hit, attacker)
 	return amount, Jonin.isDefeated(jonin)
 end
 

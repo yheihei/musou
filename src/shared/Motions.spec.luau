@@ -88,6 +88,44 @@ test(
 	end
 )
 
+test(
+	"型のモーションの項目は、Config の上忍と首領の型の ID と同じで、武器種の行動の項目を指す",
+	function()
+		local expected: { [string]: boolean } = {}
+		for id in Config.Kata.Jonin do
+			expected[id] = true
+		end
+		for id in Config.Kata.Shuryo do
+			expected[id] = true
+		end
+		local actual: { [string]: boolean } = {}
+		for id, entry in Motions.Kata do
+			actual[id] = true
+			local value = (Motions.Bukishu[Motions.KATA_BUKISHU] :: any)[entry.action]
+			if type(value) == "table" then
+				expect(entry.step ~= nil and value[entry.step] ~= nil).toBe(true)
+			else
+				expect(type(value)).toBe("number")
+			end
+		end
+		expect(actual).toEqual(expected)
+	end
+)
+
+test(
+	"型のモーションは、武器種の決まっていない NPC は刀セットから、武器種のあるキャラクターはその武器種から引く",
+	function()
+		withMotion(Motions.Bukishu.Katana.ChargeKogeki, 6, 444, function()
+			withMotion(Motions.Bukishu.Shuriken.ChargeKogeki, 6, 555, function()
+				expect(Motions.forKata("ShikenShuryo", "Daichiwari")).toBe(444)
+				expect(Motions.forKata("Nobody", "Daichiwari")).toBe(444)
+				expect(Motions.forKata("Jin", "Daichiwari")).toBe(555)
+			end)
+		end)
+		expect(Motions.forKata("ShikenShuryo", "Nai")).toBe(0)
+	end
+)
+
 test("キャラクターのモーションの ID を重なりなく並べ、0 は含めない", function()
 	withMotion(Motions.Bukishu.Katana.Attack, 1, 20, function()
 		withMotion(Motions.Bukishu.Katana.Attack, 2, 20, function()

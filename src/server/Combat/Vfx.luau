@@ -1,5 +1,6 @@
 --!strict
 -- 仮エフェクト。本番アセットに差し替えるまでの目印として半透明パーツを一瞬出す。
+-- 上忍と首領の型の予備動作（地面に描く判定の範囲と、体の光）も、予備動作の間だけ出す。
 
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -24,6 +25,15 @@ local BLADE_RISE_TIME = 0.1
 local BLADE_LIFETIME = 0.5
 -- 刃を出す地面が見つからないとき、判定の原点から下げる高さ（スタッド）
 local BLADE_FALLBACK_DROP = 3
+-- 予備動作で地面に描く判定の範囲の板の厚み・地面から浮かせる高さ（スタッド）・透明度
+local AREA_THICKNESS = 0.2
+local AREA_LIFT = 0.15
+local AREA_TRANSPARENCY = 0.55
+-- 予備動作で扇と輪の範囲を描く棒の間隔（度）と太さ（スタッド）
+local AREA_STEP = 10
+local AREA_BAR_WIDTH = 0.5
+-- 予備動作で光らせる体の塗りの透明度
+local GLOW_FILL_TRANSPARENCY = 0.45
 -- 炎の塊の数と色
 local FLAME_COUNT = 7
 local FLAME_COLORS = {
@@ -98,6 +108,85 @@ function Vfx.shape(shape: HitShape.Shape, origin: HitShape.Origin, color: Color3
 				* CFrame.Angles(0, math.rad(720), 0),
 		}):Play()
 	end
+end
+
+-- 予備動作の範囲の板を1枚置く。lifetime 秒で消える
+local function plate(size: Vector3, cframe: CFrame, color: Color3, lifetime: number, shape: Enum.PartType?): BasePart
+	local part = Instance.new("Part")
+	part.Shape = shape or Enum.PartType.Block
+	part.Size = size
+	part.CFrame = cframe
+	part.Color = color
+	part.CastShadow = false
+	flash(part, lifetime)
+	part.Transparency = AREA_TRANSPARENCY
+	return part
+end
+
+-- 判定の範囲を地面に描く（上忍と首領の型の予備動作）。高さ groundY の地面に薄い板で描き、lifetime 秒で消す。
+-- 箱と直線は前へ延びる板、球と周り全体の扇は円板、扇は原点から放射状の棒、輪は内側から外側への棒で描く。描いた板を返す
+function Vfx.area(
+	shape: HitShape.Shape,
+	origin: HitShape.Origin,
+	groundY: number,
+	color: Color3,
+	lifetime: number
+): { BasePart }
+	local position: Vector3 = origin.position
+	local center = Vector3.new(position.X, groundY + AREA_LIFT, position.Z)
+	local forward = forwardOf(origin)
+	local parts: { BasePart } = {}
+	-- from から direction の向きに length だけ延びる板
+	local function strip(from: Vector3, direction: Vector3, length: number, width: number)
+		local middle = from + direction * (length / 2)
+		local size = Vector3.new(width, AREA_THICKNESS, length)
+		table.insert(parts, plate(size, CFrame.lookAt(middle, middle + direction), color, lifetime))
+	end
+	local function disc(radius: number)
+		local size = Vector3.new(AREA_THICKNESS, radius * 2, radius * 2)
+		local cframe = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+		table.insert(parts, plate(size, cframe, color, lifetime, Enum.PartType.Cylinder))
+	end
+	-- 原点の周りの from 度から to 度まで、inner から outer までの棒を並べる
+	local function spokes(from: number, to: number, inner: number, outer: number)
+		local steps = math.max(math.ceil((to - from) / AREA_STEP), 1)
+		local length = math.max(outer - inner, AREA_BAR_WIDTH)
+		for index = 0, steps do
+			local angle = math.rad(from + (to - from) * index / steps)
+			local direction = CFrame.fromAxisAngle(Vector3.yAxis, angle):VectorToWorldSpace(forward)
+			strip(center + direction * inner, direction, length, AREA_BAR_WIDTH)
+		end
+	end
+
+	if shape.kind == "Box" then
+		strip(center, forward, shape.range, shape.width)
+	elseif shape.kind == "Line" then
+		strip(center, forward, shape.length, shape.width)
+	elseif shape.kind == "Ring" then
+		if shape.inner <= 0 then
+			disc(shape.outer)
+		else
+			spokes(0, 360 - AREA_STEP, shape.inner, shape.outer)
+		end
+	elseif shape.kind == "Sector" and shape.angle < 360 then
+		spokes(-shape.angle / 2, shape.angle / 2, 0, shape.radius)
+	else
+		-- 球と、周り全体の扇
+		disc(shape.radius)
+	end
+	return parts
+end
+
+-- 体を光らせる（上忍と首領の型の予備動作）。lifetime 秒で消す。付けた Highlight を返す
+function Vfx.glow(model: Model, color: Color3, lifetime: number): Highlight
+	local highlight = Instance.new("Highlight")
+	highlight.FillColor = color
+	highlight.FillTransparency = GLOW_FILL_TRANSPARENCY
+	highlight.OutlineColor = color
+	highlight.OutlineTransparency = 0
+	highlight.Parent = model
+	Debris:AddItem(highlight, lifetime)
+	return highlight
 end
 
 -- 炎の仮エフェクト。扇の中に炎の塊を散らす。扇でない形は形のとおりに描く

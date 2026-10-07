@@ -6,6 +6,8 @@
 -- - 待機と移動は、仮の見た目の HumanoidDescription に入れて当てる（Appearance.luau）。
 --   アバターの読み込みを止めているので、アバターのモーションの設定には左右されない
 -- - 行動のモーションは、クライアントの MotionController が行動の Attribute を見て、行動の長さに合わせた速さで再生する
+-- - 上忍と首領の型（Config.luau の Kata 節）は、武器種の行動のモーションを型ごとに行動と段で引いて流用する（forKata）。
+--   武器種の決まっていない NPC は KATA_BUKISHU の武器種から引く。サーバーの JoninKotaiService が個体に再生する
 -- - 攻撃判定のタイミングと移動量は Config.luau に置く。モーションを差し替えても判定は変わらない
 
 local Characters = require("./Characters")
@@ -34,6 +36,12 @@ export type BukishuMotions = {
 	Flinch: number,
 	Down: number,
 	GetUp: number,
+}
+
+-- 上忍と首領の型で流用する、武器種の行動のモーションの項目（行動と、通常攻撃とチャージ攻撃の段）
+export type KataMotion = {
+	action: string,
+	step: number?,
 }
 
 -- 下忍のモーション
@@ -98,6 +106,20 @@ Motions.Ougi = {
 	Kinton = 0,
 } :: { [string]: number }
 
+-- 上忍と首領の型のモーション。型 ID（Config.luau の Kata 節）ごとに、流用する武器種の行動の項目を置く。
+-- 行の終わりは、試験用の上忍と首領が使う刀セットの技
+Motions.Kata = {
+	Kesagiri = { action = "Attack", step = 1 }, -- 袈裟斬り
+	Renzan = { action = "ChargeKogeki", step = 5 }, -- 乱れ斬りの後に斬り払う
+	Senpu = { action = "ChargeKogeki", step = 4 }, -- 回転斬り
+	Shurikenuchi = { action = "Attack", step = 3 }, -- 横薙ぎ（手裏剣セットは手裏剣を投げる段）
+	Daichiwari = { action = "ChargeKogeki", step = 6 }, -- 大上段から斬り下ろす
+	Shogekiha = { action = "ChargeKogeki", step = 1 }, -- 溜めてから突進して斬る
+} :: { [string]: KataMotion }
+
+-- 武器種の決まっていない NPC（試験用の上忍と首領など）が、型のモーションを引く武器種
+Motions.KATA_BUKISHU = "Katana"
+
 -- 下忍の共通のモーション
 Motions.Genin = {
 	Idle = 0,
@@ -144,6 +166,18 @@ function Motions.forAction(characterId: string, action: string, step: number?): 
 		return 0
 	end
 	return Motions.actionOf(character.bukishu, action, step)
+end
+
+-- 上忍か首領の型で再生するモーションの ID。キャラクターの武器種（無ければ KATA_BUKISHU）の行動の項目から、
+-- 型の行動と段で引く。項目の無い型は 0
+function Motions.forKata(characterId: string, kataId: string): number
+	local entry = Motions.Kata[kataId]
+	if not entry then
+		return 0
+	end
+	local character = Characters.get(characterId)
+	local bukishu = if character and character.bukishu then character.bukishu else Motions.KATA_BUKISHU
+	return Motions.actionOf(bukishu, entry.action, entry.step)
 end
 
 -- キャラクターが行動で使うモーションの ID を、重なりなく小さい順に返す（読み込みの先回りに使う）

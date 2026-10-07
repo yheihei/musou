@@ -913,6 +913,118 @@ local SNAPSHOT = {
 		HomeRadius = 6,
 		CorpseLifetime = 3,
 	},
+	Kata = {
+		AggroRange = 50,
+		ChaseRadius = 40,
+		AttackerMemory = 5,
+		SwitchMargin = 6,
+		Maai = 5,
+		Interval = 1.2,
+		IntervalRandom = 0.8,
+		Jonin = {
+			Kesagiri = {
+				Maai = 7,
+				Weight = 4,
+				YobiDosa = 0.5,
+				Active = 0.1,
+				Recovery = 0.6,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 8, Width = 7 },
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 8,
+					},
+				},
+			},
+			Renzan = {
+				Maai = 7,
+				Weight = 3,
+				YobiDosa = 0.6,
+				Active = 0.5,
+				Recovery = 0.7,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 8, Width = 8 },
+						Repeat = 2,
+						Interval = 0.2,
+						Power = 0.8,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Box", Range = 9, Width = 9 },
+						Delay = 0.45,
+						Power = 1.5,
+						Reaction = "Knockback",
+						Knockback = 40,
+					},
+				},
+			},
+			Senpu = {
+				Maai = 6,
+				Weight = 2,
+				YobiDosa = 0.9,
+				Active = 0.1,
+				Recovery = 0.8,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 9, Angle = 360 },
+						Power = 1.8,
+						Reaction = "Knockback",
+						Knockback = 45,
+					},
+				},
+			},
+			Shurikenuchi = {
+				Maai = 24,
+				Weight = 2,
+				YobiDosa = 0.6,
+				Active = 0.1,
+				Recovery = 0.6,
+				Hits = {
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 90 },
+						Power = 1,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+				},
+			},
+		},
+		Shuryo = {
+			Daichiwari = {
+				Maai = 8,
+				Weight = 3,
+				YobiDosa = 1.2,
+				Active = 0.1,
+				Recovery = 1,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 10 },
+						Power = 2.2,
+						Reaction = "Launch",
+						Knockback = 50,
+					},
+				},
+			},
+			Shogekiha = {
+				Maai = 18,
+				Weight = 2,
+				YobiDosa = 0.9,
+				Active = 0.2,
+				Recovery = 0.9,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 22, Width = 6 },
+						Power = 2,
+						Reaction = "Knockback",
+						Knockback = 55,
+					},
+				},
+			},
+		},
+	},
 	Kosen = {
 		StartDistance = 30,
 		Zensenhaba = 10,

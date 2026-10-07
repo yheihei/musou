@@ -203,6 +203,34 @@ export type JittaikakenSection = {
 	CorpseLifetime: number,
 }
 
+-- 上忍と首領の型1つ。予備動作（YobiDosa 秒）の後に判定を出し（Active 秒）、後隙（Recovery 秒）の間は動かない。
+-- 判定は予備動作の後 Delay 秒で出る。形・威力・反応の書き方はプレイヤーの技の判定と同じで、威力は 倍率 × 上忍の攻撃
+export type KataDef = {
+	-- 型を出し始める、狙う相手の中心までの水平の距離の上限（間合い。スタッド）
+	Maai: number,
+	-- 型を選ぶ重み。間合いに入っている型の重みの合計に対する割合が、選ぶ確率になる
+	Weight: number,
+	YobiDosa: number,
+	Active: number,
+	Recovery: number,
+	Hits: { HitDef },
+}
+
+-- 上忍と首領の個体の戦い方。狙う相手を選んで間合いまで近づき、型を出す
+export type KataSection = {
+	AggroRange: number,
+	ChaseRadius: number,
+	AttackerMemory: number,
+	SwitchMargin: number,
+	Maai: number,
+	Interval: number,
+	IntervalRandom: number,
+	-- 上忍と首領が出す型。型 ID ごとに置く
+	Jonin: { [string]: KataDef },
+	-- 首領だけが出す型。型 ID は Jonin と重ねない
+	Shuryo: { [string]: KataDef },
+}
+
 export type KosenSection = {
 	StartDistance: number,
 	Zensenhaba: number,
@@ -397,6 +425,7 @@ export type Config = {
 	EnemyReaction: EnemyReactionSection,
 	Spawner: SpawnerSection,
 	Jittaikaken: JittaikakenSection,
+	Kata: KataSection,
 	Kosen: KosenSection,
 	Butai: ButaiSection,
 	Hoshin: HoshinSection,
@@ -1411,9 +1440,134 @@ local Config: Config = {
 	Jittaikaken = {
 		AppearRadius = 120, -- プレイヤーからこの距離（スタッド）まで近づいた上忍と首領を個体で出す
 		DisappearRadius = 160, -- 全員のプレイヤーからこの距離より離れた個体を消す。体力はデータに残る
-		Interval = 0.25, -- 出し入れを確かめ、個体の位置をデータへ写す間隔（秒）
+		Interval = 0.25, -- 出し入れを確かめ、個体の位置をデータへ写し、上忍と首領が考える（Kata 節の戦い方と秘計の判断）間隔（秒）
 		HomeRadius = 6, -- 個体が戻る位置（率いる部隊の位置、首領は本陣）からこの距離（スタッド）より離れたら歩いて戻る
 		CorpseLifetime = 3, -- 倒れた個体を消すまでの秒数
+	},
+
+	-- 上忍と首領の個体の戦い方（敵軍の個体だけ）。狙う相手を選んで間合いまで近づき、型を出す。判断は Kata.luau にある。
+	-- 型は予備動作（足元に判定の範囲が出て、体が光る）の後に判定を出し、後隙の間は動かない。時間は上忍の攻撃の速さで割る。
+	-- 考える間隔は Jittaikaken 節の Interval
+	Kata = {
+		AggroRange = 50, -- 個体からこの距離（スタッド）までの相手を狙う
+		-- 上忍が戻る位置（率いる部隊の位置）から、追いかけて離れてよい距離（スタッド）。首領は本陣の範囲の中を追いかける
+		ChaseRadius = 40,
+		AttackerMemory = 5, -- 最後に攻撃してきた相手を、ほかの相手より先に狙う秒数
+		SwitchMargin = 6, -- 狙っている相手より、この距離（スタッド）以上近い相手がいたら狙いを替える
+		Maai = 5, -- 狙う相手の中心からこの距離（スタッド）の位置まで近づいて止まる。型の Maai はこれより長くする
+		Interval = 1.2, -- 型を出し終えてから、次の型を選ぶまでの秒数
+		IntervalRandom = 0.8, -- 次の型を選ぶまでの秒数に、0 からこの秒数までを乱数で足す（型を出す拍子を読ませない）
+		-- 上忍と首領が出す型
+		Jonin = {
+			-- 袈裟斬り。素早く前を斬る
+			Kesagiri = {
+				Maai = 7,
+				Weight = 4,
+				YobiDosa = 0.5,
+				Active = 0.1,
+				Recovery = 0.6,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 8, Width = 7 },
+						Power = 1.2,
+						Reaction = "Flinch",
+						Knockback = 8,
+					},
+				},
+			},
+			-- 連斬。前を2回斬り、3回目で吹き飛ばす
+			Renzan = {
+				Maai = 7,
+				Weight = 3,
+				YobiDosa = 0.6,
+				Active = 0.5,
+				Recovery = 0.7,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 8, Width = 8 },
+						Repeat = 2,
+						Interval = 0.2,
+						Power = 0.8,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+					{
+						Shape = { Kind = "Box", Range = 9, Width = 9 },
+						Delay = 0.45,
+						Power = 1.5,
+						Reaction = "Knockback",
+						Knockback = 40,
+					},
+				},
+			},
+			-- 旋風。長く構えてから周りを斬って吹き飛ばす
+			Senpu = {
+				Maai = 6,
+				Weight = 2,
+				YobiDosa = 0.9,
+				Active = 0.1,
+				Recovery = 0.8,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 9, Angle = 360 },
+						Power = 1.8,
+						Reaction = "Knockback",
+						Knockback = 45,
+					},
+				},
+			},
+			-- 手裏剣打ち。離れた相手へ手裏剣を1枚投げる
+			Shurikenuchi = {
+				Maai = 24,
+				Weight = 2,
+				YobiDosa = 0.6,
+				Active = 0.1,
+				Recovery = 0.6,
+				Hits = {
+					{
+						Shape = { Kind = "Line", Length = 30, Width = 3, Speed = 90 },
+						Power = 1,
+						Reaction = "Flinch",
+						Knockback = 6,
+					},
+				},
+			},
+		},
+		-- 首領だけが出す型
+		Shuryo = {
+			-- 大地割り。長く構えてから地面を割り、周りをまとめて打ち上げる
+			Daichiwari = {
+				Maai = 8,
+				Weight = 3,
+				YobiDosa = 1.2,
+				Active = 0.1,
+				Recovery = 1,
+				Hits = {
+					{
+						Shape = { Kind = "Sector", Radius = 14, Angle = 360, Height = 10 },
+						Power = 2.2,
+						Reaction = "Launch",
+						Knockback = 50,
+					},
+				},
+			},
+			-- 衝撃波。前へ遠くまで届く衝撃波で吹き飛ばす
+			Shogekiha = {
+				Maai = 18,
+				Weight = 2,
+				YobiDosa = 0.9,
+				Active = 0.2,
+				Recovery = 0.9,
+				Hits = {
+					{
+						Shape = { Kind = "Box", Range = 22, Width = 6 },
+						Power = 2,
+						Reaction = "Knockback",
+						Knockback = 55,
+					},
+				},
+			},
+		},
 	},
 
 	-- 交戦。部隊どうしの押し合いの損害を Kosen.luau で計算する
