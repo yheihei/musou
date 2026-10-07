@@ -1,8 +1,10 @@
 --!strict
 -- パーティーとリーダーの計算。サーバーに入ったプレイヤーを入った順に並べ、
 -- 一番早く入った人をリーダーにする。リーダーが抜けたら次に古い人がリーダーになる。
+-- プライベートサーバーでは、持ち主がパーティーにいて待機中でなければ、持ち主をリーダーにする。
 -- ロビー以外のフェーズで入った人は待機中にし、ロビーに戻った時点で合流させる。
 -- 1サーバーが1パーティーにあたる（ADR 0002）。Roblox の API は使わない。
+-- 持ち主の UserId は PartyService が game.PrivateServerOwnerId から渡す。
 
 local Config = require("./Config")
 local RemoteSchema = require("./RemoteSchema")
@@ -24,6 +26,8 @@ export type Party = {
 	members: { Member },
 	-- 次に入った人に振る番号
 	nextJoinOrder: number,
+	-- プライベートサーバーの持ち主の UserId。持ち主のいないサーバー（公開サーバーなど）では nil
+	privateServerOwnerId: number?,
 }
 
 local Party = {}
@@ -76,8 +80,21 @@ function Party.leave(party: Party, userId: number): Member?
 	return nil
 end
 
--- リーダー。一番早く入った人で、誰もいなければ nil
+-- プライベートサーバーの持ち主を決める。持ち主のいないサーバーでは nil を渡す
+function Party.setPrivateServerOwner(party: Party, userId: number?)
+	party.privateServerOwnerId = userId
+end
+
+-- リーダー。プライベートサーバーの持ち主がパーティーにいて待機中でなければ持ち主、
+-- そうでなければ一番早く入った人。誰もいなければ nil。
+-- 出撃中に入った持ち主は待機中なので、戦闘とリザルトの間は出撃したリーダーのままにし、
+-- ロビーに戻って合流した時点で持ち主をリーダーにする
 function Party.leader(party: Party): Member?
+	local ownerId = party.privateServerOwnerId
+	local owner = if ownerId then Party.get(party, ownerId) else nil
+	if owner and not owner.waiting then
+		return owner
+	end
 	return party.members[1]
 end
 

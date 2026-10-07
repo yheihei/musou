@@ -9,7 +9,8 @@
 --   拒否せず、ストーリーを切り替える（後から押した方を通す）
 -- - 別のストーリーを選んだら、ステージの選択を外す
 -- - リーダーが代わったときと、リーダーの開放済みが変わったときに確かめ直し、開放していないステージの選択と、
---   開放したステージの無いストーリーの選択を外す
+--   開放したステージの無いストーリーの選択を外す。進行を読み終える前の人がリーダーになったら
+--   （プライベートサーバーの持ち主が入ったときなど）、読み終えてから確かめ直す
 -- - キャラクターはステージを選んだ後に、ストーリーのクランの操作キャラクターから、他のメンバーと重ならずに選べる
 -- - ストーリーかステージが変わったら、選べなくなったキャラクターの選択を外す
 -- - 秘計は1枚ずつ選ぶか外し、持ち込みの上限まで、他のメンバーと重ならずに選べる（先に選んだ人のもの）。
@@ -204,13 +205,19 @@ function SelectionService.revalidate()
 	PartyService.refresh()
 end
 
--- 入退室とフェーズの変化のたびに呼ぶ。抜けた人の選択は PartyState に載らないので、送り直すのはリーダーが代わったときだけ
+-- 入退室とフェーズの変化のたびに呼ぶ。抜けた人の選択は PartyState に載らないので、送り直すのはリーダーが代わったときだけ。
+-- 進行を読み終える前の人がリーダーになったとき（プライベートサーバーの持ち主が入ったときなど）は、送り直すだけにし、
+-- 読み終えたとき（ProgressService.changed）に確かめ直す。読み終える前は新規の進行とみなされ、開放済みのステージの選択まで外れるため
 local function onPartyChanged()
 	releaseLeftMembers()
 	local leader = PartyService.getLeader()
 	if leader ~= lastLeader then
 		lastLeader = leader
-		recheckSelection()
+		if leader and not ProgressService.isReady(leader) then
+			PartyService.refresh()
+		else
+			recheckSelection()
+		end
 	end
 end
 

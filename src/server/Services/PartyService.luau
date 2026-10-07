@@ -3,7 +3,11 @@
 -- 入室した人には入室直後に PartyState を送る。計算は ReplicatedStorage.Shared.Party が持つ。
 -- フェーズはステージの進行（StageService）が setPhase で変える。
 -- 選択中のステージやキャラクターなど、ほかのサービスが持つ状態は setExtraProvider で PartyState に載せる。
+-- プライベートサーバーでは、持ち主（game.PrivateServerOwnerId）がパーティーにいて待機中でなければ持ち主をリーダーにする。
+-- PrivateServerOwnerId が 0 のサーバー（公開サーバーと予約サーバー）には持ち主がいない。
+-- Studio ではプライベートサーバーを立てられないので、窓口の SetPrivateServerOwner で持ち主を上書きして確かめる
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -19,6 +23,8 @@ local partyStateRemote: RemoteEvent
 local changed = Instance.new("BindableEvent")
 -- PartyState に載せる、ほかのサービスが持つ状態を返す関数
 local extraProvider: (() -> Party.Extra)? = nil
+-- プライベートサーバーの持ち主の上書き（窓口の SetPrivateServerOwner。確認用）。nil なら game.PrivateServerOwnerId を使う
+local ownerOverride: number? = nil
 
 -- パーティーが変わったとき（入退室とフェーズの変化）に発火する
 PartyService.changed = changed.Event
@@ -81,6 +87,12 @@ function PartyService.setPhase(phase: Party.Phase)
 	broadcast()
 end
 
+-- リーダーの決まりに使うプライベートサーバーの持ち主の UserId。持ち主がいなければ nil
+local function privateServerOwnerId(): number?
+	local userId = if ownerOverride ~= nil then ownerOverride else game.PrivateServerOwnerId
+	return if userId ~= 0 then userId else nil
+end
+
 local function onPlayerAdded(player: Player)
 	if not Party.join(party, player.UserId, player.Name) then
 		player:Kick(`このサーバーは満員です（{Config.Party.MaxMembers}人まで）`)
@@ -95,14 +107,71 @@ local function onPlayerRemoving(player: Player)
 	end
 end
 
+-- 窓口の引数を持ち主の UserId にする。いるプレイヤーの名前を先に探し、いなければ整数を UserId として読む
+local function ownerIdOf(value: unknown): number
+	if type(value) == "string" then
+		local player = Players:FindFirstChild(value)
+		if player and player:IsA("Player") then
+			return player.UserId
+		end
+	end
+	local userId = tonumber(value)
+	if userId and userId == math.floor(userId) then
+		return userId
+	end
+	-- いるプレイヤーの名前を添えてエラーにする
+	return DebugCommand.findPlayer(value).UserId
+end
+
+-- 窓口の返す文に使う、持ち主の様子
+local function describeOwner(): string
+	local userId = party.privateServerOwnerId
+	if not userId then
+		return "なし"
+	end
+	local member = Party.get(party, userId)
+	if not member then
+		return `UserId {userId}（パーティーにいない）`
+	end
+	return `{member.name}（UserId {userId}{if member.waiting then "、待機中" else ""}）`
+end
+
 local function registerDebugCommands()
-	DebugCommand.register("DumpParty", "", "パーティーの状態を JSON で返す", function()
-		return game:GetService("HttpService"):JSONEncode(PartyService.getState())
-	end)
+	DebugCommand.register(
+		"DumpParty",
+		"",
+		"パーティーの状態を JSON で返す。privateServer に、リーダーの決まりに使うプライベートサーバーの持ち主（ownerId）、窓口で上書きしているか（override）、game.PrivateServerOwnerId を載せる",
+		function()
+			local dump: { [string]: any } = PartyService.getState() :: any
+			dump.privateServer = {
+				ownerId = party.privateServerOwnerId,
+				override = ownerOverride ~= nil,
+				privateServerOwnerId = game.PrivateServerOwnerId,
+			}
+			return HttpService:JSONEncode(dump)
+		end
+	)
+	DebugCommand.register(
+		"SetPrivateServerOwner",
+		"<プレイヤー名|UserId|なし>",
+		"リーダーの決まりに使うプライベートサーバーの持ち主を上書きする。なし で上書きを外し、game.PrivateServerOwnerId に戻す（Studio では 0 なので持ち主なし。確認用）",
+		function(value)
+			ownerOverride = if value == "なし" then nil else ownerIdOf(value)
+			Party.setPrivateServerOwner(party, privateServerOwnerId())
+			broadcast()
+			local leader = Party.leader(party)
+			local leaderName = if leader then leader.name else "なし"
+			if ownerOverride == nil then
+				return `プライベートサーバーの持ち主の上書きを外した（持ち主 {describeOwner()}、リーダー {leaderName}）`
+			end
+			return `プライベートサーバーの持ち主を {describeOwner()} に上書きした（リーダー {leaderName}）`
+		end
+	)
 end
 
 function PartyService.start()
 	partyStateRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PartyState") :: RemoteEvent
+	Party.setPrivateServerOwner(party, privateServerOwnerId())
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(onPlayerRemoving)
 	for _, player in Players:GetPlayers() do
