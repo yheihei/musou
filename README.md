@@ -139,7 +139,7 @@ src/
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / SelectionService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -148,9 +148,10 @@ src/
       ButaiService  戦場の部隊のデータ（位置・兵数・士気）と部隊どうしの交戦。配置から作り、目的地へ位置だけを進め、ReplicatedStorage.Butai の Attribute で複製する
       KyotenService  戦場の拠点の耐久と所属と守備。範囲の中で拠点の軍の下忍が倒れると耐久を減らし、0 で相手の軍に制圧させる。守備を補充し、守備のいない拠点は攻める軍がいる間に耐久を減らす。ReplicatedStorage.Kyoten の Attribute で複製する
       HeitansenService  兵站線と孤立。拠点の所属とつながりから軍ごとの兵站線を求め直し、孤立した拠点の補充を止める。つながりを通れなくする API と、孤立しない拠点の指定の API を持つ。ReplicatedStorage.Tsunagari の Attribute で複製する
-      SaishutsugekiService  兵力と再出撃。倒れた出撃メンバーを兵站線につながった最寄りの味方の拠点から再出撃させ、兵力を1使う。兵力0で倒れたら負けにする
+      SaishutsugekiService  兵力と再出撃。倒れた出撃メンバーを兵站線につながった最寄りの味方の拠点から再出撃させ、兵力を1使う。兵力0で倒れたら heiryokuZero で知らせる
       JoninService  上忍と首領のデータ（能力値・体力・率いる部隊）と被ダメージの受け口。上忍は部隊とともに動き、首領は本陣にとどまる。ReplicatedStorage.Jonin の Attribute で複製する
       JoninKotaiService  実体化圏で上忍と首領（両軍）の個体を出し入れする。個体は名札と体力バーを付け、データの位置と体力に合わせる
+      ShohaiService  勝敗の判定。首領の撃破・本陣の制圧・兵力0で倒れたことを受け、同じ再開の中で起きた条件をまとめて判定してステージを終える（同時なら負けを優先）
       HoshinService  上忍が部隊を率いて、配置で決めた方針（攻略・防衛・救援）に沿って部隊の目的地を決める
       MinimapService  ミニマップに出す区画の範囲と、出撃メンバーの位置と向きを Attribute で複製する
       ShihaiAreaService  支配エリア。兵站線につながった拠点の周りを支配エリアとし、その軍の部隊の交戦の押す力と、上忍と首領の攻撃と防御を上げる。ReplicatedStorage.ShihaiArea の Attribute で複製する
@@ -204,6 +205,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 部隊の目的地は HoshinService が、配置で部隊ごとに決めた方針（攻略・防衛・救援）に沿って `Config.luau` の Hoshin 節の間隔ごとに決め直す（判断は `src/shared/Hoshin.luau`）。攻略はつながりの先の道のりが一番近い相手の拠点、防衛は担当の拠点に近づいた相手の部隊、救援は耐久が減って攻められている自分の軍の拠点を目指し、目指す先が無ければ担当の拠点へ戻る。つながりの経由点をたどり、その軍が通れないつながりは通らない。外から目的地を差し替える API（`HoshinService.overrideKyoten`・`overridePosition`・`release`）を持つ。首領は本陣の範囲にとどまる（`JoninService.setPosition` が範囲の縁へ寄せる）。窓口の `DumpHoshin`・`SetHoshinAI`・`SetHoshin`・`OverrideMokutekichi`・`SetJoninPosition` で確かめる。`SetHoshinAI false` で判断を止めると、方針で動く部隊はその場で止まる。方針で動く部隊を窓口で動かすときは `OverrideMokutekichi` を使う（`MoveButai` は次の判断で目的地が戻る）
 - 敵味方の部隊が近づくと交戦を始め、決着までその場にとどまる。相手は1部隊ずつで、交戦中の敵の手前に来た部隊は待つ。組み方と損害の計算は `src/shared/Kosen.luau`、距離と係数は `Config.luau` の Kosen 節
 - 戦闘のフェーズには制限時間（`Config.luau` の Stage 節）があり、終了予定の時刻を workspace の Attribute `BattleDeadline`（`workspace:GetServerTimeNow` の時刻）に置く。過ぎると時間切れで負ける。窓口の `SetDeadline <残り秒数>` で縮められる
+- 勝敗は ShohaiService が判定する（計算は `src/shared/Shohai.luau`）。勝ちは敵軍の首領の撃破と敵軍の本陣の制圧、負けは味方軍の首領の撃破と本陣の陥落と、兵力0で倒れたこと。条件は `JoninService.defeated`・`KyotenService.seiatsu`・`SaishutsugekiService.heiryokuZero` で受けて溜め、`task.defer` で今の再開の終わりにまとめて判定し、`StageService.finish` を1回だけ呼ぶ。同じ再開の中で起きた条件は同時とみなして負けを優先し、勝ちどうし・負けどうしは首領の撃破・本陣・兵力0・時間切れの順で理由を選ぶ。時間切れは StageService が決め、先に決着していれば finish を受け付けない。決着すると、部隊（ButaiService）・上忍と首領（JoninService）・その個体（JoninKotaiService）・仮の湧き処理の敵（EnemyService）を各サービスが片付ける。窓口の `DumpStage` の `result` で勝敗と理由を確かめる
 - 人数による調整は、出撃したときのメンバーの数で決める（計算は `src/shared/PartySize.luau`、倍率は `Config.luau` の PartySize 節）。敵軍の上忍と首領の体力の最大（JoninService）と、出撃したときの兵力（SaishutsugekiService）に倍率を掛け、途中で抜けても変えない。味方軍の上忍と首領には掛けない。人数は `StageService.started` の `partySize` で渡す。窓口の `SetPartySize <人数>` で次の出撃から使う人数を上書きし、`DumpJonin`・`DumpHeiryoku`・`DumpStage` で確かめる
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、SaishutsugekiService が出現し直させる。戦闘中の出撃メンバーは、兵站線につながった味方の拠点のうち倒れた位置に一番近い拠点から出て、パーティーで共有する兵力を1使う（計算は `src/shared/Saishutsugeki.luau`）。兵力0で倒れたら負ける。戦闘の外の出撃メンバーは出撃地点から、ほかの人はロビーから出る。兵力は workspace の Attribute `Heiryoku` で複製し、窓口の `SetHeiryoku`・`DumpHeiryoku` で確かめる
 - 画面上部の戦況の表示（BattleStatusController）は、戦闘のフェーズの出撃メンバーにだけ、中央に残り時間と兵力、左右に味方軍と敵軍の軍全体の士気のゲージを出す。値は `ReplicatedStorage.Shiki` の Attribute（`Mikatagun`・`Tekigun`）と workspace の Attribute（`BattleDeadline`・`Heiryoku`）から読む。残り時間は `Config.luau` の BattleStatus 節のしきい値以下で黄色と赤、兵力0は赤で出す（判断と文は `src/shared/BattleStatus.luau`）。窓口の `SetGunShiki`・`SetDeadline`・`SetHeiryoku` で確かめる

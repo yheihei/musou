@@ -18,7 +18,8 @@
 -- - 人数による調整に使う人数は、出撃したときのメンバーの数。途中で抜けても変えない。
 --   窓口の SetPartySize で、次の出撃から使う人数を上書きできる（確認用）
 -- - 倒れた人の再出撃は SaishutsugekiService が行う。出撃したメンバーの出撃地点は shutsugekiCFrameOf で引く
--- - finish で勝敗と理由を決め、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る
+-- - finish で勝敗と理由を受け、終了のイベントシーンの後に、出撃して残っているメンバーに StageResult を送る。
+--   受け付けるのは戦闘のフェーズの間の最初の1回だけ。時間切れはここで決め、ほかの勝敗は ShohaiService が判定して呼ぶ
 -- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
 --   新しく開放したステージを StageResult のメンバーごとに書く
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、ストーリー以外の選択を外して全員をロビーへ戻す
@@ -709,6 +710,7 @@ local function registerDebugCommands()
 			}
 		end
 		local deadline = if current then current.deadline else nil
+		local result = if current then current.result else nil
 		return HttpService:JSONEncode({
 			phase = phase,
 			stage = StageService.getStage(),
@@ -718,6 +720,7 @@ local function registerDebugCommands()
 			elapsed = elapsed,
 			remaining = if deadline then math.max(deadline - workspace:GetServerTimeNow(), 0) else nil,
 			scene = scene,
+			result = if result then { victory = result.victory, reason = result.reason } else nil,
 		})
 	end)
 end

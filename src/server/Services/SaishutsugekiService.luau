@@ -6,14 +6,14 @@
 -- - 出撃（StageService.started）で兵力を Config.luau の Stage 節の Heiryoku に人数の倍率を掛けた数にし
 --   （ReplicatedStorage.Shared.PartySize。人数は出撃したときの人数で、途中で抜けても変えない）、
 --   workspace の Attribute の Heiryoku でクライアントへ複製する。ロビーのフェーズに戻ったら消す
--- - 兵力が0の状態で出撃メンバーが倒れたら、再出撃させずに heiryokuZero で知らせ、兵力0で負けにする
---   （StageService.finish）。勝敗の判定をまとめる処理（#109）ができたら、負けにするのはそちらへ移す
+-- - 兵力が0の状態で出撃メンバーが倒れたら、再出撃させずに heiryokuZero で知らせる。
+--   負けにするのは勝敗の判定（ShohaiService）で、知らせた再開の終わりに決まる
 -- - 拠点の中では、出撃した順に東西へ並べ、倒れた位置の方を向かせる。高さは地面に合わせる（PlayerService.spawnAt）
 -- - 再出撃する拠点が無いとき（配置の構成の無いステージなど）は、出撃地点から出す。兵力は使う
 -- - 兵力を使うのは、戦闘のフェーズで倒れ、戦闘のフェーズのうちに再出撃するとき。倒れた1回につき1回だけ使い、
 --   出現し直しに失敗して呼び直されたときは使わない
 -- - 戦闘のフェーズの外で出現し直す出撃メンバーは、兵力を使わずに出撃地点から出す。
---   兵力0の負けにした人も、すぐに出撃地点から出す
+--   兵力0で倒れた人も、負けが決まって戦闘のフェーズが終わったら、すぐに出撃地点から出す
 -- - ロビーのフェーズの人と、出撃したメンバーでない人（待機中の人）はロビーに出す。仲間による蘇生は無い
 -- - 倒れた位置とフェーズは、倒れたとき（Humanoid.Died）に覚える。位置が分からなければ出撃地点の位置で選ぶ
 
@@ -41,7 +41,7 @@ local HUMANOID_TIMEOUT = 10
 local heiryoku: number? = nil
 -- 出撃したときの兵力（人数で増やした数）。出撃していないときは nil
 local initialHeiryoku: number? = nil
--- このステージで兵力0の負けを知らせたか
+-- このステージで兵力0で倒れたことを知らせたか
 local zeroNotified = false
 
 -- 倒れたときの記録。位置は倒れたときの HumanoidRootPart の位置（分からなければ nil）、フェーズは倒れたときのフェーズ
@@ -52,9 +52,12 @@ type Fall = {
 
 -- 倒れて、まだ出現し直していない人の記録
 local falls: { [Player]: Fall } = {}
+-- 兵力0で倒れ、負けが決まるのを待っている人。戦闘のフェーズが終わったら出現し直させる
+local zeroWaiting: { [Player]: boolean } = {}
 
 local heiryokuZeroEvent = Instance.new("BindableEvent")
--- 兵力が0の状態で出撃メンバーが倒れたときに、倒れた Player で発火する。1回のステージで1回だけ
+-- 兵力が0の状態で出撃メンバーが倒れたときに、倒れた Player で発火する。1回のステージで1回だけ。
+-- 勝敗の判定（ShohaiService）が受けて負けにする
 SaishutsugekiService.heiryokuZero = heiryokuZeroEvent.Event
 
 -- 兵力。出撃していないときは nil
@@ -105,15 +108,13 @@ local function spawnAtOrLobby(player: Player, cframe: CFrame?)
 	end
 end
 
--- 兵力0で倒れたら知らせて負けにする（1回のステージで1回だけ）
+-- 兵力0で倒れたら知らせる（1回のステージで1回だけ）。負けにするのは勝敗の判定（ShohaiService）
 local function onHeiryokuZero(player: Player)
 	if zeroNotified then
 		return
 	end
 	zeroNotified = true
 	heiryokuZeroEvent:Fire(player)
-	-- 勝敗の判定をまとめる処理（#109）ができるまでは、ここで兵力0の負けにする
-	StageService.finish(false, "HeiryokuZero")
 end
 
 -- 倒れた人を出現し直させる（PlayerService.setRespawner で登録する）
@@ -135,11 +136,10 @@ local function respawn(player: Player)
 	if fall and fall.phase == "Battle" then
 		local ok, rest = Saishutsugeki.consume(heiryoku or 0)
 		if not ok then
+			-- 負けは勝敗の判定がこの再開の終わりに決める。決まって戦闘のフェーズが終わったら、
+			-- イベントシーンとリザルトに出られるよう、出撃地点から出す（onPhaseChanged）
+			zeroWaiting[player] = true
 			onHeiryokuZero(player)
-			-- 負けにしたらイベントシーンとリザルトに出られるよう、出撃地点から出す
-			if StageService.getPhase() ~= "Battle" then
-				spawnAtOrLobby(player, shutsugekiChiten)
-			end
 			return
 		end
 		SaishutsugekiService.setHeiryoku(rest)
@@ -148,6 +148,21 @@ local function respawn(player: Player)
 		or (if shutsugekiChiten then shutsugekiChiten.Position else nil)
 	local _, cframe = kyotenCFrame(index, position or Vector3.zero)
 	spawnAtOrLobby(player, cframe or shutsugekiChiten)
+end
+
+-- 戦闘のフェーズが終わったら、兵力0で倒れて負けが決まるのを待っていた人を出現し直させる
+-- （イベントシーンとリザルトなら出撃地点、ロビーならロビー）。ロビーのフェーズに戻ったら兵力を消す
+local function onPhaseChanged(next: StagePhase.Phase)
+	if next ~= "Battle" then
+		for player in table.clone(zeroWaiting) do
+			zeroWaiting[player] = nil
+			task.spawn(respawn, player)
+		end
+	end
+	if next == "Lobby" then
+		initialHeiryoku = nil
+		SaishutsugekiService.setHeiryoku(nil)
+	end
 end
 
 -- 倒れたときの位置とフェーズを覚える
@@ -213,21 +228,18 @@ function SaishutsugekiService.start()
 	StageService.started:Connect(function(info: StageService.StartInfo)
 		zeroNotified = false
 		table.clear(falls)
+		table.clear(zeroWaiting)
 		initialHeiryoku = PartySize.heiryokuOf(Config.Stage.Heiryoku, info.partySize)
 		SaishutsugekiService.setHeiryoku(initialHeiryoku)
 	end)
-	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
-		if next == "Lobby" then
-			initialHeiryoku = nil
-			SaishutsugekiService.setHeiryoku(nil)
-		end
-	end)
+	StageService.phaseChanged:Connect(onPhaseChanged)
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	for _, player in Players:GetPlayers() do
 		onPlayerAdded(player)
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		falls[player] = nil
+		zeroWaiting[player] = nil
 	end)
 	registerDebugCommands()
 end
