@@ -133,6 +133,9 @@ local logTokens = false
 local BUTAI_CENTER_TRIES = 8
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
 local STAND_OFF_MARGIN = 0.5
+-- 攻撃トークンを持つ下忍が止まる位置の許し（スタッド）。EnemySpacing.TOLERANCE のままだと
+-- 止まる位置より最大 0.75 外で止まり、攻撃が届く距離（手前の距離 + STAND_OFF_MARGIN）の外になることがある
+local ATTACK_TOLERANCE = 0.25
 -- プレイヤーの中心からこの距離（スタッド）より近くにいるときは、1回の判断で進む距離を STEP に抑え、
 -- 囲みの輪の上を回り込む
 local NEAR_RANGE = 10
@@ -329,7 +332,7 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	-- 攻撃トークンを持つ下忍は、待っている下忍を避けずに、攻撃が届く距離の内で止まる
 	local attacking = enemy.kind == "Genin" and mayAttack
 	local goal = EnemySpacing.goal(here, enemy.radius, center, standOff, neighborsOf(enemy, attacking), enemy.spin)
-	if EnemySpacing.shouldMove(goal, standOff) then
+	if EnemySpacing.shouldMove(goal, standOff, if attacking then ATTACK_TOLERANCE else nil) then
 		local point = goal.point
 		if attacking then
 			point = clampReach(point, center, enemy.def.AttackRange - STAND_OFF_MARGIN)
