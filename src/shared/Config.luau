@@ -216,6 +216,15 @@ export type SpawnerSection = {
 	PlayerGap: number,
 }
 
+-- 攻撃トークン。1人のプレイヤーを同時に攻撃できる下忍の数と、渡し方
+export type KogekiTokenSection = {
+	PerPlayer: number,
+	Range: number,
+	Interval: number,
+	Rest: number,
+	WaitGap: number,
+}
+
 -- 実体化圏。プレイヤーの周りで、上忍と首領を個体として出す範囲と、個体の動き
 export type JittaikakenSection = {
 	AppearRadius: number,
@@ -507,6 +516,7 @@ export type Config = {
 	Jonin: EnemySection,
 	EnemyReaction: EnemyReactionSection,
 	Spawner: SpawnerSection,
+	KogekiToken: KogekiTokenSection,
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
@@ -1615,6 +1625,16 @@ local Config: Config = {
 		-- 敵がプレイヤーの手前で止まるときの、敵の体の縁からプレイヤーの中心までの距離（スタッド）。
 		-- 敵はプレイヤーと重ならずに周りを囲む（攻撃が届く距離より手前で止まる）
 		PlayerGap = 2,
+	},
+
+	-- 攻撃トークン。1人のプレイヤーを同時に攻撃できる下忍を絞り、攻撃トークンを持たない下忍は周りを囲んで待つ。
+	-- 対象は下忍だけ（上忍と首領は攻撃トークンなしで攻撃する）。計算は KogekiToken.luau にある
+	KogekiToken = {
+		PerPlayer = 3, -- 1人のプレイヤーを同時に攻撃できる下忍の数（攻撃トークンの数）
+		Range = 20, -- プレイヤーからこの距離（スタッド）より近い下忍だけが受け取る。持っている下忍が離れたら返す
+		Interval = 1.5, -- 攻撃して返された攻撃トークンを、次の下忍へ渡すまでの秒数
+		Rest = 2, -- 攻撃して攻撃トークンを返した下忍が、次に受け取れるまでの秒数
+		WaitGap = 5, -- 攻撃トークンを持たない下忍が囲んで待つ位置。攻撃する下忍が止まる位置より、この距離（スタッド）だけ外
 	},
 
 	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）を個体として出し、全員のプレイヤーから離れたらデータに戻す。

@@ -992,6 +992,13 @@ local SNAPSHOT = {
 		CorpseLifetime = 2,
 		PlayerGap = 2,
 	},
+	KogekiToken = {
+		PerPlayer = 3,
+		Range = 20,
+		Interval = 1.5,
+		Rest = 2,
+		WaitGap = 5,
+	},
 	Jittaikaken = {
 		AppearRadius = 120,
 		DisappearRadius = 160,

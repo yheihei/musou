@@ -8,6 +8,13 @@
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
 --
+-- 攻撃トークン（計算は KogekiToken、数値は Config.luau の KogekiToken 節）
+-- - 1人のプレイヤーを同時に攻撃できる下忍は、そのプレイヤーの攻撃トークンを持つ下忍だけ（PerPlayer 体まで）
+-- - 攻撃トークンを持たない下忍は、攻撃する下忍より WaitGap だけ外で囲んで待ち、攻撃しない
+-- - 攻撃した下忍は攻撃トークンを返す。倒れた下忍、吹き飛んで倒れている下忍、ほかのプレイヤーを狙った下忍、
+--   Range より離れた下忍も返し、近い下忍へ渡る
+-- - 上忍は攻撃トークンなしで攻撃する
+--
 -- 攻撃を受けた敵の反応（のけぞり・吹き飛び・打ち上げ・ダウン・起き上がり）は Combat/Hanno が動かす。
 -- 上忍は Config.luau の EnemyReaction 節の JoninScale を掛けた初速で短く飛び、JoninFlinchScale を掛けた秒数だけのけぞる
 -- （0 ならのけぞらない）。反応の最中は、近づくことも攻撃することもしない。
@@ -28,6 +35,7 @@ local EnemySpacing = require(ReplicatedStorage.Shared.EnemySpacing)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
+local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
@@ -86,6 +94,12 @@ type Poison = {
 -- 攻撃を当てたときの反応の中身
 export type Hit = Hanno.Hit
 
+-- 敵が考えるときに狙うプレイヤー
+type Target = {
+	player: Player,
+	root: BasePart,
+}
+
 local EnemyService = {}
 
 -- 湧かせる敵の軍
@@ -108,6 +122,12 @@ local nextNumber = 1
 local spawning = true
 -- 敵が近づいて攻撃するか。窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
 local aiEnabled = true
+-- 攻撃トークン。下忍はモデルの名前、プレイヤーは UserId の文字列で引く
+local tokens = KogekiToken.new()
+-- 最後に考えたときの、プレイヤーのキーごとの攻撃トークンの候補（窓口の DumpKogekiToken で出す）
+local lastCandidates: { [string]: { KogekiToken.Candidate } } = {}
+-- 攻撃トークンの受け渡しと攻撃を出力に出すか。窓口の LogKogekiToken で切り替える
+local logTokens = false
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
 local BUTAI_CENTER_TRIES = 8
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
@@ -212,7 +232,46 @@ local function updatePoison(enemy: Enemy, now: number)
 	end
 end
 
-local function updateEnemy(enemy: Enemy, now: number)
+-- 攻撃トークンで引くプレイヤーのキー
+local function keyOf(player: Player): string
+	return tostring(player.UserId)
+end
+
+local function horizontalDistance(a: Vector3, b: Vector3): number
+	local dx, dz = a.X - b.X, a.Z - b.Z
+	return math.sqrt(dx * dx + dz * dz)
+end
+
+-- 吹き飛んで飛んでいる・倒れている・起き上がっている下忍は、攻撃トークンを持たない（のけぞりの間は持ったまま）
+local function isDowned(enemy: Enemy): boolean
+	local kind = Hanno.kindOf(enemy.body)
+	return kind == "Air" or kind == "Down" or kind == "GetUp"
+end
+
+local function logToken(message: string)
+	if logTokens then
+		print(`[KogekiToken] {message}`)
+	end
+end
+
+-- 攻撃トークンを、各プレイヤーを狙っている下忍に合わせて返したり渡したりする
+local function updateTokens(candidates: { [Player]: { KogekiToken.Candidate } }, now: number)
+	table.clear(lastCandidates)
+	for _, player in Players:GetPlayers() do
+		local key = keyOf(player)
+		local list = candidates[player] or {}
+		lastCandidates[key] = list
+		local changes = KogekiToken.update(tokens, key, list, now)
+		for _, id in changes.released do
+			logToken(`{player.Name}: {id} が返した（持っている {KogekiToken.count(tokens, key)} 体）`)
+		end
+		for _, id in changes.given do
+			logToken(`{player.Name}: {id} が受け取った（持っている {KogekiToken.count(tokens, key)} 体）`)
+		end
+	end
+end
+
+local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	updatePoison(enemy, now)
 	if enemy.humanoid.Health <= 0 then
 		return
@@ -227,14 +286,20 @@ local function updateEnemy(enemy: Enemy, now: number)
 	if Hanno.busy(enemy.body, now) then
 		return
 	end
-	local targetPlayer, targetRoot = findNearestTarget(enemy.root.Position)
-	if not targetPlayer or not targetRoot then
+	if not aim then
 		enemy.humanoid:Move(Vector3.zero)
 		return
 	end
+	local targetPlayer, targetRoot = aim.player, aim.root
+	-- 下忍は、狙うプレイヤーの攻撃トークンを持つときだけ攻撃する。持たなければ外側で囲んで待つ
+	local key = keyOf(targetPlayer)
+	local mayAttack = enemy.kind ~= "Genin" or KogekiToken.holds(tokens, key, enemy.model.Name)
 
 	-- プレイヤーの手前で止まり、ほかの敵とも重ならない位置へ向かう
 	local standOff = math.min(enemy.radius + Config.Spawner.PlayerGap, enemy.def.AttackRange - STAND_OFF_MARGIN)
+	if not mayAttack then
+		standOff += Config.KogekiToken.WaitGap
+	end
 	local position = enemy.root.Position
 	local target = targetRoot.Position
 	local here = { x = position.X, z = position.Z }
@@ -250,7 +315,7 @@ local function updateEnemy(enemy: Enemy, now: number)
 		enemy.humanoid:Move(Vector3.zero)
 	end
 
-	if goal.distance > enemy.def.AttackRange then
+	if not mayAttack or goal.distance > enemy.def.AttackRange then
 		return
 	end
 	if now - enemy.lastAttack < enemy.def.AttackCooldown then
@@ -263,6 +328,42 @@ local function updateEnemy(enemy: Enemy, now: number)
 		power = enemy.def.Damage,
 		reaction = enemy.def.Reaction,
 	})
+	-- 攻撃した下忍は攻撃トークンを返し、しばらく休む
+	if enemy.kind == "Genin" and KogekiToken.attacked(tokens, key, enemy.model.Name, now) then
+		local count = KogekiToken.count(tokens, key)
+		logToken(`{targetPlayer.Name}: {enemy.model.Name} が攻撃して返した（持っている {count} 体）`)
+	end
+end
+
+-- 考える間隔ごとに、敵ごとに狙うプレイヤーを決め、攻撃トークンを渡してから動かす
+local function think(now: number)
+	local aims: { [Enemy]: Target } = {}
+	local candidates: { [Player]: { KogekiToken.Candidate } } = {}
+	if aiEnabled then
+		for _, enemy in enemies do
+			if enemy.humanoid.Health > 0 then
+				local player, root = findNearestTarget(enemy.root.Position)
+				if player and root then
+					aims[enemy] = { player = player, root = root }
+					if enemy.kind == "Genin" and not isDowned(enemy) then
+						local list = candidates[player]
+						if not list then
+							list = {}
+							candidates[player] = list
+						end
+						table.insert(list, {
+							id = enemy.model.Name,
+							distance = horizontalDistance(enemy.root.Position, root.Position),
+						})
+					end
+				end
+			end
+		end
+		updateTokens(candidates, now)
+	end
+	for _, enemy in enemies do
+		updateEnemy(enemy, now, aims[enemy])
+	end
 end
 
 local function onEnemyDied(enemy: Enemy)
@@ -272,6 +373,8 @@ local function onEnemyDied(enemy: Enemy)
 	end
 	enemies[enemy.model] = nil
 	aliveCount -= 1
+	-- 持っていた攻撃トークンは、次に考えるときに近い下忍へ渡る
+	KogekiToken.forget(tokens, enemy.model.Name)
 	-- 毒の間に倒れたら、毒の煙を消す
 	enemy.poison = nil
 	removePoisonLook(enemy)
@@ -462,6 +565,8 @@ local function removeAll()
 	aliveCount = 0
 	enemiesFolder:ClearAllChildren()
 	nextNumber = 1
+	KogekiToken.reset(tokens)
+	table.clear(lastCandidates)
 end
 
 function EnemyService.start()
@@ -514,7 +619,8 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DumpEnemies",
 		"",
-		"生きている仮の湧き処理の敵（名前・種類・体力・受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・位置）を JSON で返す",
+		"生きている仮の湧き処理の敵（名前・種類・体力・受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・"
+			.. "攻撃トークンを持っている相手のプレイヤー・位置）を JSON で返す",
 		function()
 			local list = {}
 			local now = os.clock()
@@ -523,6 +629,8 @@ function EnemyService.start()
 					local position = enemy.root.Position
 					local poison = enemy.poison
 					local firstHitAt = enemy.firstHitAt
+					local owner = KogekiToken.ownerOf(tokens, model.Name)
+					local holder = if owner then Players:GetPlayerByUserId(tonumber(owner) or 0) else nil
 					table.insert(list, {
 						name = model.Name,
 						kind = enemy.kind,
@@ -531,6 +639,7 @@ function EnemyService.start()
 						firstHitAgo = if firstHitAt then math.round((now - firstHitAt) * 100) / 100 else nil,
 						hanno = Hanno.kindOf(enemy.body),
 						poison = if poison then math.max(math.round((poison.untilTime - now) * 10) / 10, 0) else nil,
+						token = if holder then holder.Name else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
 					})
 				end
@@ -608,6 +717,104 @@ function EnemyService.start()
 	)
 
 	DebugCommand.register(
+		"DefeatEnemy",
+		"<敵の名前>",
+		"仮の湧き処理の敵を名前（DumpEnemies の name）で1体倒す。撃破数には数えない（確認用）",
+		function(enemyName)
+			for model, enemy in enemies do
+				if model.Name == enemyName and enemy.humanoid.Health > 0 then
+					enemy.lastHitBy = nil
+					enemy.humanoid.Health = 0
+					return `{model.Name} を倒した`
+				end
+			end
+			return `生きている敵 {tostring(enemyName)} はいない`
+		end
+	)
+
+	DebugCommand.register(
+		"SpawnEnemies",
+		"<プレイヤー名> <数> [距離]",
+		"プレイヤーの周りの円（既定は半径 20 スタッド）に、下忍を等しい間隔で出す（確認用）",
+		function(name, countValue, distanceValue)
+			local player = DebugCommand.findPlayer(name)
+			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not root then
+				return `{player.Name} のキャラクターがいない`
+			end
+			local count = math.floor(DebugCommand.toNumber(countValue, "数"))
+			local distance = if distanceValue ~= nil then DebugCommand.toNumber(distanceValue, "距離") else 20
+			local names = {}
+			for index = 1, count do
+				local angle = (index - 1) / count * math.pi * 2
+				local model = spawnEnemy(
+					"Genin",
+					root.Position.X + math.cos(angle) * distance,
+					root.Position.Z + math.sin(angle) * distance
+				)
+				if model then
+					table.insert(names, model.Name)
+				end
+			end
+			local list = table.concat(names, "、")
+			return `{player.Name} の周り {distance} スタッドに下忍を {#names} 体出した（{list}）`
+		end
+	)
+
+	DebugCommand.register(
+		"DumpKogekiToken",
+		"",
+		"プレイヤーごとの攻撃トークン（持っている下忍の名前と距離、待っている下忍の数、攻撃して休んでいる下忍の数、"
+			.. "攻撃して返されてまだ渡せない攻撃トークンの数）を JSON で返す",
+		function()
+			local now = os.clock()
+			local result = {}
+			for _, player in Players:GetPlayers() do
+				local key = keyOf(player)
+				local distances: { [string]: number } = {}
+				local waiting, resting = 0, 0
+				for _, candidate in lastCandidates[key] or {} do
+					distances[candidate.id] = candidate.distance
+					if not KogekiToken.holds(tokens, key, candidate.id) then
+						if KogekiToken.isResting(tokens, candidate.id, now) then
+							resting += 1
+						else
+							waiting += 1
+						end
+					end
+				end
+				local holders = {}
+				for _, id in KogekiToken.holderIds(tokens, key) do
+					local distance = distances[id]
+					table.insert(holders, {
+						name = id,
+						distance = if distance then math.round(distance * 10) / 10 else nil,
+					})
+				end
+				table.insert(result, {
+					player = player.Name,
+					perPlayer = Config.KogekiToken.PerPlayer,
+					holders = holders,
+					waiting = waiting,
+					resting = resting,
+					cooling = KogekiToken.coolingCount(tokens, key, now),
+				})
+			end
+			return HttpService:JSONEncode(result)
+		end
+	)
+
+	DebugCommand.register(
+		"LogKogekiToken",
+		"<true|false>",
+		"攻撃トークンの受け渡しと、攻撃トークンを持つ下忍の攻撃を出力に出す（確認用）",
+		function(value)
+			logTokens = value == true or value == "true"
+			return `攻撃トークンの記録を{if logTokens then "出す" else "止めた"}`
+		end
+	)
+
+	DebugCommand.register(
 		"SpawnNpc",
 		"<キャラクター ID> <x> <z>",
 		"仮の見た目の NPC を地面の高さに合わせて1体出す（上忍・首領・役者の見た目の確認用）",
@@ -642,13 +849,16 @@ function EnemyService.start()
 		end
 	end)
 
+	-- いなくなったプレイヤーの攻撃トークンを返す
+	Players.PlayerRemoving:Connect(function(player)
+		KogekiToken.removePlayer(tokens, keyOf(player))
+		lastCandidates[keyOf(player)] = nil
+	end)
+
 	task.spawn(function()
 		while true do
 			task.wait(Config.Spawner.AITickInterval)
-			local now = os.clock()
-			for _, enemy in enemies do
-				updateEnemy(enemy, now)
-			end
+			think(os.clock())
 		end
 	end)
 end
