@@ -27,6 +27,9 @@
         "SelectHikei": {
           "$className": "RemoteEvent"
         },
+        "LearnTokugi": {
+          "$className": "RemoteEvent"
+        },
         "Shutsugeki": {
           "$className": "RemoteEvent"
         },
@@ -58,6 +61,9 @@
           "$className": "RemoteEvent"
         },
         "NotifyHikei": {
+          "$className": "RemoteEvent"
+        },
+        "TokugiState": {
           "$className": "RemoteEvent"
         }
       }

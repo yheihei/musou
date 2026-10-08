@@ -9,7 +9,7 @@ test("表の全 Remote が ReplicatedStorage.Remotes に RemoteEvent として�
 	local remotes = project.tree.ReplicatedStorage.Remotes
 	local names = table.clone(RemoteSchema.clientToServer)
 	table.move(RemoteSchema.serverToClient, 1, #RemoteSchema.serverToClient, #names + 1, names)
-	expect(#names).toBe(15)
+	expect(#names).toBe(17)
 	local missing = {}
 	for _, name in names do
 		local node = remotes[name]
@@ -58,6 +58,14 @@ test("SelectHikei は秘計 ID と真偽値を受け取り、欠けたら拒否�
 	expect(RemoteSchema.validate.SelectHikei("Fukuhei")).toBe(false)
 	expect(RemoteSchema.validate.SelectHikei("Fukuhei", "true")).toBe(false)
 	expect(RemoteSchema.validate.SelectHikei(nil, true)).toBe(false)
+end)
+
+test("LearnTokugi はキャラクター ID と特技 ID を受け取り、欠けたら拒否する", function()
+	expect(RemoteSchema.validate.LearnTokugi("Jin", "Goriki1")).toBe(true)
+	expect(RemoteSchema.validate.LearnTokugi("Jin")).toBe(false)
+	expect(RemoteSchema.validate.LearnTokugi(nil, "Goriki1")).toBe(false)
+	expect(RemoteSchema.validate.LearnTokugi("Jin", 1)).toBe(false)
+	expect(RemoteSchema.validate.LearnTokugi("Jin", "Goriki 1")).toBe(false)
 end)
 
 local function expectUnique(list: { any })

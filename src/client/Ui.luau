@@ -23,6 +23,8 @@ Ui.Layer = {
 	SkipCount = 70,
 	Dialogue = 80,
 	Selection = 90,
+	-- 出撃前の画面から開く窓（特技ツリーなど）
+	LobbyWindow = 95,
 	Result = 100,
 	Title = 110,
 }

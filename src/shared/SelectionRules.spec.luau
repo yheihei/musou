@@ -18,6 +18,16 @@ local function at(requester: SelectionRules.Requester, changes: { [string]: any 
 	return copy
 end
 
+test(
+	"ロビーのフェーズの待機中でない人だけを受け付ける（リーダーかは見ない）",
+	function()
+		expect(SelectionRules.checkRequester(MEMBER)).toBe(nil)
+		expect(SelectionRules.checkRequester(LEADER)).toBe(nil)
+		expect(SelectionRules.checkRequester(at(MEMBER, { phase = "Battle" }))).toBe("NotLobby")
+		expect(SelectionRules.checkRequester(at(MEMBER, { waiting = true }))).toBe("Waiting")
+	end
+)
+
 test("リーダーはロビーで開放済みのステージを選べる", function()
 	expect(SelectionRules.checkStage(LEADER, "Iga1", { "Iga1" })).toBe(nil)
 end)

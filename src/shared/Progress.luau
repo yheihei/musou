@@ -131,19 +131,25 @@ local function stringsOf(value: unknown): { string }
 	return result
 end
 
--- 勝ったときにクリアを記録する人の UserId（participants の順）。出撃して残っている人だけで、抜けた人と待機中の人は入れない。
--- 負けたときは誰にも記録しないので空
-function Progress.clearTargets(participants: { Participant }, victory: boolean): { number }
+-- 決着したときに出撃して残っている人の UserId（participants の順）。抜けた人と待機中の人は入れない。
+-- クリアの記録（clearTargets）と、巻物を渡す人（StageService）に使う
+function Progress.remaining(participants: { Participant }): { number }
 	local targets = {}
-	if not victory then
-		return targets
-	end
 	for _, participant in participants do
 		if participant.sortied and not participant.left and not participant.waiting then
 			table.insert(targets, participant.userId)
 		end
 	end
 	return targets
+end
+
+-- 勝ったときにクリアを記録する人の UserId（participants の順）。出撃して残っている人だけで、抜けた人と待機中の人は入れない。
+-- 負けたときは誰にも記録しないので空
+function Progress.clearTargets(participants: { Participant }, victory: boolean): { number }
+	if not victory then
+		return {}
+	end
+	return Progress.remaining(participants)
 end
 
 -- DataStore から読んだ値を進行にする。表でなければ nil を返す（新規として扱う）。

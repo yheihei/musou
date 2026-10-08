@@ -1,11 +1,12 @@
 --!strict
 -- ステージの結果（Remotes.StageResult）を、リザルト画面に出す文に直す。Roblox の API は使わない。
--- 勝敗の見出し、勝敗の理由（RemoteSchema.ResultReason）の文、経過時間、開放したステージの名前、
+-- 勝敗の見出し、勝敗の理由（RemoteSchema.ResultReason）の文、経過時間、開放したステージの名前、得た巻物、
 -- リーダー以外への待ちの文を作り、届いた値の形を確かめる。
 --
 -- - 経過時間は「分:秒」で書く。分は桁をそろえず、60 分を超えても分で数える（0:05、12:34、75:00）
 -- - 秒の端数は切り捨てる。負の値と数でない値は 0 秒にする
 
+local Characters = require("./Characters")
 local RemoteSchema = require("./RemoteSchema")
 local Stages = require("./Stages")
 
@@ -46,6 +47,13 @@ function ResultMessage.stageName(stageId: string): string
 	return if stage then `第{stage.order}ステージ　{stage.displayName}` else stageId
 end
 
+-- 得た巻物の文（「刃の巻物　+5 本」）。表に無いキャラクターは ID のまま書く
+function ResultMessage.makimonoOf(characterId: string, count: number): string
+	local character = Characters.get(characterId)
+	local name = if character then character.displayName else characterId
+	return `{name}の巻物　+{count} 本`
+end
+
 -- リーダー以外に出す待ちの文。リーダーの名前が分からなければ名前を省く
 function ResultMessage.waitingFor(leaderName: string?): string
 	if leaderName then
@@ -75,6 +83,8 @@ local function isMemberResult(value: unknown): boolean
 		and type(member.name) == "string"
 		and type(member.gekihasu) == "number"
 		and isStringList(member.newlyUnlocked)
+		and type(member.character) == "string"
+		and type(member.makimono) == "number"
 end
 
 -- 届いた値をステージの結果として受け付けるか。理由は表に無い文字列も受け付ける（そのまま出す）

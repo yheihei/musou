@@ -1,5 +1,5 @@
 --!strict
--- 選択と出撃を拒否した理由（RemoteSchema.RejectReason）の、画面に出す文。Roblox の API は使わない。
+-- 選択・出撃・特技の習得を拒否した理由（RemoteSchema.RejectReason）の、画面に出す文。Roblox の API は使わない。
 
 local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
@@ -28,6 +28,11 @@ local messages: { [RemoteSchema.RejectReason]: string } = {
 	HikeiLimit = `秘計は {Hikei.MOCHIKOMI_MAX} 枚まで持ち込めます`,
 	MembersNotReady = "キャラクターを選んでいないメンバーがいます",
 	KukakuMissing = "このステージの場所がまだプレースにありません",
+	TokugiNotLoaded = "特技の記録を読み込んでいます。少し待ってください",
+	UnknownTokugi = "その特技はありません",
+	TokugiLearned = "その特技はもう覚えています",
+	TokugiZentei = "先に前提の特技を覚えてください",
+	MakimonoShort = "巻物が足りません",
 }
 
 -- 拒否の理由の文。表に無い理由はそのまま返す

@@ -1,5 +1,5 @@
 --!strict
--- ロビー・選択・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
+-- ロビー・選択・特技・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
 -- RemoteEvent は default.project.json の ReplicatedStorage.Remotes に宣言する。
 -- ハンドラは各機能で実装する。ここは型と、クライアントから届く値の検証だけを持つ。
 --
@@ -9,6 +9,7 @@
 -- | SelectStage | C→S | StageId |
 -- | SelectCharacter | C→S | CharacterId |
 -- | SelectHikei | C→S | HikeiId、選ぶなら true・外すなら false |
+-- | LearnTokugi | C→S | CharacterId、TokugiId（そのキャラクターの特技ツリーの特技） |
 -- | Shutsugeki・Retry・ReturnToLobby | C→S | なし（リーダーだけ有効） |
 -- | SkipEventScene | C→S | なし |
 -- | PartyState | S→C | PartyState |
@@ -18,6 +19,7 @@
 -- | PlaySerifu | S→C | CharacterId、Hyojo、SerifuId |
 -- | StageResult | S→C | StageResult |
 -- | NotifyHikei | S→C | HikeiNotice.Notice（秘計の発動・打ち消し・期限切れ・失敗） |
+-- | TokugiState | S→C | Tokugi.State（本人のキャラクターごとの巻物と覚えた特技） |
 
 local Characters = require("./Characters")
 
@@ -31,6 +33,7 @@ export type ClanId = Characters.ClanId
 export type StageId = string
 export type CharacterId = string
 export type HikeiId = string
+export type TokugiId = string
 export type EventSceneId = string
 export type SerifuId = string
 
@@ -40,7 +43,7 @@ RemoteSchema.phases = { "Lobby", "EventScene", "Battle", "Result" } :: { Phase }
 export type Hyojo = "Tsujo" | "Ikari" | "Odoroki" | "Yorokobi" | "Kumon"
 RemoteSchema.hyojo = { "Tsujo", "Ikari", "Odoroki", "Yorokobi", "Kumon" } :: { Hyojo }
 
--- 選択を拒否した理由。制限ごとに別の値にする
+-- 選択と特技の習得を拒否した理由。制限ごとに別の値にする
 export type RejectReason =
 	"NotLobby" -- ロビーのフェーズ以外での選択
 	| "NotLeader" -- リーダーだけができる操作
@@ -63,6 +66,11 @@ export type RejectReason =
 	| "HikeiLimit" -- 持ち込みの上限を超える
 	| "MembersNotReady" -- キャラクターを選んでいないメンバーがいる
 	| "KukakuMissing" -- ステージの区画か出撃地点がプレースに無い
+	| "TokugiNotLoaded" -- 特技の記録をまだ読み込めていない
+	| "UnknownTokugi" -- そのキャラクターの特技ツリーに無い特技
+	| "TokugiLearned" -- もう覚えている特技
+	| "TokugiZentei" -- 前提の特技をまだ覚えていない
+	| "MakimonoShort" -- 巻物が足りない
 RemoteSchema.rejectReasons = {
 	"NotLobby",
 	"NotLeader",
@@ -85,6 +93,11 @@ RemoteSchema.rejectReasons = {
 	"HikeiLimit",
 	"MembersNotReady",
 	"KukakuMissing",
+	"TokugiNotLoaded",
+	"UnknownTokugi",
+	"TokugiLearned",
+	"TokugiZentei",
+	"MakimonoShort",
 } :: { RejectReason }
 
 -- パーティーのメンバーごとの写し
@@ -137,6 +150,10 @@ export type MemberResult = {
 	gekihasu: number,
 	-- このクリアで新しく開放したステージ
 	newlyUnlocked: { StageId },
+	-- 決着したときに使っていたキャラクター（巻物を渡したキャラクター）
+	character: CharacterId,
+	-- このステージで得た巻物の数
+	makimono: number,
 }
 
 export type StageResult = {
@@ -153,6 +170,7 @@ RemoteSchema.clientToServer = {
 	"SelectStage",
 	"SelectCharacter",
 	"SelectHikei",
+	"LearnTokugi",
 	"Shutsugeki",
 	"Retry",
 	"ReturnToLobby",
@@ -166,6 +184,7 @@ RemoteSchema.serverToClient = {
 	"PlaySerifu",
 	"StageResult",
 	"NotifyHikei",
+	"TokugiState",
 }
 
 -- クライアントから届いた ID を受け付けるか。英数字と _ だけで、長さは1から上限まで
@@ -193,6 +212,9 @@ RemoteSchema.validate = {
 	end,
 	SelectHikei = function(hikeiId: unknown, selected: unknown): boolean
 		return RemoteSchema.isId(hikeiId) and type(selected) == "boolean"
+	end,
+	LearnTokugi = function(characterId: unknown, tokugiId: unknown): boolean
+		return RemoteSchema.isId(characterId) and RemoteSchema.isId(tokugiId)
 	end,
 	Shutsugeki = noArguments,
 	Retry = noArguments,

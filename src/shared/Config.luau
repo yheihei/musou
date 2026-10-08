@@ -29,6 +29,28 @@ export type StatsSection = {
 	MinDamage: number,
 }
 
+-- 特技1つ。覚えると、そのキャラクターで出撃したときに能力値（Stat。Stats.luau の StatName）へ補正を足す。
+-- 補正は Stats.luau と同じく、基本値に Add を足してから Multiply を掛ける。
+-- Makimono は覚えるのに使う巻物の数、Zentei は先に覚えておく特技（同じツリーの ID）
+export type TokugiDef = {
+	Id: string,
+	Stat: string,
+	Add: number?,
+	Multiply: number?,
+	Makimono: number,
+	Zentei: { string }?,
+}
+
+-- 特技ツリーによる成長。キャラクターごとの特技ツリーと、巻物の得かた
+export type TokugiSection = {
+	Trees: { [string]: { TokugiDef } },
+	Makimono: {
+		Gekihasu: number,
+		GekihasuMax: number,
+		Shori: number,
+	},
+}
+
 -- 毒。酉花の奥義「毒手裏剣」で敵に付ける
 export type PoisonSection = {
 	Interval: number,
@@ -421,6 +443,7 @@ export type Config = {
 	PartySize: PartySizeSection,
 	Stage: StageSection,
 	Stats: StatsSection,
+	Tokugi: TokugiSection,
 	Combo: ComboSection,
 	Bukishu: BukishuSection,
 	Ougi: OugiSection,
@@ -496,6 +519,101 @@ local Config: Config = {
 		MikatagunScale = 0.9, -- 味方軍の上忍と首領の体力・攻撃・防御に掛ける倍率。味方軍は敵軍よりやや弱くする
 		DefenseHalf = 100, -- 防御がこの値のとき、受けるダメージが半分になる
 		MinDamage = 1, -- 与ダメージの下限
+	},
+
+	-- 特技ツリーによる成長。キャラクターごとの特技ツリーの特技を、そのキャラクターの巻物を使って覚える。計算は Tokugi.luau にある。
+	-- 覚えた特技の補正は、出撃したときにそのキャラクターの分を固定して能力値に足し、ロビーに戻るまで変えない
+	Tokugi = {
+		-- キャラクター ID ごとの特技ツリー。並びは画面の段（前提の深さ）の中の順。特技の名前は Tokugi.luau にある。
+		-- 4人とも同じ形（攻撃、体力と防御、移動と攻撃の速さの3本と、3本の先の極意）を使い回し、極意だけを持ち味に合わせる。
+		-- 補正は掛け算（防御だけ足し算）なので、全部覚えてもキャラクターごとの基本値の差（金鬼は重く遅い）は残る。
+		-- 1つで数％にし、全部覚えても基本値の 1.2 倍まで（防御は +5 まで）に収める
+		Trees = {
+			-- 刃。極意は攻撃
+			Jin = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "Attack",
+					Multiply = 1.04,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			-- 酉花。軽く速いので、極意は攻撃の速さ
+			Torika = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "AttackSpeed",
+					Multiply = 1.04,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			-- 石舟斎。守りの剣なので、極意は防御
+			Sekishusai = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "Defense",
+					Add = 3,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			-- 金鬼。重く遅い分、打たれ強いので、極意は体力
+			KanaOni = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "MaxHealth",
+					Multiply = 1.05,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+		},
+		-- 巻物の得かた。ステージが決着したとき（勝ちも負けも）に、出撃して残っている人へ、そのとき使っているキャラクターの巻物を渡す。
+		-- 試験用ステージでも渡す（確認のため。試験用ステージは選択画面に出さないので、遊ぶ人は得られない）。
+		-- ツリーを全部覚えるには 23 本要る
+		Makimono = {
+			Gekihasu = 100, -- 撃破数この数ごとに1本渡す（端数は切り捨て）
+			GekihasuMax = 5, -- 撃破数で渡す数の上限
+			Shori = 3, -- 勝ったときに上乗せする数
+		},
 	},
 
 	-- 通常攻撃のコンボ。1段ずつ順に出て、前の段のキャンセル受付が始まってから

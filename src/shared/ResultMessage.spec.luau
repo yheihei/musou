@@ -12,8 +12,15 @@ local function result(): any
 		reason = "TekigunShuryoGekiha",
 		elapsed = 754.2,
 		members = {
-			{ userId = 1, name = "yhei_hei", gekihasu = 120, newlyUnlocked = { "Iga1" } },
-			{ userId = 2, name = "Player2", gekihasu = 0, newlyUnlocked = {} },
+			{
+				userId = 1,
+				name = "yhei_hei",
+				gekihasu = 120,
+				newlyUnlocked = { "Iga1" },
+				character = "Jin",
+				makimono = 4,
+			},
+			{ userId = 2, name = "Player2", gekihasu = 0, newlyUnlocked = {}, character = "Torika", makimono = 0 },
 		},
 	}
 end
@@ -67,6 +74,15 @@ test("開放したステージは順番と表示名で書き、表に無い ID �
 	expect(ResultMessage.stageName("Nowhere")).toBe("Nowhere")
 end)
 
+test(
+	"得た巻物はキャラクターの表示名と数で書き、表に無いキャラクターは ID のまま書く",
+	function()
+		expect(ResultMessage.makimonoOf("Jin", 5)).toBe("刃の巻物　+5 本")
+		expect(ResultMessage.makimonoOf("KanaOni", 0)).toBe("金鬼の巻物　+0 本")
+		expect(ResultMessage.makimonoOf("Nowhere", 2)).toBe("Nowhereの巻物　+2 本")
+	end
+)
+
 test("待ちの文はリーダーの名前を入れ、名前が分からなければ省く", function()
 	expect(ResultMessage.waitingFor("yhei_hei")).toBe("リーダーの yhei_hei が次の行動を選んでいます")
 	expect(ResultMessage.waitingFor(nil)).toBe("リーダーが次の行動を選んでいます")
@@ -103,4 +119,10 @@ test("形の違う結果は受け付けない", function()
 	local textMember = result()
 	textMember.members = { "yhei_hei" }
 	expect(ResultMessage.isResult(textMember)).toBe(false)
+	local noMakimono = result()
+	noMakimono.members[1].makimono = nil
+	expect(ResultMessage.isResult(noMakimono)).toBe(false)
+	local noCharacter = result()
+	noCharacter.members[2].character = nil
+	expect(ResultMessage.isResult(noCharacter)).toBe(false)
 end)

@@ -46,6 +46,16 @@ test("金鬼は石舟斎より攻撃が遅く、威力が高い", function()
 	expect(kanaOni.Attack > sekishusai.Attack).toBe(true)
 end)
 
+test("能力値の全部に画面に出す名前があり、名前かどうかを見分ける", function()
+	for _, name in Stats.names do
+		expect(#(Stats.displayNames[name] or "") > 0).toBe(true)
+		expect(Stats.isName(name)).toBe(true)
+	end
+	expect(Stats.isName("Health")).toBe(false)
+	expect(Stats.isName(nil)).toBe(false)
+	expect(Stats.isName(3)).toBe(false)
+end)
+
 test("補正が無ければ基本値のまま", function()
 	expect(Stats.compute(BASE, {})).toEqual(BASE)
 end)

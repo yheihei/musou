@@ -97,7 +97,7 @@ local function buildCard(id: string, order: number, onPress: (string) -> ()): Ca
 end
 
 function HikeiSection.build(context: SectionKit.Context): SectionKit.Section
-	local frame, content = SectionKit.section("Hikei", "秘計", 3)
+	local frame, content = SectionKit.section("Hikei", "秘計", 4)
 	local hint = Ui.text({
 		Name = "Hint",
 		LayoutOrder = 1,

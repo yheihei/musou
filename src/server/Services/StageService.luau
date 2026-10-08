@@ -22,6 +22,10 @@
 --   受け付けるのは戦闘のフェーズの間の最初の1回だけ。時間切れはここで決め、ほかの勝敗は ShohaiService が判定して呼ぶ
 -- - 勝ったら、出撃して残っている全員にクリアを記録し（対象は Progress.clearTargets。抜けた人と待機中の人は入れない）、
 --   新しく開放したステージを StageResult のメンバーごとに書く
+-- - 出撃するときに、出撃するメンバーの覚えた特技の補正を、使うキャラクターで固定する（TokugiService.lock）。
+--   体力の最大は出現したときに当てるので、出撃地点へ出現し直させる前に固定する。ロビーのフェーズに戻ったら固定を外す
+-- - 決着したら、勝ち負けによらず出撃して残っている全員（Progress.remaining）に、そのとき使っているキャラクターの巻物を渡し
+--   （TokugiService.awardMakimono）、渡したキャラクターと数を StageResult のメンバーごとに書く
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、ストーリー以外の選択を外して全員をロビーへ戻す
 -- - リザルトのフェーズでリーダーが Remotes.Retry を送ると、ステージと選択を残して全員をロビーへ戻す。
 --   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらストーリーとステージを判定し直す）
@@ -46,6 +50,7 @@ local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
 local ProgressService = require(script.Parent.ProgressService)
 local SelectionService = require(script.Parent.SelectionService)
+local TokugiService = require(script.Parent.TokugiService)
 
 -- 流しているイベントシーン
 type SceneRun = {
@@ -153,6 +158,10 @@ local function transition(event: StagePhase.Event): boolean
 	end
 	if next ~= "Battle" then
 		setDeadline(session, nil)
+	end
+	if next == "Lobby" then
+		-- ステージを終えたので、出撃したときに固定した特技の補正を外す
+		TokugiService.unlockAll()
 	end
 	phase = next
 	PartyService.setPhase(StagePhase.toPartyPhase(next))
@@ -370,6 +379,9 @@ function StageService.shutsugeki(player: Player, stageOverride: string?, startSc
 	session = current
 	for _, member in members do
 		PlayerService.resetForShutsugeki(member)
+		-- 覚えた特技の補正を、出撃するキャラクター（選んでいなければ今のキャラクター）で固定する。
+		-- 体力の最大は出現したときに当てるので、出撃地点へ出現し直させる前に固定する
+		TokugiService.lock(member, SelectionService.getCharacter(member) or PlayerService.getCharacterId(member))
 	end
 	moveToShutsugekiChiten(members, chiten)
 	if session ~= current then
@@ -398,22 +410,31 @@ local function participantsOf(current: Session): { Progress.Participant }
 	return result
 end
 
--- 勝ったときに、出撃して残っている全員にクリアを記録する。プレイヤーごとに新しく開放したステージを返す
-local function recordClear(current: Session, victory: boolean): { [Player]: { string } }
-	local targets = Progress.clearTargets(participantsOf(current), victory)
+-- 出撃したメンバーのうち、UserId が targets にあり、まだサーバーにいる人
+local function playersOf(current: Session, targets: { number }): { Player }
 	local players = {}
 	for _, member in current.members do
 		if member.Parent and table.find(targets, member.UserId) then
 			table.insert(players, member)
 		end
 	end
+	return players
+end
+
+-- 勝ったときに、出撃して残っている全員にクリアを記録する。プレイヤーごとに新しく開放したステージを返す
+local function recordClear(
+	current: Session,
+	participants: { Progress.Participant },
+	victory: boolean
+): { [Player]: { string } }
+	local players = playersOf(current, Progress.clearTargets(participants, victory))
 	if #players == 0 then
 		return {}
 	end
 	return ProgressService.recordClear(players, current.stageId)
 end
 
--- 勝敗を決めて終了のイベントシーンへ進める。勝ったら出撃して残っている全員にクリアを記録する。
+-- 勝敗を決めて終了のイベントシーンへ進める。勝ったら出撃して残っている全員にクリアを記録し、勝ち負けによらず巻物を渡す。
 -- StageResult は決着の時点で作り、終了のイベントシーンの後に出撃して残っているメンバーへ送る。戦闘のフェーズでなければ false
 function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason): boolean
 	local current = session
@@ -422,7 +443,10 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	end
 	local elapsed = if current.battleStartedAt then os.clock() - current.battleStartedAt else 0
 	current.elapsed = elapsed
-	local newlyUnlocked = recordClear(current, victory)
+	local participants = participantsOf(current)
+	local newlyUnlocked = recordClear(current, participants, victory)
+	-- 巻物は勝ち負けによらず、出撃して残っている全員に渡す
+	local awards = TokugiService.awardMakimono(playersOf(current, Progress.remaining(participants)), victory)
 	local members = StageService.getMembers()
 	local result: RemoteSchema.StageResult = {
 		victory = victory,
@@ -431,11 +455,14 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 		members = {},
 	}
 	for _, member in members do
+		local award = awards[member]
 		table.insert(result.members, {
 			userId = member.UserId,
 			name = member.Name,
 			gekihasu = member:GetAttribute("Gekihasu") :: number? or 0,
 			newlyUnlocked = newlyUnlocked[member] or {},
+			character = if award then award.characterId else PlayerService.getCharacterId(member),
+			makimono = if award then award.makimono else 0,
 		})
 	end
 	current.result = result

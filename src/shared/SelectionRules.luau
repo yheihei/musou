@@ -30,8 +30,8 @@ export type Requester = {
 
 local SelectionRules = {}
 
--- ロビーのフェーズの、待機中でないメンバーか
-local function checkRequester(requester: Requester): Reject?
+-- ロビーのフェーズの、待機中でないメンバーか。特技の習得（Tokugi.checkLearn）も同じ決まりで確かめる
+function SelectionRules.checkRequester(requester: Requester): Reject?
 	if requester.phase ~= "Lobby" then
 		return "NotLobby"
 	end
@@ -40,6 +40,7 @@ local function checkRequester(requester: Requester): Reject?
 	end
 	return nil
 end
+local checkRequester = SelectionRules.checkRequester
 
 -- 4つのクランのどれかか
 local function isClanId(value: string): boolean

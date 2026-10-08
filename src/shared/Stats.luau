@@ -1,5 +1,5 @@
 --!strict
--- 能力値の計算。基本値に補正（秘計、支配エリア、M3 の成長など）を足して能力値を求め、
+-- 能力値の計算。基本値に補正（秘計、支配エリア、特技など）を足して能力値を求め、
 -- 技の倍率・攻撃・防御から与ダメージを求める。プレイヤーと上忍・首領で共通に使う。
 -- 基本値と係数は Config.luau の Stats 節にある。Roblox の API は使わない。
 
@@ -18,6 +18,20 @@ export type Modifier = {
 local Stats = {}
 
 Stats.names = { "MaxHealth", "Attack", "Defense", "WalkSpeed", "AttackSpeed" } :: { StatName }
+
+-- 能力値の画面に出す名前
+Stats.displayNames = {
+	MaxHealth = "体力",
+	Attack = "攻撃",
+	Defense = "防御",
+	WalkSpeed = "移動速度",
+	AttackSpeed = "攻撃の速さ",
+} :: { [StatName]: string }
+
+-- 能力値の名前（Stats.names のどれか）か
+function Stats.isName(value: unknown): boolean
+	return type(value) == "string" and table.find(Stats.names, value :: StatName) ~= nil
+end
 
 -- キャラクターの基本の能力値。定義が無ければ nil
 function Stats.baseOf(characterId: string): Values?

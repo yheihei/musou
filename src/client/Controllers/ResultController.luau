@@ -1,11 +1,12 @@
 --!strict
 -- ステージのリザルト画面。Remotes.StageResult を受けて、画面の中央に勝敗と理由、経過時間、全員の撃破数、
--- 本人が新しく開放したステージを出す。文は ReplicatedStorage.Shared.ResultMessage にある。
+-- 本人が得た巻物、本人が新しく開放したステージを出す。文は ReplicatedStorage.Shared.ResultMessage にある。
 -- 次の行動はリーダーだけが選び、Remotes.Retry か Remotes.ReturnToLobby を送る。受け付けるかはサーバーが決める。
 --
 -- - 出すのは StageResult を受けた人（出撃して残っているメンバー）だけ。待機中の人には届かないので出さない
 -- - PartyState（PartyClient）のフェーズがリザルトでなくなったら閉じ、受けた結果を捨てる
 -- - 後ろの画面は幕で暗くする。本人が開放したステージが無ければ、開放したステージの欄は出さない
+-- - 得た巻物は、決着したときに使っていたキャラクターと数を出す。0 本でも出す
 -- - リーダーには「もう一度挑む」と「ロビーへ戻る」のボタン、ほかの人には待ちの文を出す。
 --   リーダーかは PartyState が届くたびに確かめ直す（リザルトの途中でリーダーが抜けたら、次のリーダーにボタンを出す）
 -- - 押したら両方のボタンを止めて二重に送らない。PENDING_TIME 秒たってもリザルトのままなら（受け付けられなかったら）戻す
@@ -48,6 +49,8 @@ type Gui = {
 	elapsed: TextLabel,
 	-- 撃破数の行を入れる Frame
 	members: Frame,
+	-- 得た巻物の行を入れる Frame
+	makimonoList: Frame,
 	-- 開放したステージの欄と、その行を入れる Frame
 	unlocked: Frame,
 	unlockedList: Frame,
@@ -164,8 +167,10 @@ local function buildGui(): Gui
 		Text = "",
 	})
 	local membersFrame, members = section("Members", "撃破数", 4)
-	local unlocked, unlockedList = section("NewlyUnlocked", "新しく開放したステージ", 5)
+	local makimono, makimonoList = section("Makimono", "得た巻物", 5)
+	local unlocked, unlockedList = section("NewlyUnlocked", "新しく開放したステージ", 6)
 	-- 撃破数の行の名前と頭をそろえる
+	Ui.create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = makimonoList })
 	Ui.create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = unlockedList })
 	unlocked.Visible = false
 
@@ -200,7 +205,7 @@ local function buildGui(): Gui
 	})
 	local footer = Ui.create("Frame", {
 		Name = "Footer",
-		LayoutOrder = 6,
+		LayoutOrder = 7,
 		Size = UDim2.new(1, 0, 0, BUTTON_HEIGHT),
 		BackgroundTransparency = 1,
 	}, { retry, returnToLobby, waiting })
@@ -229,6 +234,7 @@ local function buildGui(): Gui
 		reason,
 		elapsed,
 		membersFrame,
+		makimono,
 		unlocked,
 		footer,
 	})
@@ -249,6 +255,7 @@ local function buildGui(): Gui
 		reason = reason,
 		elapsed = elapsed,
 		members = members,
+		makimonoList = makimonoList,
 		unlocked = unlocked,
 		unlockedList = unlockedList,
 		retry = retry,
@@ -276,13 +283,25 @@ local function clearRows(list: Frame)
 	end
 end
 
--- 結果を画面に書く。開放したステージは本人の分だけ出す
+-- 得た巻物の1行
+local function makimonoRow(member: RemoteSchema.MemberResult): TextLabel
+	return Ui.text({
+		Name = "Makimono",
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
+		Font = Ui.Font.Bold,
+		Text = ResultMessage.makimonoOf(member.character, member.makimono),
+	})
+end
+
+-- 結果を画面に書く。得た巻物と開放したステージは本人の分だけ出す
 local function fill(gui: Gui, received: RemoteSchema.StageResult)
 	gui.headline.Text = ResultMessage.headline(received.victory)
 	gui.headline.TextColor3 = if received.victory then Ui.Color.Selected else Ui.Color.HealthLow
 	gui.reason.Text = ResultMessage.reasonOf(received.reason)
 	gui.elapsed.Text = `経過時間　{ResultMessage.formatElapsed(received.elapsed)}`
 	clearRows(gui.members)
+	clearRows(gui.makimonoList)
 	clearRows(gui.unlockedList)
 	local myId = Players.LocalPlayer.UserId
 	local unlocked: { string } = {}
@@ -291,6 +310,7 @@ local function fill(gui: Gui, received: RemoteSchema.StageResult)
 		memberRow(index, member, isMe).Parent = gui.members
 		if isMe then
 			unlocked = member.newlyUnlocked
+			makimonoRow(member).Parent = gui.makimonoList
 		end
 	end
 	for index, stageId in unlocked do

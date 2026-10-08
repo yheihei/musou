@@ -1,5 +1,8 @@
 --!strict
+local Characters = require("./Characters")
 local Config = require("./Config")
+local Stats = require("./Stats")
+local Tokugi = require("./Tokugi")
 local testkit = require("@testkit")
 
 local test, expect = testkit.test, testkit.expect
@@ -32,6 +35,87 @@ local SNAPSHOT = {
 		MikatagunScale = 0.9,
 		DefenseHalf = 100,
 		MinDamage = 1,
+	},
+	Tokugi = {
+		Trees = {
+			Jin = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "Attack",
+					Multiply = 1.04,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			Torika = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "AttackSpeed",
+					Multiply = 1.04,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			Sekishusai = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "Defense",
+					Add = 3,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+			KanaOni = {
+				{ Id = "Goriki1", Stat = "Attack", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Ganken1", Stat = "MaxHealth", Multiply = 1.04, Makimono = 1 },
+				{ Id = "Kenkyaku1", Stat = "WalkSpeed", Multiply = 1.03, Makimono = 1 },
+				{ Id = "Goriki2", Stat = "Attack", Multiply = 1.03, Makimono = 2, Zentei = { "Goriki1" } },
+				{ Id = "Teppeki1", Stat = "Defense", Add = 2, Makimono = 2, Zentei = { "Ganken1" } },
+				{ Id = "Hayawaza1", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 2, Zentei = { "Kenkyaku1" } },
+				{ Id = "Goriki3", Stat = "Attack", Multiply = 1.04, Makimono = 3, Zentei = { "Goriki2" } },
+				{ Id = "Ganken2", Stat = "MaxHealth", Multiply = 1.06, Makimono = 3, Zentei = { "Teppeki1" } },
+				{ Id = "Hayawaza2", Stat = "AttackSpeed", Multiply = 1.03, Makimono = 3, Zentei = { "Hayawaza1" } },
+				{
+					Id = "Gokui",
+					Stat = "MaxHealth",
+					Multiply = 1.05,
+					Makimono = 5,
+					Zentei = { "Goriki3", "Ganken2", "Hayawaza2" },
+				},
+			},
+		},
+		Makimono = {
+			Gekihasu = 100,
+			GekihasuMax = 5,
+			Shori = 3,
+		},
 	},
 	Combo = {
 		ComboResetTime = 0.5,
@@ -1216,4 +1300,78 @@ test("値は数値・文字列・真偽値と表だけで、Roblox の型を含�
 	local found = {}
 	collectDisallowed(Config, "Config", found)
 	expect(found).toEqual({})
+end)
+
+test(
+	"特技ツリーは操作キャラクター全員にあり、定義表の操作キャラクターにだけ置く",
+	function()
+		for id, character in Characters.definitions do
+			if character.playable then
+				expect(Config.Tokugi.Trees[id] ~= nil).toBe(true)
+			end
+		end
+		for id in Config.Tokugi.Trees do
+			local character = Characters.get(id)
+			expect(character ~= nil and character.playable).toBe(true)
+		end
+	end
+)
+
+test("特技ツリーの特技はキャラクターごとに 8〜12 個", function()
+	for _, tree in Config.Tokugi.Trees do
+		expect(#tree >= 8 and #tree <= 12).toBe(true)
+	end
+end)
+
+test(
+	"特技ツリーの前提は同じキャラクターのツリーにあり、めぐらず、能力値の名前が正しい",
+	function()
+		for id, tree in Config.Tokugi.Trees do
+			local problems = Tokugi.validateTree(tree)
+			if #problems > 0 then
+				error(`{id} の特技ツリー: {table.concat(problems, "、")}`)
+			end
+		end
+	end
+)
+
+test("特技1つの補正は数％（掛ける値は 1.1 倍まで、足す値は 3 まで）", function()
+	for _, tree in Config.Tokugi.Trees do
+		for _, definition in tree do
+			if definition.Multiply then
+				expect(definition.Multiply > 1 and definition.Multiply <= 1.1).toBe(true)
+			end
+			if definition.Add then
+				expect(definition.Add > 0 and definition.Add <= 3).toBe(true)
+			end
+		end
+	end
+end)
+
+test("特技を全部覚えても、能力値は基本値の 1.2 倍まで（防御は +5 まで）", function()
+	for id, tree in Config.Tokugi.Trees do
+		local all = {}
+		for _, definition in tree do
+			table.insert(all, definition.Id)
+		end
+		local base = Stats.baseOf(id) :: Stats.Values
+		local grown = Stats.compute(base, Tokugi.modifiersOf({ makimono = 0, tokugi = all }, tree))
+		for _, name in Stats.names do
+			local before = (base :: any)[name]
+			local after = (grown :: any)[name]
+			expect(after >= before).toBe(true)
+			if name == "Defense" then
+				expect(after <= before + 5).toBe(true)
+			else
+				expect(after <= before * 1.2 + 1e-9).toBe(true)
+			end
+		end
+	end
+end)
+
+test("巻物の得かたの値は 0 以上で、撃破数の割る数は 1 以上", function()
+	local makimono = Config.Tokugi.Makimono
+	expect(makimono.Gekihasu >= 1).toBe(true)
+	expect(makimono.GekihasuMax >= 0).toBe(true)
+	expect(makimono.Shori >= 0).toBe(true)
 end)

@@ -168,6 +168,20 @@ test("負けたときは誰にもクリアを記録しない", function()
 	expect(Progress.clearTargets(participants, false)).toEqual({})
 end)
 
+test(
+	"出撃して残っている人は、勝ち負けによらず抜けた人と待機中の人を除いた人",
+	function()
+		local participants = {
+			participant(1, true, false, false),
+			participant(2, true, true, false), -- 出撃した後に抜けた
+			participant(3, false, false, true), -- 出撃中に入って待っている
+			participant(4, true, false, false),
+		}
+		expect(Progress.remaining(participants)).toEqual({ 1, 4 })
+		expect(Progress.clearTargets(participants, true)).toEqual(Progress.remaining(participants))
+	end
+)
+
 test("抜けて入り直し、待っている人には記録しない", function()
 	-- 同じ人が出撃した後に抜け、入り直して待機中になった
 	local participants = { participant(5, true, false, true) }
