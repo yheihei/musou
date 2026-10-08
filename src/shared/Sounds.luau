@@ -14,8 +14,7 @@ export type Definition = {
 	id: number,
 	-- Creator Store の素材の名前
 	name: string,
-	-- 長さ（秒）。読み込んだ Sound の TimeLength の値。Studio で測っていない素材は、
-	-- Creator Store の素材の詳細の説明にある Duration の値。鳴らし終えた Sound を消す時刻に使う
+	-- 長さ（秒）。読み込んだ Sound の TimeLength の値。鳴らし終えた Sound を消す時刻に使う
 	duration: number,
 	-- 配布元
 	source: string,
@@ -55,19 +54,19 @@ local definitions: { [string]: Definition } = {
 	-- 画面の取り消し
 	Cancel = proSoundEffects(9119976843, "Temple Blocks Impact Single Soft Strikes 11 (SFX)", 0.74),
 	-- プレイヤーがガードで攻撃を受けたとき（盾を剣で打つ金属音）
-	Guard = proSoundEffects(9119072660, "Shield Clang As Hit Metal Sword Hubcap 1 (SFX)", 0.8),
+	Guard = proSoundEffects(9119072660, "Shield Clang As Hit Metal Sword Hubcap 1 (SFX)", 0.74),
 	-- プレイヤーが緊急回避を出したとき（短い風切り）
-	KinkyuKaihi = proSoundEffects(9120704940, "Whooshes Fast Wipes Quick Airy Slices 1 (SFX)", 0.5),
+	KinkyuKaihi = proSoundEffects(9120704940, "Whooshes Fast Wipes Quick Airy Slices 1 (SFX)", 0.35),
 	-- プレイヤーがダウンしたとき（土の上に倒れる音）
-	Down = proSoundEffects(9113469796, "Body Fall Dirt 4 (SFX)", 2.7),
+	Down = proSoundEffects(9113469796, "Body Fall Dirt 4 (SFX)", 2.66),
 	-- 自分の軍が拠点を制圧したとき（法螺貝）
-	Seiatsu = proSoundEffects(9113890073, "Conch Shell Long Notes Steady Blows 10 (SFX)", 2.9),
+	Seiatsu = proSoundEffects(9113890073, "Conch Shell Long Notes Steady Blows 10 (SFX)", 2.88),
 	-- 自分の軍の拠点が陥落したとき（太鼓の一打）
-	Kanraku = proSoundEffects(9125514393, "Drum Tom Tom Single Hits Bent Drum Head Stri (SFX)", 2.9),
+	Kanraku = proSoundEffects(9125514393, "Drum Tom Tom Single Hits Bent Drum Head Stri (SFX)", 2.48),
 	-- 秘計の発動の知らせ（銅鑼のような金属音の風切り）
-	HikeiHatsudo = proSoundEffects(9114631053, "Gong Whoosh 2 (SFX)", 3.6),
+	HikeiHatsudo = proSoundEffects(9114631053, "Gong Whoosh 2 (SFX)", 3.63),
 	-- 画面のカーソル移動。ゲームパッドやキーの操作で、選んでいる部品が移ったとき（スイッチを押す音）
-	Cursor = proSoundEffects(9119717523, "Switch Click On Or Off Toggle Button 2 (SFX)", 0.4),
+	Cursor = proSoundEffects(9119717523, "Switch Click On Or Off Toggle Button 2 (SFX)", 0.23),
 }
 
 Sounds.definitions = definitions
