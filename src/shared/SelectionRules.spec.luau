@@ -1,5 +1,6 @@
 --!strict
 local Characters = require("./Characters")
+local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
 local SelectionRules = require("./SelectionRules")
 local Stages = require("./Stages")
@@ -9,6 +10,8 @@ local test, expect = testkit.test, testkit.expect
 
 local LEADER: SelectionRules.Requester = { phase = "Lobby", isLeader = true, waiting = false }
 local MEMBER: SelectionRules.Requester = { phase = "Lobby", isLeader = false, waiting = false }
+-- 秘計を全種類覚えた人の覚えた秘計
+local ALL_HIKEI = Hikei.selectable()
 
 local function at(requester: SelectionRules.Requester, changes: { [string]: any }): SelectionRules.Requester
 	local copy = table.clone(requester) :: any
@@ -248,32 +251,39 @@ test(
 )
 
 test("秘計は選んだ順に上限まで選べる", function()
-	local reject, mine = SelectionRules.applyHikei(MEMBER, "Kishinka", true, {}, {})
+	local reject, mine = SelectionRules.applyHikei(MEMBER, "Kishinka", true, {}, {}, ALL_HIKEI)
 	expect(reject).toBe(nil)
-	reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, mine, {})
-	reject, mine = SelectionRules.applyHikei(MEMBER, "Daikatsu", true, mine, {})
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, mine, {}, ALL_HIKEI)
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Daikatsu", true, mine, {}, ALL_HIKEI)
 	expect(reject).toBe(nil)
 	expect(mine).toEqual({ "Kishinka", "Fukuhei", "Daikatsu" })
 end)
 
 test("上限を超える秘計は選べず、選んだ秘計はそのまま", function()
 	local mine = { "Kishinka", "Fukuhei", "Daikatsu" }
-	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {})
+	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {}, ALL_HIKEI)
 	expect(reject).toBe("HikeiLimit")
 	expect(after).toEqual({ "Kishinka", "Fukuhei", "Daikatsu" })
 end)
 
 test("他のメンバーが選んだ秘計は選べない", function()
-	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, { "Fukuhei" }, { "Rakuseki" })
+	local reject, after = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, { "Fukuhei" }, { "Rakuseki" }, ALL_HIKEI)
 	expect(reject).toBe("HikeiTaken")
 	expect(after).toEqual({ "Fukuhei" })
 end)
 
 test("外した秘計は詰めて並べ、外した後は選び直せる", function()
-	local reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", false, { "Kishinka", "Fukuhei", "Daikatsu" }, {})
+	local reject, mine = SelectionRules.applyHikei(
+		MEMBER,
+		"Fukuhei",
+		false,
+		{ "Kishinka", "Fukuhei", "Daikatsu" },
+		{},
+		ALL_HIKEI
+	)
 	expect(reject).toBe(nil)
 	expect(mine).toEqual({ "Kishinka", "Daikatsu" })
-	reject, mine = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {})
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {}, ALL_HIKEI)
 	expect(reject).toBe(nil)
 	expect(mine).toEqual({ "Kishinka", "Daikatsu", "Rakuseki" })
 end)
@@ -281,24 +291,80 @@ end)
 test(
 	"選んでいる秘計をもう一度選んでも、選んでいない秘計を外しても変わらない",
 	function()
-		local _, again = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, { "Fukuhei" }, {})
+		local _, again = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, { "Fukuhei" }, {}, ALL_HIKEI)
 		expect(again).toEqual({ "Fukuhei" })
-		local _, removed = SelectionRules.applyHikei(MEMBER, "Kishinka", false, { "Fukuhei" }, {})
+		local _, removed = SelectionRules.applyHikei(MEMBER, "Kishinka", false, { "Fukuhei" }, {}, ALL_HIKEI)
 		expect(removed).toEqual({ "Fukuhei" })
 	end
 )
 
 test("存在しない秘計と、ロビー以外と待機中の人の秘計の選択は拒否する", function()
-	expect((SelectionRules.applyHikei(MEMBER, "Musou", true, {}, {}))).toBe("UnknownHikei")
-	expect((SelectionRules.applyHikei(at(MEMBER, { phase = "Battle" }), "Fukuhei", true, {}, {}))).toBe("NotLobby")
-	expect((SelectionRules.applyHikei(at(MEMBER, { waiting = true }), "Fukuhei", false, {}, {}))).toBe("Waiting")
+	expect((SelectionRules.applyHikei(MEMBER, "Musou", true, {}, {}, ALL_HIKEI))).toBe("UnknownHikei")
+	expect((SelectionRules.applyHikei(at(MEMBER, { phase = "Battle" }), "Fukuhei", true, {}, {}, ALL_HIKEI))).toBe(
+		"NotLobby"
+	)
+	expect((SelectionRules.applyHikei(at(MEMBER, { waiting = true }), "Fukuhei", false, {}, {}, ALL_HIKEI))).toBe(
+		"Waiting"
+	)
 end)
 
 test("秘計の選択は引数の秘計を書き換えない", function()
 	local mine = { "Fukuhei" }
-	SelectionRules.applyHikei(MEMBER, "Kishinka", true, mine, {})
-	SelectionRules.applyHikei(MEMBER, "Fukuhei", false, mine, {})
+	SelectionRules.applyHikei(MEMBER, "Kishinka", true, mine, {}, ALL_HIKEI)
+	SelectionRules.applyHikei(MEMBER, "Fukuhei", false, mine, {}, ALL_HIKEI)
 	expect(mine).toEqual({ "Fukuhei" })
+end)
+
+test("覚えた秘計だけを選べ、覚えていない秘計は HikeiNotLearned で拒否する", function()
+	local learned = { "Fukuhei", "Rakuseki", "Kishinka" }
+	local reject, mine = SelectionRules.applyHikei(MEMBER, "Kishinka", true, {}, {}, learned)
+	expect(reject).toBe(nil)
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, mine, {}, learned)
+	reject, mine = SelectionRules.applyHikei(MEMBER, "Rakuseki", true, mine, {}, learned)
+	expect(reject).toBe(nil)
+	expect(mine).toEqual({ "Kishinka", "Fukuhei", "Rakuseki" })
+	local rejected, after = SelectionRules.applyHikei(MEMBER, "Daikatsu", true, { "Kishinka" }, {}, learned)
+	expect(rejected).toBe("HikeiNotLearned")
+	expect(after).toEqual({ "Kishinka" })
+end)
+
+test(
+	"覚えていない秘計は、ほかのメンバーが選んでいても上限に達していても HikeiNotLearned",
+	function()
+		local learned = { "Fukuhei", "Rakuseki", "Kishinka" }
+		expect((SelectionRules.applyHikei(MEMBER, "Daikatsu", true, {}, { "Daikatsu" }, learned))).toBe(
+			"HikeiNotLearned"
+		)
+		expect(
+			(SelectionRules.applyHikei(MEMBER, "Daikatsu", true, { "Fukuhei", "Rakuseki", "Kishinka" }, {}, learned))
+		).toBe("HikeiNotLearned")
+		-- 覚えた秘計でも、ほかのメンバーが選んでいれば今までどおり HikeiTaken
+		expect((SelectionRules.applyHikei(MEMBER, "Rakuseki", true, {}, { "Rakuseki" }, learned))).toBe("HikeiTaken")
+	end
+)
+
+test(
+	"熟練度の記録を読み終える前は選べず、外すのと選んでいる秘計の選び直しはできる",
+	function()
+		local reject, after = SelectionRules.applyHikei(MEMBER, "Fukuhei", true, {}, {}, nil)
+		expect(reject).toBe("HikeiNotLoaded")
+		expect(after).toEqual({})
+		local _, removed = SelectionRules.applyHikei(MEMBER, "Fukuhei", false, { "Kishinka", "Fukuhei" }, {}, nil)
+		expect(removed).toEqual({ "Kishinka" })
+		local again, kept = SelectionRules.applyHikei(MEMBER, "Kishinka", true, { "Kishinka" }, {}, nil)
+		expect(again).toBe(nil)
+		expect(kept).toEqual({ "Kishinka" })
+		-- 立場の拒否が先
+		expect((SelectionRules.applyHikei(at(MEMBER, { phase = "Battle" }), "Fukuhei", true, {}, {}, nil))).toBe(
+			"NotLobby"
+		)
+	end
+)
+
+test("覚えていない秘計の拒否の理由は Remote の拒否の理由に含まれる", function()
+	for _, reason in { "HikeiNotLoaded", "HikeiNotLearned" } do
+		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
+	end
 end)
 
 test(

@@ -392,6 +392,25 @@ export type HikeiHandanSection = {
 	DaikakeiAite: number,
 }
 
+-- 系統の秘計1つ。熟練度が Jukurendo に達すると覚える（0 なら最初から覚えている）
+export type KeitoHikeiDef = {
+	Id: string,
+	Jukurendo: number,
+}
+
+-- 秘計の系統1つ。Hikei は覚える順の秘計。決着したときに、熟練度を上げる戦い方の数に Rate を掛けて切り捨て、
+-- Max までを熟練度に足す
+export type KeitoDef = {
+	Hikei: { KeitoHikeiDef },
+	Rate: number,
+	Max: number,
+}
+
+-- 秘計の系統と熟練度。系統 ID（Jukurendo.luau の keitoList）ごとに置く
+export type JukurendoSection = {
+	Keito: { [string]: KeitoDef },
+}
+
 export type PartySection = {
 	MaxMembers: number,
 }
@@ -487,6 +506,7 @@ export type Config = {
 	Bakuhawana: BakuhawanaSection,
 	Chohatsu: ChohatsuSection,
 	HikeiHandan: HikeiHandanSection,
+	Jukurendo: JukurendoSection,
 	Serifu: SerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
@@ -1756,7 +1776,9 @@ local Config: Config = {
 	Hoshin = {
 		Interval = 2, -- 方針を判断し直す間隔（秒）
 		GeigekiDistance = 120, -- 防衛の部隊が迎え撃つ相手の部隊の、担当の拠点の中心からの距離の上限（スタッド）
-		KyuenRate = 0.8, -- 救援の部隊が向かう、自分の軍の拠点の耐久の上限に対する割合の上限（攻める軍がいる拠点だけ）
+		-- 救援が要る拠点（攻める軍がいる自分の軍の拠点）の、耐久の上限に対する割合の上限。
+		-- 救援の部隊が向かう拠点と、プレイヤーの救援数を数える拠点に使う
+		KyuenRate = 0.8,
 	},
 
 	-- 拠点の耐久と制圧。範囲の中でその拠点の軍の下忍が倒れると耐久が減り、0 で相手の軍に制圧される。計算は Kyoten.luau にある
@@ -1891,6 +1913,46 @@ local Config: Config = {
 		-- 大火計を使う、一番近い大火計地域の中の相手の数の下限（これ以上で使う）。
 		-- プレイヤー・上忍・首領・部隊を1つずつ数える（上忍が率いる部隊は、上忍と部隊で2つ）
 		DaikakeiAite = 3,
+	},
+
+	-- 秘計の系統と熟練度。プレイヤーは系統ごとに熟練度を持ち、覚える値に達した系統の秘計を順に覚える。
+	-- 出撃前に選べるのは覚えた秘計だけ。計算は Jukurendo.luau にある。
+	-- 熟練度を上げる戦い方は、武勇（Buyu）が撃破数、知略（Chiryaku）が制圧数、堅牢（Kenro）が救援数。
+	-- ステージが決着したとき（勝ちも負けも）に、出撃して残っている人へ足す。試験用ステージでも足す（確認のため）。
+	-- 覚える値が 0 の秘計（各系統の最初の1枚）は最初から覚えている。新規の人も持ち込みの上限まで選べる数にする。
+	-- 1回のステージで上限（Max）まで上げると、2枚目は1回、3枚目は4回で覚える
+	Jukurendo = {
+		Keito = {
+			-- 武勇。自分で戦う秘計
+			Buyu = {
+				Hikei = {
+					{ Id = "Kishinka", Jukurendo = 0 },
+					{ Id = "Daikatsu", Jukurendo = 30 },
+					{ Id = "Chohatsu", Jukurendo = 100 },
+				},
+				Rate = 0.1, -- 撃破数1あたりの熟練度（撃破数 10 で 1）
+				Max = 30, -- 1回のステージで足す熟練度の上限（撃破数 300）
+			},
+			-- 知略。相手の拠点と兵站線を攻める秘計
+			Chiryaku = {
+				Hikei = {
+					{ Id = "Rakuseki", Jukurendo = 0 },
+					{ Id = "Daikakei", Jukurendo = 30 },
+				},
+				Rate = 10, -- 制圧数1あたりの熟練度
+				Max = 30, -- 1回のステージで足す熟練度の上限（制圧数 3）
+			},
+			-- 堅牢。味方の拠点を守る秘計
+			Kenro = {
+				Hikei = {
+					{ Id = "Fukuhei", Jukurendo = 0 },
+					{ Id = "Hyoroko", Jukurendo = 30 },
+					{ Id = "Bakuhawana", Jukurendo = 100 },
+				},
+				Rate = 1, -- 救援数1あたりの熟練度
+				Max = 30, -- 1回のステージで足す熟練度の上限（救援数 30）
+			},
+		},
 	},
 
 	-- 台詞。イベントシーンの会話窓と、戦闘中に画面の端へ出す台詞。台詞の文は Serifu.luau にある

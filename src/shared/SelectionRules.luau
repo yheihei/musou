@@ -8,7 +8,8 @@
 -- - ステージはリーダーだけが、リーダーの開放済みのステージから選べる
 -- - キャラクターはステージを選んだ後に、そのストーリーのクランの操作キャラクターから選べる。
 --   そのステージの首領と NPC、パーティーの他のメンバーが選んだキャラクターは選べない
--- - 秘計は1枚ずつ選ぶか外す。持ち込みの上限まで、パーティーの他のメンバーと重ならずに選べる。
+-- - 秘計は1枚ずつ選ぶか外す。本人が覚えた秘計から、持ち込みの上限まで、パーティーの他のメンバーと重ならずに選べる。
+--   覚えた秘計の記録を読み終える前は選べない。外すのはいつでもできる。
 --   選んだ順が戦闘中のボタン（1〜3、十字キーの左・上・右）の順になる
 -- - 出撃はリーダーだけが、開放済みのステージを選び、出撃するメンバー全員がキャラクターを選んだ後にできる。
 --   秘計の枚数は出撃の条件にしない
@@ -201,14 +202,16 @@ function SelectionRules.keepsCharacter(characterId: string, stage: Stages.Stage?
 end
 
 -- 秘計を1枚選ぶ（selected が true）か外す（false）。mine は本人が選んだ順の秘計、
--- takenByOthers はパーティーの他のメンバーが選んだ秘計。
+-- takenByOthers はパーティーの他のメンバーが選んだ秘計、learned は本人が覚えた秘計（記録を読み終える前は nil）。
+-- 選べるのは覚えた秘計だけで、読み終える前は選べない（HikeiNotLoaded）。外すのはいつでもできる。
 -- 受け付けたら nil と選んだ後の秘計を、受け付けなければ理由と mine をそのまま返す。引数は書き換えない
 function SelectionRules.applyHikei(
 	requester: Requester,
 	hikeiId: string,
 	selected: boolean,
 	mine: { string },
-	takenByOthers: { string }
+	takenByOthers: { string },
+	learned: { string }?
 ): (Reject?, { string })
 	local reject = checkRequester(requester)
 	if reject then
@@ -227,6 +230,12 @@ function SelectionRules.applyHikei(
 	end
 	if index then
 		return nil, table.clone(mine)
+	end
+	if not learned then
+		return "HikeiNotLoaded", mine
+	end
+	if not table.find(learned, hikeiId) then
+		return "HikeiNotLearned", mine
 	end
 	local next = table.clone(mine)
 	table.insert(next, hikeiId)

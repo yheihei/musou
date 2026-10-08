@@ -13,8 +13,10 @@
 --   （プライベートサーバーの持ち主が入ったときなど）、読み終えてから確かめ直す
 -- - キャラクターはステージを選んだ後に、ストーリーのクランの操作キャラクターから、他のメンバーと重ならずに選べる
 -- - ストーリーかステージが変わったら、選べなくなったキャラクターの選択を外す
--- - 秘計は1枚ずつ選ぶか外し、持ち込みの上限まで、他のメンバーと重ならずに選べる（先に選んだ人のもの）。
+-- - 秘計は1枚ずつ選ぶか外し、本人が覚えた秘計（JukurendoService）から、持ち込みの上限まで、
+--   他のメンバーと重ならずに選べる（先に選んだ人のもの）。熟練度の記録を読み終える前は選べない。
 --   秘計の枚数は出撃の条件にしない
+-- - 覚えた秘計の記録が変わったら（窓口で記録を消したときなど）、覚えていない秘計の選択を外す
 -- - 抜けた人の選択は外し、ほかの人が選べるようにする
 -- - リザルトからロビーへ戻ったら、StageService が clear でストーリー以外の選択を外す。
 --   続けて同じストーリーを遊べるよう、ストーリーは残す
@@ -27,6 +29,7 @@ local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local SelectionRules = require(ReplicatedStorage.Shared.SelectionRules)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local JukurendoService = require(script.Parent.JukurendoService)
 local PartyService = require(script.Parent.PartyService)
 local ProgressService = require(script.Parent.ProgressService)
 
@@ -138,7 +141,8 @@ function SelectionService.getHikei(player: Player): { string }
 	return table.clone(hikei[player.UserId] or {})
 end
 
--- 秘計を1枚選ぶ（selected が true）か外す（false）。受け付けたら nil、受け付けなければ拒否の理由を返す
+-- 秘計を1枚選ぶ（selected が true）か外す（false）。受け付けたら nil、受け付けなければ拒否の理由を返す。
+-- 選べるのは覚えた秘計だけで、熟練度の記録を読み終える前は選べない
 function SelectionService.selectHikei(player: Player, hikeiId: string, selected: boolean): SelectionRules.Reject?
 	local takenByOthers = {}
 	for userId, ids in hikei do
@@ -147,7 +151,8 @@ function SelectionService.selectHikei(player: Player, hikeiId: string, selected:
 		end
 	end
 	local mine = hikei[player.UserId] or {}
-	local reject, next = SelectionRules.applyHikei(requesterOf(player), hikeiId, selected, mine, takenByOthers)
+	local learned = if JukurendoService.isReady(player) then JukurendoService.getLearned(player) else nil
+	local reject, next = SelectionRules.applyHikei(requesterOf(player), hikeiId, selected, mine, takenByOthers, learned)
 	if reject then
 		return reject
 	end
@@ -156,6 +161,25 @@ function SelectionService.selectHikei(player: Player, hikeiId: string, selected:
 		PartyService.refresh()
 	end
 	return nil
+end
+
+-- 覚えていない秘計の選択を外す（窓口で熟練度の記録を消したときなど）。外したら全員に送り直す
+local function releaseUnlearnedHikei(player: Player)
+	local mine = hikei[player.UserId]
+	if not mine or not JukurendoService.isReady(player) then
+		return
+	end
+	local learned = JukurendoService.getLearned(player)
+	local kept = {}
+	for _, id in mine do
+		if table.find(learned, id) then
+			table.insert(kept, id)
+		end
+	end
+	if #kept ~= #mine then
+		hikei[player.UserId] = if #kept > 0 then kept else nil
+		PartyService.refresh()
+	end
 end
 
 -- ステージ・キャラクター・秘計の選択を外し、全員に送り直す（リザルトからロビーへ戻ったとき）。
@@ -362,6 +386,7 @@ function SelectionService.start()
 		}
 	end)
 	PartyService.changed:Connect(onPartyChanged)
+	JukurendoService.changed:Connect(releaseUnlearnedHikei)
 	-- リーダーの進行を読み終えたときや、クリアで開放済みが増えたとき
 	ProgressService.changed:Connect(function(player: Player)
 		if player == PartyService.getLeader() then

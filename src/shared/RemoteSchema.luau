@@ -1,5 +1,5 @@
 --!strict
--- ロビー・選択・特技・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
+-- ロビー・選択・特技・秘計の熟練度・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
 -- RemoteEvent は default.project.json の ReplicatedStorage.Remotes に宣言する。
 -- ハンドラは各機能で実装する。ここは型と、クライアントから届く値の検証だけを持つ。
 --
@@ -20,6 +20,7 @@
 -- | StageResult | S→C | StageResult |
 -- | NotifyHikei | S→C | HikeiNotice.Notice（秘計の発動・打ち消し・期限切れ・失敗） |
 -- | TokugiState | S→C | Tokugi.State（本人のキャラクターごとの巻物と覚えた特技） |
+-- | JukurendoState | S→C | Jukurendo.State（本人の系統ごとの熟練度と覚えた秘計） |
 
 local Characters = require("./Characters")
 
@@ -64,6 +65,8 @@ export type RejectReason =
 	| "HikeiDuplicate" -- 同じ秘計を2枚持ち込もうとしている
 	| "HikeiTaken" -- パーティーの他のメンバーが選んでいる
 	| "HikeiLimit" -- 持ち込みの上限を超える
+	| "HikeiNotLoaded" -- 秘計の熟練度の記録をまだ読み込んでいない
+	| "HikeiNotLearned" -- まだ覚えていない秘計
 	| "MembersNotReady" -- キャラクターを選んでいないメンバーがいる
 	| "KukakuMissing" -- ステージの区画か出撃地点がプレースに無い
 	| "TokugiNotLoaded" -- 特技の記録をまだ読み込めていない
@@ -91,6 +94,8 @@ RemoteSchema.rejectReasons = {
 	"HikeiDuplicate",
 	"HikeiTaken",
 	"HikeiLimit",
+	"HikeiNotLoaded",
+	"HikeiNotLearned",
 	"MembersNotReady",
 	"KukakuMissing",
 	"TokugiNotLoaded",
@@ -148,12 +153,19 @@ export type MemberResult = {
 	userId: number,
 	name: string,
 	gekihasu: number,
+	-- このステージの制圧数と救援数
+	seiatsusu: number,
+	kyuensu: number,
 	-- このクリアで新しく開放したステージ
 	newlyUnlocked: { StageId },
 	-- 決着したときに使っていたキャラクター（巻物を渡したキャラクター）
 	character: CharacterId,
 	-- このステージで得た巻物の数
 	makimono: number,
+	-- このステージで上がった熟練度（系統 ID から引く）
+	jukurendo: { [string]: number },
+	-- このステージで新しく覚えた秘計（設計の表の順）
+	newlyLearned: { HikeiId },
 }
 
 export type StageResult = {
@@ -185,6 +197,7 @@ RemoteSchema.serverToClient = {
 	"StageResult",
 	"NotifyHikei",
 	"TokugiState",
+	"JukurendoState",
 }
 
 -- クライアントから届いた ID を受け付けるか。英数字と _ だけで、長さは1から上限まで

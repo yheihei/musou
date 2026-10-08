@@ -1,6 +1,8 @@
 --!strict
 local Characters = require("./Characters")
 local Config = require("./Config")
+local Hikei = require("./Hikei")
+local Jukurendo = require("./Jukurendo")
 local Stats = require("./Stats")
 local Tokugi = require("./Tokugi")
 local testkit = require("@testkit")
@@ -1231,6 +1233,36 @@ local SNAPSHOT = {
 		FukuheiDistance = 100,
 		DaikakeiAite = 3,
 	},
+	Jukurendo = {
+		Keito = {
+			Buyu = {
+				Hikei = {
+					{ Id = "Kishinka", Jukurendo = 0 },
+					{ Id = "Daikatsu", Jukurendo = 30 },
+					{ Id = "Chohatsu", Jukurendo = 100 },
+				},
+				Rate = 0.1,
+				Max = 30,
+			},
+			Chiryaku = {
+				Hikei = {
+					{ Id = "Rakuseki", Jukurendo = 0 },
+					{ Id = "Daikakei", Jukurendo = 30 },
+				},
+				Rate = 10,
+				Max = 30,
+			},
+			Kenro = {
+				Hikei = {
+					{ Id = "Fukuhei", Jukurendo = 0 },
+					{ Id = "Hyoroko", Jukurendo = 30 },
+					{ Id = "Bakuhawana", Jukurendo = 100 },
+				},
+				Rate = 1,
+				Max = 30,
+			},
+		},
+	},
 	Serifu = {
 		CharInterval = 0.04,
 		HoldTime = 1.5,
@@ -1386,4 +1418,15 @@ test("巻物の得かたの値は 0 以上で、撃破数の割る数は 1 以�
 	expect(makimono.Gekihasu >= 1).toBe(true)
 	expect(makimono.GekihasuMax >= 0).toBe(true)
 	expect(makimono.Shori >= 0).toBe(true)
+end)
+
+test(
+	"秘計の系統の定義に誤りが無い（系統がそろい、どの秘計も1つの系統にだけあり、覚える熟練度は 0 から増えていく）",
+	function()
+		expect(Jukurendo.validate()).toEqual({})
+	end
+)
+
+test("最初から覚えている秘計で、新規の人も持ち込みの上限まで選べる", function()
+	expect(#Jukurendo.initialHikei() >= Hikei.MOCHIKOMI_MAX).toBe(true)
 end)

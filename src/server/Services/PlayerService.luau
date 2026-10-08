@@ -1,5 +1,5 @@
 --!strict
--- プレイヤーのステータス管理。使うキャラクター・撃破数・奥義ゲージ（本数と次の1本までの量）は
+-- プレイヤーのステータス管理。使うキャラクター・撃破数・制圧数・救援数・奥義ゲージ（本数と次の1本までの量）は
 -- Player の Attribute に持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
 -- 使うキャラクター（CharacterId）が変わったら出現し直す。
 -- 出撃では spawnAt が CharacterId を書いてから出撃地点に出現し直す（出現し直しは1回）。
@@ -86,6 +86,23 @@ function PlayerService.addGekihasu(player: Player, count: number?)
 	player:SetAttribute("Gekihasu", (player:GetAttribute("Gekihasu") :: number? or 0) + (count or 1))
 end
 
+-- 制圧数（範囲の中にいる間に味方軍が制圧した拠点の数）を count（省くと 1）だけ足す。数えるのは KyotenService
+function PlayerService.addSeiatsusu(player: Player, count: number?)
+	player:SetAttribute("Seiatsusu", (player:GetAttribute("Seiatsusu") :: number? or 0) + (count or 1))
+end
+
+-- 救援数（救援が要る味方の拠点の範囲の中で倒した敵の数）を count（省くと 1）だけ足す。数えるのは KyotenService
+function PlayerService.addKyuensu(player: Player, count: number?)
+	player:SetAttribute("Kyuensu", (player:GetAttribute("Kyuensu") :: number? or 0) + (count or 1))
+end
+
+-- 撃破数・制圧数・救援数を 0 にする
+local function resetCounts(player: Player)
+	player:SetAttribute("Gekihasu", 0)
+	player:SetAttribute("Seiatsusu", 0)
+	player:SetAttribute("Kyuensu", 0)
+end
+
 -- 奥義ゲージ。溜まった本数は Attribute の OugiStock、次の1本までの量は OugiGauge に持つ
 function PlayerService.getOugi(player: Player): OugiGauge.Gauge
 	return {
@@ -112,9 +129,9 @@ function PlayerService.consumeOugiStock(player: Player): boolean
 	return ok
 end
 
--- 出撃したときの撃破数（0）と奥義ゲージ（OugiGauge.initial）に戻す
+-- 出撃したときの撃破数・制圧数・救援数（0）と奥義ゲージ（OugiGauge.initial）に戻す
 function PlayerService.resetForShutsugeki(player: Player)
-	player:SetAttribute("Gekihasu", 0)
+	resetCounts(player)
 	setOugi(player, OugiGauge.initial())
 end
 
@@ -256,7 +273,7 @@ local function onPlayerAdded(player: Player)
 	if player:GetAttribute("CharacterId") == nil then
 		player:SetAttribute("CharacterId", Characters.DEFAULT_ID)
 	end
-	player:SetAttribute("Gekihasu", 0)
+	resetCounts(player)
 	setOugi(player, OugiGauge.initial())
 
 	player.CharacterAdded:Connect(function(character)
@@ -320,17 +337,21 @@ local function registerDebugCommands()
 			})
 		end
 	)
-	DebugCommand.register(
-		"SetGekihasu",
-		"<プレイヤー名> <撃破数>",
-		"撃破数を書き換える",
-		function(name, value)
-			local player = DebugCommand.findPlayer(name)
-			local count = math.max(0, math.floor(DebugCommand.toNumber(value, "撃破数")))
-			player:SetAttribute("Gekihasu", count)
-			return `{player.Name} の撃破数を {count} にした`
-		end
-	)
+	-- 撃破数・制圧数・救援数を書き換える窓口（SetGekihasu・SetSeiatsusu・SetKyuensu）
+	for _, entry in { { "Gekihasu", "撃破数" }, { "Seiatsusu", "制圧数" }, { "Kyuensu", "救援数" } } do
+		local attribute, label = entry[1], entry[2]
+		DebugCommand.register(
+			`Set{attribute}`,
+			`<プレイヤー名> <{label}>`,
+			`{label}を書き換える`,
+			function(name, value)
+				local player = DebugCommand.findPlayer(name)
+				local count = math.max(0, math.floor(DebugCommand.toNumber(value, label)))
+				player:SetAttribute(attribute, count)
+				return `{player.Name} の{label}を {count} にした`
+			end
+		)
+	end
 	DebugCommand.register(
 		"SetOugiGauge",
 		"<プレイヤー名> <量>",

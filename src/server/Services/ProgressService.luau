@@ -170,6 +170,18 @@ function ProgressService.isReady(player: Player): boolean
 	return records[player] ~= nil
 end
 
+-- 保存済みの進行を読めたか。一度でも保存できたら true。DataStore が使えない環境ではメモリから読むので true
+function ProgressService.isLoaded(player: Player): boolean
+	local record = records[player]
+	return record ~= nil and record.loaded
+end
+
+-- クリア済みのステージ ID（ID の順）。読み終える前は空
+function ProgressService.getCleared(player: Player): { string }
+	local record = records[player]
+	return if record then table.clone(record.data.cleared) else {}
+end
+
 -- 開放済みのステージ ID（ID の順）。読み終える前は新規の進行とみなす
 function ProgressService.getUnlocked(player: Player): { string }
 	local record = records[player]

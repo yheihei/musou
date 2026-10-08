@@ -8,7 +8,7 @@ local test, expect = testkit.test, testkit.expect
 
 local M1_HIKEI = { "Fukuhei", "Rakuseki", "Daikakei", "Hyoroko", "Bakuhawana", "Chohatsu", "Kishinka", "Daikatsu" }
 
-test("M1 の秘計8種を設計の表の順に選べる", function()
+test("定義にある秘計は M1 の8種で、設計の表の順に並ぶ", function()
 	expect(Hikei.selectable()).toEqual(M1_HIKEI)
 end)
 
@@ -134,6 +134,41 @@ test("配る秘計が足りなければ、残りの分だけ配る", function()
 	expect(result[3]).toEqual({ "Kishinka" })
 	expect(result[4]).toEqual({ "Daikatsu" })
 end)
+
+test(
+	"覚えた秘計を渡すと、1枚も選んでいない人にはその人が覚えた秘計だけを配る",
+	function()
+		local result = Hikei.assignMochikomi({ {}, {} }, {
+			{ "Fukuhei", "Rakuseki", "Kishinka" },
+			{ "Fukuhei", "Rakuseki", "Daikakei", "Kishinka", "Daikatsu" },
+		})
+		-- 表の順（伏兵・落石・大火計・…・鬼神化・大喝）に、覚えていない秘計を飛ばして1枚ずつ配る
+		expect(result).toEqual({
+			{ "Fukuhei", "Kishinka" },
+			{ "Rakuseki", "Daikakei", "Daikatsu" },
+		})
+	end
+)
+
+test(
+	"最初の秘計だけを覚えた4人が誰も選ばなければ、3人に1枚ずつ配り、残る1人には配れない",
+	function()
+		local initial = { "Fukuhei", "Rakuseki", "Kishinka" }
+		local result = Hikei.assignMochikomi({ {}, {}, {}, {} }, { initial, initial, initial, initial })
+		expect(result).toEqual({ { "Fukuhei" }, { "Rakuseki" }, { "Kishinka" }, {} })
+	end
+)
+
+test(
+	"覚えた秘計を渡しても、選んだ人の持ち込みは選んだままで、配る秘計は選んだ秘計と重ならない",
+	function()
+		local result = Hikei.assignMochikomi(
+			{ { "Kishinka" }, {} },
+			{ { "Kishinka" }, { "Fukuhei", "Rakuseki", "Kishinka" } }
+		)
+		expect(result).toEqual({ { "Kishinka" }, { "Fukuhei", "Rakuseki" } })
+	end
+)
 
 test("ステージ開始の使用記録は空で、どの枚も使える", function()
 	local usage = Hikei.newUsage()

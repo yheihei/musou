@@ -160,7 +160,7 @@ function Hikei.describe(id: string): string
 	return text
 end
 
--- 選べる秘計の ID を設計の表の順に返す。M1 は全種類を最初から選べる
+-- 定義にある秘計の ID を設計の表の順に返す。プレイヤーが選べるのは、このうち覚えた秘計（Jukurendo.learned）だけ
 function Hikei.selectable(): { string }
 	return table.clone(ORDER)
 end
@@ -189,11 +189,13 @@ function Hikei.checkMochikomi(mochikomi: { string }, others: { string }): Remote
 	return nil
 end
 
--- 出撃するメンバーの持ち込みを決める。selections は出撃するメンバーごとに選んだ秘計（入った順）。
+-- 出撃するメンバーの持ち込みを決める。selections は出撃するメンバーごとに選んだ秘計（入った順）、
+-- learned は同じ順のメンバーごとの覚えた秘計（省くと全員が全種類を覚えているとみなす）。
 -- 選んだメンバーの持ち込みは選んだまま（上限より少なくても足さない）。
 -- 1枚も選んでいないメンバーには、誰も選んでいない秘計を設計の表の順に、選んでいないメンバーへ1枚ずつ順に配る。
--- 上限に達するか、配る秘計が無くなったら終える。返す一覧は selections と同じ順
-function Hikei.assignMochikomi(selections: { { string } }): { { string } }
+-- 配るのはそのメンバーが覚えた秘計だけで、覚えた秘計がもう残っていないメンバーは飛ばす。
+-- 上限に達するか、配れる秘計が無くなったら終える。返す一覧は selections と同じ順
+function Hikei.assignMochikomi(selections: { { string } }, learned: { { string } }?): { { string } }
 	local taken: { [string]: boolean } = {}
 	local result: { { string } } = {}
 	local empty: { number } = {}
@@ -206,20 +208,28 @@ function Hikei.assignMochikomi(selections: { { string } }): { { string } }
 			table.insert(empty, index)
 		end
 	end
-	local pool = {}
-	for _, id in ORDER do
-		if not taken[id] then
-			table.insert(pool, id)
-		end
-	end
-	local next = 1
-	for _ = 1, Hikei.MOCHIKOMI_MAX do
-		for _, index in empty do
-			if next > #pool then
-				return result
+	-- index 番目のメンバーに配れる、誰も選んでいない秘計のうち表の順で最初のもの
+	local function nextFor(index: number): string?
+		local own = if learned then learned[index] or {} else nil
+		for _, id in ORDER do
+			if not taken[id] and (own == nil or table.find(own, id) ~= nil) then
+				return id
 			end
-			table.insert(result[index], pool[next])
-			next += 1
+		end
+		return nil
+	end
+	for _ = 1, Hikei.MOCHIKOMI_MAX do
+		local gave = false
+		for _, index in empty do
+			local id = nextFor(index)
+			if id then
+				table.insert(result[index], id)
+				taken[id] = true
+				gave = true
+			end
+		end
+		if not gave then
+			break
 		end
 	end
 	return result

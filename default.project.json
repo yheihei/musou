@@ -65,6 +65,9 @@
         },
         "TokugiState": {
           "$className": "RemoteEvent"
+        },
+        "JukurendoState": {
+          "$className": "RemoteEvent"
         }
       }
     },

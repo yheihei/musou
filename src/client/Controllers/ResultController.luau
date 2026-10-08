@@ -1,12 +1,15 @@
 --!strict
 -- ステージのリザルト画面。Remotes.StageResult を受けて、画面の中央に勝敗と理由、経過時間、全員の撃破数、
--- 本人が得た巻物、本人が新しく開放したステージを出す。文は ReplicatedStorage.Shared.ResultMessage にある。
+-- 本人が得た巻物、本人の上がった熟練度と新しく覚えた秘計、本人が新しく開放したステージを出す。
+-- 文は ReplicatedStorage.Shared.ResultMessage にある。
 -- 次の行動はリーダーだけが選び、Remotes.Retry か Remotes.ReturnToLobby を送る。受け付けるかはサーバーが決める。
 --
 -- - 出すのは StageResult を受けた人（出撃して残っているメンバー）だけ。待機中の人には届かないので出さない
 -- - PartyState（PartyClient）のフェーズがリザルトでなくなったら閉じ、受けた結果を捨てる
 -- - 後ろの画面は幕で暗くする。本人が開放したステージが無ければ、開放したステージの欄は出さない
 -- - 得た巻物は、決着したときに使っていたキャラクターと数を出す。0 本でも出す
+-- - 熟練度は系統ごと（Jukurendo.keitoList の順）に、上がった分と上げた戦い方の数を出す。上がらなかった系統も +0 で出す
+-- - 新しく覚えた秘計が無ければ、その欄は出さない
 -- - リーダーには「もう一度挑む」と「ロビーへ戻る」のボタン、ほかの人には待ちの文を出す。
 --   リーダーかは PartyState が届くたびに確かめ直す（リザルトの途中でリーダーが抜けたら、次のリーダーにボタンを出す）
 -- - 押したら両方のボタンを止めて二重に送らない。PENDING_TIME 秒たってもリザルトのままなら（受け付けられなかったら）戻す
@@ -18,6 +21,7 @@ local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Jukurendo = require(ReplicatedStorage.Shared.Jukurendo)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local ResultMessage = require(ReplicatedStorage.Shared.ResultMessage)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
@@ -26,10 +30,11 @@ local Ui = require(script.Parent.Parent.Ui)
 
 local ResultController = {}
 
--- パネルの幅と内側の余白、行の高さ、ボタンの大きさと間隔（ピクセル）
+-- パネルの幅と内側の余白、行の高さ（熟練度は小さい文字の詰めた行）、ボタンの大きさと間隔（ピクセル）
 local PANEL_WIDTH = 520
 local PADDING = 20
 local ROW_HEIGHT = 28
+local SMALL_ROW_HEIGHT = 22
 local BUTTON_WIDTH = 200
 local BUTTON_HEIGHT = 52
 local BUTTON_GAP = 16
@@ -51,6 +56,11 @@ type Gui = {
 	members: Frame,
 	-- 得た巻物の行を入れる Frame
 	makimonoList: Frame,
+	-- 上がった熟練度の行を入れる Frame
+	jukurendoList: Frame,
+	-- 新しく覚えた秘計の欄と、その行を入れる Frame
+	learned: Frame,
+	learnedList: Frame,
 	-- 開放したステージの欄と、その行を入れる Frame
 	unlocked: Frame,
 	unlockedList: Frame,
@@ -168,10 +178,14 @@ local function buildGui(): Gui
 	})
 	local membersFrame, members = section("Members", "撃破数", 4)
 	local makimono, makimonoList = section("Makimono", "得た巻物", 5)
-	local unlocked, unlockedList = section("NewlyUnlocked", "新しく開放したステージ", 6)
+	local jukurendo, jukurendoList = section("Jukurendo", "秘計の熟練度", 6)
+	local learned, learnedList = section("NewlyLearned", "新しく覚えた秘計", 7)
+	local unlocked, unlockedList = section("NewlyUnlocked", "新しく開放したステージ", 8)
 	-- 撃破数の行の名前と頭をそろえる
-	Ui.create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = makimonoList })
-	Ui.create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = unlockedList })
+	for _, list in { makimonoList, jukurendoList, learnedList, unlockedList } do
+		Ui.create("UIPadding", { PaddingLeft = UDim.new(0, 10), Parent = list })
+	end
+	learned.Visible = false
 	unlocked.Visible = false
 
 	local retry = Ui.button({
@@ -205,7 +219,7 @@ local function buildGui(): Gui
 	})
 	local footer = Ui.create("Frame", {
 		Name = "Footer",
-		LayoutOrder = 7,
+		LayoutOrder = 9,
 		Size = UDim2.new(1, 0, 0, BUTTON_HEIGHT),
 		BackgroundTransparency = 1,
 	}, { retry, returnToLobby, waiting })
@@ -235,6 +249,8 @@ local function buildGui(): Gui
 		elapsed,
 		membersFrame,
 		makimono,
+		jukurendo,
+		learned,
 		unlocked,
 		footer,
 	})
@@ -256,6 +272,9 @@ local function buildGui(): Gui
 		elapsed = elapsed,
 		members = members,
 		makimonoList = makimonoList,
+		jukurendoList = jukurendoList,
+		learned = learned,
+		learnedList = learnedList,
 		unlocked = unlocked,
 		unlockedList = unlockedList,
 		retry = retry,
@@ -294,7 +313,39 @@ local function makimonoRow(member: RemoteSchema.MemberResult): TextLabel
 	})
 end
 
--- 結果を画面に書く。得た巻物と開放したステージは本人の分だけ出す
+-- 上がった熟練度の行（系統の順）
+local function jukurendoRows(member: RemoteSchema.MemberResult): { TextLabel }
+	local counts = { gekihasu = member.gekihasu, seiatsusu = member.seiatsusu, kyuensu = member.kyuensu }
+	local rows = {}
+	for index, keito in Jukurendo.keitoList do
+		table.insert(
+			rows,
+			Ui.text({
+				Name = keito,
+				LayoutOrder = index,
+				Size = UDim2.new(1, 0, 0, SMALL_ROW_HEIGHT),
+				TextSize = Ui.TextSize.Small,
+				Font = Ui.Font.Bold,
+				Text = ResultMessage.jukurendoOf(keito, member.jukurendo[keito] or 0, Jukurendo.countOf(counts, keito)),
+			})
+		)
+	end
+	return rows
+end
+
+-- 新しく覚えた秘計の1行
+local function learnedRow(index: number, hikeiId: string): TextLabel
+	return Ui.text({
+		Name = hikeiId,
+		LayoutOrder = index,
+		Size = UDim2.new(1, 0, 0, SMALL_ROW_HEIGHT),
+		Font = Ui.Font.Bold,
+		TextColor3 = Ui.Color.Selected,
+		Text = ResultMessage.hikeiName(hikeiId),
+	})
+end
+
+-- 結果を画面に書く。得た巻物・熟練度・覚えた秘計・開放したステージは本人の分だけ出す
 local function fill(gui: Gui, received: RemoteSchema.StageResult)
 	gui.headline.Text = ResultMessage.headline(received.victory)
 	gui.headline.TextColor3 = if received.victory then Ui.Color.Selected else Ui.Color.HealthLow
@@ -302,17 +353,28 @@ local function fill(gui: Gui, received: RemoteSchema.StageResult)
 	gui.elapsed.Text = `経過時間　{ResultMessage.formatElapsed(received.elapsed)}`
 	clearRows(gui.members)
 	clearRows(gui.makimonoList)
+	clearRows(gui.jukurendoList)
+	clearRows(gui.learnedList)
 	clearRows(gui.unlockedList)
 	local myId = Players.LocalPlayer.UserId
 	local unlocked: { string } = {}
+	local learned: { string } = {}
 	for index, member in received.members do
 		local isMe = member.userId == myId
 		memberRow(index, member, isMe).Parent = gui.members
 		if isMe then
 			unlocked = member.newlyUnlocked
+			learned = member.newlyLearned
 			makimonoRow(member).Parent = gui.makimonoList
+			for _, row in jukurendoRows(member) do
+				row.Parent = gui.jukurendoList
+			end
 		end
 	end
+	for index, hikeiId in learned do
+		learnedRow(index, hikeiId).Parent = gui.learnedList
+	end
+	gui.learned.Visible = #learned > 0
 	for index, stageId in unlocked do
 		stageRow(index, stageId).Parent = gui.unlockedList
 	end

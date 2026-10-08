@@ -12,7 +12,8 @@
 --   処理の finish を効果ごとに1回呼ぶ。打ち消し（dispelKyoka）とステージの終わりでも1回呼ぶ
 -- - 秘計の見た目は workspace.Hikei の下の秘計ごとのフォルダ（folderOf）に置く
 -- - 出撃（StageService.started）で、ロビーで選んだ秘計を出撃メンバーの持ち込みとして決め、ステージの終わりまで変えない。
---   1枚も選んでいない人には、誰も選んでいない秘計を配る（Hikei.assignMochikomi）。上限より少なくても出撃できる
+--   1枚も選んでいない人には、その人が覚えた秘計（JukurendoService）のうち、誰も選んでいない秘計を配る
+--   （Hikei.assignMochikomi）。上限より少なくても出撃できる
 -- - 敵軍の上忍と首領の持ち込みは、出撃で持ち込みを空にした後に、配置の構成（Haichi.mochikomiOf）から決める
 -- - 出撃で効果と使用記録を空にする。決着とロビーのフェーズへの戻りで残った効果を全部解除し、
 --   ロビーのフェーズへ戻ったら持ち込みも外す
@@ -39,6 +40,7 @@ local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ActionService = require(script.Parent.ActionService)
 local JoninService = require(script.Parent.JoninService)
+local JukurendoService = require(script.Parent.JukurendoService)
 local SelectionService = require(script.Parent.SelectionService)
 local ShikiService = require(script.Parent.ShikiService)
 local StageService = require(script.Parent.StageService)
@@ -360,15 +362,18 @@ function HikeiService.useByJonin(joninId: string, slot: number): (boolean, strin
 end
 
 -- 出撃したら、前のステージの効果を解除し、ロビーで選んだ秘計を持ち込みとして決めて、使用記録を空にする。
--- 1枚も選んでいない人には、誰も選んでいない秘計を配る。敵軍の上忍と首領の持ち込みは配置の構成から決める
+-- 1枚も選んでいない人には、その人が覚えた秘計のうち、誰も選んでいない秘計を配る。
+-- 敵軍の上忍と首領の持ち込みは配置の構成から決める
 local function onStarted(info: StageService.StartInfo)
 	finishAll()
 	table.clear(mochikomiOf)
 	local selections = {}
+	local learned = {}
 	for index, member in info.members do
 		selections[index] = SelectionService.getHikei(member)
+		learned[index] = JukurendoService.getLearned(member)
 	end
-	for index, mochikomi in Hikei.assignMochikomi(selections) do
+	for index, mochikomi in Hikei.assignMochikomi(selections, learned) do
 		local member = info.members[index]
 		local reject = setMochikomiOf(userIdOf(member), mochikomi)
 		if reject then

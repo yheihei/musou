@@ -6,7 +6,7 @@
 -- - 攻略は、今いる拠点からつながりをたどった先の、道のりが一番近い相手の軍の拠点を目指す
 -- - 防衛は、担当の拠点（配置で始まる拠点）の中心から GeigekiDistance 以内に来た相手の部隊のうち、
 --   拠点に一番近い部隊を迎え撃つ。いなければ担当の拠点へ戻ってとどまる
--- - 救援は、耐久が上限の KyuenRate 以下に減り、攻める軍が範囲の中にいる自分の軍の拠点のうち、
+-- - 救援は、耐久が上限の KyuenRate 以下に減り、攻める軍が範囲の中にいる自分の軍の拠点（救援が要る拠点。needsKyuen）のうち、
 --   道のりが一番近い拠点へ向かう。なければ担当の拠点へ戻ってとどまる
 -- - 攻略で目指せる相手の拠点が無いときも、担当の拠点へ戻ってとどまる
 -- - 担当の拠点へたどれない（道が塞がれた、相手の拠点の先にある）ときは、道のりが一番近い自分の軍の拠点へ向かう。
@@ -288,6 +288,17 @@ local function reachOf(butai: Butai, kyotenList: { Kyoten }, tsunagariList: { Ts
 	return Hoshin.reachFrom(kyotenList, tsunagariList, butai.gun, sources)
 end
 
+-- 救援が要る拠点か。gun の軍の拠点で、耐久が上限の KyuenRate 以下に減り、攻める軍が範囲の中にいるもの。
+-- 救援の方針の部隊が向かう拠点と、プレイヤーの救援数を数える拠点（KyotenService）に使う
+function Hoshin.needsKyuen(
+	kyoten: { gun: Gun.Gun?, taikyuRate: number, kogeki: boolean },
+	gun: Gun.Gun,
+	params: Params?
+): boolean
+	local p = params or Config.Hoshin
+	return kyoten.gun == gun and kyoten.kogeki and kyoten.taikyuRate <= p.KyuenRate
+end
+
 -- 部隊の方針から、目指す拠点か迎え撃つ相手の部隊を決める
 function Hoshin.decide(
 	butai: Butai,
@@ -335,7 +346,7 @@ function Hoshin.decide(
 		end
 	elseif butai.hoshin == "Kyuen" then
 		local target = closest(kyotenList, reach, function(kyoten)
-			return kyoten.gun == butai.gun and kyoten.kogeki and kyoten.taikyuRate <= p.KyuenRate
+			return Hoshin.needsKyuen(kyoten, butai.gun, p)
 		end)
 		if target then
 			return toward(reach, target)

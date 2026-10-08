@@ -215,6 +215,23 @@ test(
 	end
 )
 
+test(
+	"救援が要る拠点は、自分の軍の拠点で、耐久が KyuenRate 以下に減り、攻める軍が範囲の中にいるもの",
+	function()
+		local function state(gun: any, taikyuRate: number, kogeki: boolean)
+			return { gun = gun, taikyuRate = taikyuRate, kogeki = kogeki }
+		end
+		expect(Hoshin.needsKyuen(state("Mikatagun", 0.8, true), "Mikatagun", PARAMS)).toBe(true)
+		expect(Hoshin.needsKyuen(state("Mikatagun", 0.1, true), "Mikatagun", PARAMS)).toBe(true)
+		-- 耐久が割合より多い、攻める軍がいない、相手の軍の拠点、どちらにも属さない拠点は救援が要らない
+		expect(Hoshin.needsKyuen(state("Mikatagun", 0.81, true), "Mikatagun", PARAMS)).toBe(false)
+		expect(Hoshin.needsKyuen(state("Mikatagun", 0.5, false), "Mikatagun", PARAMS)).toBe(false)
+		expect(Hoshin.needsKyuen(state("Tekigun", 0.5, true), "Mikatagun", PARAMS)).toBe(false)
+		expect(Hoshin.needsKyuen(state(nil, 0.5, true), "Mikatagun", PARAMS)).toBe(false)
+		expect(Hoshin.needsKyuen(state("Tekigun", 0.5, true), "Tekigun", PARAMS)).toBe(true)
+	end
+)
+
 test("救援の部隊は、向かう拠点が無ければ担当の拠点にとどまる", function()
 	local kyotenList = {
 		kyoten("Home", "Mikatagun", 0, 0),

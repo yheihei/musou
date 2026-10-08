@@ -26,6 +26,8 @@
 --   体力の最大は出現したときに当てるので、出撃地点へ出現し直させる前に固定する。ロビーのフェーズに戻ったら固定を外す
 -- - 決着したら、勝ち負けによらず出撃して残っている全員（Progress.remaining）に、そのとき使っているキャラクターの巻物を渡し
 --   （TokugiService.awardMakimono）、渡したキャラクターと数を StageResult のメンバーごとに書く
+-- - 決着したら、同じ人に、撃破数・制圧数・救援数から系統ごとの熟練度を足し（JukurendoService.award）、
+--   制圧数・救援数・足した熟練度・新しく覚えた秘計を StageResult のメンバーごとに書く
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、ストーリー以外の選択を外して全員をロビーへ戻す
 -- - リザルトのフェーズでリーダーが Remotes.Retry を送ると、ステージと選択を残して全員をロビーへ戻す。
 --   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらストーリーとステージを判定し直す）
@@ -45,6 +47,7 @@ local SkipVote = require(ReplicatedStorage.Shared.SkipVote)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local JukurendoService = require(script.Parent.JukurendoService)
 local KukakuService = require(script.Parent.KukakuService)
 local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -434,7 +437,8 @@ local function recordClear(
 	return ProgressService.recordClear(players, current.stageId)
 end
 
--- 勝敗を決めて終了のイベントシーンへ進める。勝ったら出撃して残っている全員にクリアを記録し、勝ち負けによらず巻物を渡す。
+-- 勝敗を決めて終了のイベントシーンへ進める。勝ったら出撃して残っている全員にクリアを記録し、
+-- 勝ち負けによらず巻物を渡して熟練度を足す。
 -- StageResult は決着の時点で作り、終了のイベントシーンの後に出撃して残っているメンバーへ送る。戦闘のフェーズでなければ false
 function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason): boolean
 	local current = session
@@ -445,8 +449,10 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	current.elapsed = elapsed
 	local participants = participantsOf(current)
 	local newlyUnlocked = recordClear(current, participants, victory)
-	-- 巻物は勝ち負けによらず、出撃して残っている全員に渡す
-	local awards = TokugiService.awardMakimono(playersOf(current, Progress.remaining(participants)), victory)
+	-- 巻物と熟練度は勝ち負けによらず、出撃して残っている全員に渡す
+	local remaining = playersOf(current, Progress.remaining(participants))
+	local awards = TokugiService.awardMakimono(remaining, victory)
+	local jukurendoAwards = JukurendoService.award(remaining)
 	local members = StageService.getMembers()
 	local result: RemoteSchema.StageResult = {
 		victory = victory,
@@ -456,13 +462,18 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	}
 	for _, member in members do
 		local award = awards[member]
+		local jukurendo = jukurendoAwards[member]
 		table.insert(result.members, {
 			userId = member.UserId,
 			name = member.Name,
 			gekihasu = member:GetAttribute("Gekihasu") :: number? or 0,
+			seiatsusu = member:GetAttribute("Seiatsusu") :: number? or 0,
+			kyuensu = member:GetAttribute("Kyuensu") :: number? or 0,
 			newlyUnlocked = newlyUnlocked[member] or {},
 			character = if award then award.characterId else PlayerService.getCharacterId(member),
 			makimono = if award then award.makimono else 0,
+			jukurendo = if jukurendo then jukurendo.jukurendo else {},
+			newlyLearned = if jukurendo then jukurendo.newlyLearned else {},
 		})
 	end
 	current.result = result

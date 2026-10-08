@@ -27,6 +27,10 @@
 --   中心（Position。Vector2 の X と Y にワールドの X と Z）・範囲の大きさ（Size。Vector2 の X と Y に大きさの X と Z）・
 --   範囲の向き（Yaw。北から時計回りの度）・
 --   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
+-- - 味方軍が制圧したら、範囲の中にいた倒れていない出撃メンバーの制圧数を足す（PlayerService.addSeiatsusu）
+-- - 救援が要る味方軍の拠点（耐久が減り、攻める軍が範囲の中にいる拠点。Hoshin.needsKyuen）の範囲の中で、
+--   プレイヤーが敵軍の下忍（仮の湧き処理の敵。EnemyService.gekiha）・上忍・首領（JoninService.defeated）を倒したら、
+--   倒したプレイヤーの救援数を足す（PlayerService.addKyuensu）
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 耐久を書き換える前（制圧の前）に、addTaikyuListener で登録した関数を呼ぶ（秘計の爆破罠）
 -- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
@@ -41,6 +45,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Haichi = require(ReplicatedStorage.Shared.Haichi)
+local Hoshin = require(ReplicatedStorage.Shared.Hoshin)
 local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local Minimap = require(ReplicatedStorage.Shared.Minimap)
@@ -49,6 +54,8 @@ local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local EnemyService = require(script.Parent.EnemyService)
 local HaichiService = require(script.Parent.HaichiService)
+local JoninService = require(script.Parent.JoninService)
+local PlayerService = require(script.Parent.PlayerService)
 local ShikiService = require(script.Parent.ShikiService)
 local StageService = require(script.Parent.StageService)
 
@@ -67,6 +74,9 @@ KyotenService.FOLDER = "Kyoten"
 -- 確認用の板の厚みと、名札を出す高さ（スタッド）
 local MARKER_THICKNESS = 1
 local LABEL_HEIGHT = 12
+
+-- 出撃したプレイヤーの軍
+local PLAYER_GUN: Gun.Gun = "Mikatagun"
 
 -- 配置の順の拠点
 local entries: { Entry } = {}
@@ -299,6 +309,20 @@ local function shubiHeisuOf(entry: Entry): number
 	return total
 end
 
+-- 範囲の中にいる、倒れていない出撃メンバー
+local function membersIn(entry: Entry): { Player }
+	local result = {}
+	for _, member in StageService.getMembers() do
+		local character = member.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if humanoid and root and humanoid.Health > 0 and contains(entry, root.Position.X, root.Position.Z) then
+			table.insert(result, member)
+		end
+	end
+	return result
+end
+
 -- 範囲の中にいる攻める軍の数。相手の軍の部隊と、敵軍の拠点では生きている出撃したプレイヤー
 local function kogekiCountOf(entry: Entry): number
 	local count = 0
@@ -308,17 +332,34 @@ local function kogekiCountOf(entry: Entry): number
 			count += 1
 		end
 	end
-	if entry.state.gun == "Tekigun" then
-		for _, member in StageService.getMembers() do
-			local character = member.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-			if humanoid and root and humanoid.Health > 0 and contains(entry, root.Position.X, root.Position.Z) then
-				count += 1
-			end
-		end
+	if entry.state.gun == Gun.opponentOf(PLAYER_GUN) then
+		count += #membersIn(entry)
 	end
 	return count
+end
+
+-- 拠点の軍から見て救援が要る拠点か（耐久が減り、攻める軍が範囲の中にいる。Hoshin.needsKyuen）
+local function needsKyuen(entry: Entry): boolean
+	local state = entry.state
+	return Hoshin.needsKyuen({
+		gun = state.gun,
+		taikyuRate = state.taikyu / Kyoten.maxTaikyu(state.honjin),
+		kogeki = kogekiCountOf(entry) > 0,
+	}, state.gun)
+end
+
+-- 救援が要る味方軍の拠点の範囲の中で、プレイヤーが敵軍の下忍・上忍・首領を倒したら、倒したプレイヤーの救援数を足す。
+-- gun は倒れた敵の軍、(x, z) は倒れた位置
+local function creditKyuen(attacker: Player?, gun: Gun.Gun, x: number, z: number)
+	if not attacker or not attacker.Parent or gun ~= Gun.opponentOf(PLAYER_GUN) then
+		return
+	end
+	for _, entry in entries do
+		if entry.state.gun == PLAYER_GUN and contains(entry, x, z) and needsKyuen(entry) then
+			PlayerService.addKyuensu(attacker)
+			return
+		end
+	end
 end
 
 -- 範囲の中にいる攻める軍の数（相手の軍の部隊と、敵軍の拠点では生きている出撃したプレイヤー）。拠点が無ければ 0
@@ -373,7 +414,7 @@ local function hoju(entry: Entry)
 end
 
 -- 制圧した後の片付け。範囲の中にいた元の軍の部隊を敗走させて（消して）、補充をやり直し、
--- 拠点の陥落を士気と seiatsu で知らせる
+-- 味方軍の制圧なら範囲の中にいた出撃メンバーの制圧数を足して、拠点の陥落を士気と seiatsu で知らせる
 local function afterSeiatsu(entry: Entry, previous: Gun.Gun)
 	for _, butai in ButaiService.list() do
 		if butai.gun == previous and presentIn(entry, butai) then
@@ -382,6 +423,12 @@ local function afterSeiatsu(entry: Entry, previous: Gun.Gun)
 	end
 	hojuButai[entry.state.id] = nil
 	hojuElapsed[entry.state.id] = 0
+	-- 味方軍が制圧したら、範囲の中にいた出撃メンバーの制圧数を足す（決着の判定より先に数える）
+	if entry.state.gun == PLAYER_GUN then
+		for _, member in membersIn(entry) do
+			PlayerService.addSeiatsusu(member)
+		end
+	end
 	local center = entry.cframe.Position
 	ShikiService.notify("KyotenKanraku", { x = center.X, z = center.Z }, entry.state.gun)
 	seiatsuEvent:Fire(entry.state.id, entry.state.gun, previous)
@@ -468,10 +515,20 @@ local function onHeisuLost(_id: string, gun: Gun.Gun, loss: number, position: Bu
 	onGeninLost(gun, loss, position.x, position.z)
 end
 
--- 仮の湧き処理の下忍の撃破。部隊に属さないので、兵数の減少とは別に数える（#76 で外す）
-local function onGekiha(kind: string, gun: Gun.Gun, position: Vector3)
+-- 仮の湧き処理の下忍の撃破。部隊に属さないので、兵数の減少とは別に数える（#76 で外す）。
+-- 救援が要る味方軍の拠点の中で倒した下忍と上忍は、倒したプレイヤーの救援数に数える
+local function onGekiha(kind: string, gun: Gun.Gun, position: Vector3, attacker: Player?)
+	creditKyuen(attacker, gun, position.X, position.Z)
 	if kind == "Genin" then
 		onGeninLost(gun, 1, position.X, position.Z)
+	end
+end
+
+-- 上忍と首領が倒れたら、救援が要る味方軍の拠点の中なら、倒したプレイヤーの救援数に数える
+local function onJoninDefeated(id: string, attacker: Player?)
+	local jonin = JoninService.get(id)
+	if jonin then
+		creditKyuen(attacker, jonin.gun, jonin.position.x, jonin.position.z)
 	end
 end
 
@@ -558,6 +615,8 @@ local function describe(entry: Entry): { [string]: any }
 		hojuButai = hojuTargetOf(entry),
 		hojuIn = round(math.max(Config.Kyoten.HojuInterval - (hojuElapsed[state.id] or 0), 0)),
 		kogeki = kogekiCountOf(entry),
+		-- 拠点の軍から見て救援が要る拠点か（味方軍の拠点なら、中で倒した敵はプレイヤーの救援数に数える）
+		kyuen = needsKyuen(entry),
 		koritsu = (koritsuOf(state.id)),
 	}
 end
@@ -566,7 +625,7 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpKyoten",
 		"",
-		"拠点の一覧（軍・耐久・範囲・守備の部隊）を JSON で返す",
+		"拠点の一覧（軍・耐久・範囲・守備の部隊・救援が要るか）を JSON で返す",
 		function()
 			local result = {}
 			for _, entry in entries do
@@ -671,6 +730,7 @@ function KyotenService.start()
 	end)
 	ButaiService.heisuLost:Connect(onHeisuLost)
 	EnemyService.gekiha:Connect(onGekiha)
+	JoninService.defeated:Connect(onJoninDefeated)
 	registerDebugCommands()
 
 	task.spawn(function()

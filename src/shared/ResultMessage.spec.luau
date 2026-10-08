@@ -16,11 +16,26 @@ local function result(): any
 				userId = 1,
 				name = "yhei_hei",
 				gekihasu = 120,
+				seiatsusu = 1,
+				kyuensu = 3,
 				newlyUnlocked = { "Iga1" },
 				character = "Jin",
 				makimono = 4,
+				jukurendo = { Buyu = 12, Chiryaku = 10, Kenro = 3 },
+				newlyLearned = { "Daikatsu" },
 			},
-			{ userId = 2, name = "Player2", gekihasu = 0, newlyUnlocked = {}, character = "Torika", makimono = 0 },
+			{
+				userId = 2,
+				name = "Player2",
+				gekihasu = 0,
+				seiatsusu = 0,
+				kyuensu = 0,
+				newlyUnlocked = {},
+				character = "Torika",
+				makimono = 0,
+				jukurendo = {},
+				newlyLearned = {},
+			},
 		},
 	}
 end
@@ -83,6 +98,21 @@ test(
 	end
 )
 
+test(
+	"上がった熟練度は系統の名前と数、上げた戦い方の数で書き、表に無い系統は ID のまま数を省く",
+	function()
+		expect(ResultMessage.jukurendoOf("Buyu", 12, 120)).toBe("武勇の熟練度　+12（撃破数 120）")
+		expect(ResultMessage.jukurendoOf("Chiryaku", 10, 1)).toBe("知略の熟練度　+10（制圧数 1）")
+		expect(ResultMessage.jukurendoOf("Kenro", 0, 0)).toBe("堅牢の熟練度　+0（救援数 0）")
+		expect(ResultMessage.jukurendoOf("Nowhere", 2, 5)).toBe("Nowhereの熟練度　+2")
+	end
+)
+
+test("新しく覚えた秘計は表示名で書き、定義に無い秘計は ID のまま書く", function()
+	expect(ResultMessage.hikeiName("Daikatsu")).toBe("大喝")
+	expect(ResultMessage.hikeiName("Nowhere")).toBe("Nowhere")
+end)
+
 test("待ちの文はリーダーの名前を入れ、名前が分からなければ省く", function()
 	expect(ResultMessage.waitingFor("yhei_hei")).toBe("リーダーの yhei_hei が次の行動を選んでいます")
 	expect(ResultMessage.waitingFor(nil)).toBe("リーダーが次の行動を選んでいます")
@@ -125,4 +155,28 @@ test("形の違う結果は受け付けない", function()
 	local noCharacter = result()
 	noCharacter.members[2].character = nil
 	expect(ResultMessage.isResult(noCharacter)).toBe(false)
+end)
+
+test("制圧数・救援数・熟練度・覚えた秘計の形が違う結果は受け付けない", function()
+	local noSeiatsusu = result()
+	noSeiatsusu.members[1].seiatsusu = nil
+	expect(ResultMessage.isResult(noSeiatsusu)).toBe(false)
+	local textKyuensu = result()
+	textKyuensu.members[2].kyuensu = "3"
+	expect(ResultMessage.isResult(textKyuensu)).toBe(false)
+	local noJukurendo = result()
+	noJukurendo.members[1].jukurendo = nil
+	expect(ResultMessage.isResult(noJukurendo)).toBe(false)
+	local textJukurendo = result()
+	textJukurendo.members[1].jukurendo = { Buyu = "12" }
+	expect(ResultMessage.isResult(textJukurendo)).toBe(false)
+	local numberKey = result()
+	numberKey.members[1].jukurendo = { 12 }
+	expect(ResultMessage.isResult(numberKey)).toBe(false)
+	local noLearned = result()
+	noLearned.members[2].newlyLearned = nil
+	expect(ResultMessage.isResult(noLearned)).toBe(false)
+	local numberLearned = result()
+	numberLearned.members[1].newlyLearned = { 1 }
+	expect(ResultMessage.isResult(numberLearned)).toBe(false)
 end)
