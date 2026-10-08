@@ -68,6 +68,9 @@
         },
         "JukurendoState": {
           "$className": "RemoteEvent"
+        },
+        "ReportCameraView": {
+          "$className": "RemoteEvent"
         }
       }
     },

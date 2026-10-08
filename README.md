@@ -142,7 +142,7 @@ src/
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
     PlayerStore  プレイヤーごとの記録を DataStore に保存する共通の部品（読み込みのやり直し、変更を保存済みの記録に当てて書く UpdateAsync、退室時と BindToClose の保存、DataStore を使えないときのメモリ）。特技と秘計の熟練度の記録が使う
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / JukurendoService / SelectionService / TokugiService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / JoninKotaiService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService / ChohatsuService / HikeiHandanService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / JukurendoService / SelectionService / TokugiService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / JoninKotaiService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / CameraViewService / EnemyService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService / ChohatsuService / HikeiHandanService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -173,6 +173,7 @@ src/
       HikeiHandanService  秘計の判断。敵軍の上忍と首領が、戦場の様子を見て持ち込んだ秘計を使う（味方軍は使わない）
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
+      CameraViewService  クライアントが送るカメラ（視界）の検証と保持。下忍を出撃メンバーの視界の外に出すために引く
       CombatService  攻撃の中身と当たり判定
     Combat/    当たり判定・攻撃を受けた個体の反応（Hanno）・仮エフェクト
   client/   StarterPlayerScripts.Client 入力・HUD・モーションの再生・画面・BGM
@@ -194,6 +195,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - プレイヤーへのダメージは DamageService.damage（攻撃元の位置・威力・反応の種類）を通す。無敵・防御の軽減・のけぞりとダウン・奥義ゲージの増加はそこで決まる
 - 行動の種類と引数の検証は `src/shared/Actions.luau` にあり、不正な値はサーバーが捨てる
 - 敵（仮の湧き処理の下忍と上忍）と、両軍の上忍・首領の個体は、体ではプレイヤーにもほかの個体にもぶつからない（`src/server/CollisionGroups.luau` の衝突のグループ。敵軍は Enemy、味方軍は Mikatagun）。敵は近づいて攻撃するだけである。敵が上に積み重なってプレイヤーが動けなくなるのを防ぐ。重ならないよう、敵はプレイヤーの手前（`Config.luau` の Spawner 節の `PlayerGap`）で止まり、ほかの敵とも離れて囲む（立ち位置の計算は `src/shared/EnemySpacing.luau`）。攻撃の当たりは計算で決めるので影響しない
+- 仮の湧き処理の部隊は、出撃メンバーの視界の外にだけ出す。クライアントは戦闘の間、カメラの位置・向き・縦の画角・画面の横と縦の比を `Remotes.ReportCameraView` で送り（`src/client/Controllers/CameraViewController.luau`、間隔は `Config.luau` の CameraView 節の Interval）、サーバーの CameraViewService が検証して持つ（判定は `src/shared/CameraView.luau`）。型・有限の値・向きの長さ・画角と比の範囲が合わない値と、キャラクターから MaxDistance より遠いカメラは捨てる。最後に届いてから Stale 秒を過ぎたら、キャラクターの頭の高さから体の向きを見ているとみなす。部隊を出す位置の周りの半径 Margin が誰かの視界に少しでもかかれば、その位置は選ばない。どの位置もかかれば、その回の湧きを見送る。窓口の `DumpCameraView`・`CheckCameraView`・`LogSpawn` で確かめる
 - 仮の湧き処理の下忍は、狙うプレイヤーの攻撃トークン（計算は `src/shared/KogekiToken.luau`、数値は `Config.luau` の KogekiToken 節）を持つときだけ攻撃する。1人のプレイヤーの攻撃トークンは PerPlayer 個で、Range の内にいる下忍に近い順で渡す。持たない下忍は、攻撃する下忍より WaitGap だけ外で囲んで待つ。攻撃した下忍は攻撃トークンを返して Rest 秒休み、返した攻撃トークンは Interval 秒後に次の下忍へ渡る。倒れた下忍、吹き飛んで倒れている下忍、ほかのプレイヤーを狙った下忍、Range より離れた下忍も返す（すぐ次の下忍へ渡る）。受け取ってから MaxHold 秒たっても攻撃しない下忍は返して休む。攻撃する下忍は、待っている下忍を避けずに、Humanoid が目標の手前で止まる分（約 0.8 スタッド）だけ内側を目指し、攻撃が届く距離の内で止まる。上忍は攻撃トークンなしで攻撃する。窓口の `SpawnEnemies` で下忍を囲ませ、`DumpKogekiToken`・`LogKogekiToken`・`DefeatEnemy` と `DumpEnemies` の `token` で確かめる
 - 攻撃を受けた敵（仮の湧き処理の敵と、上忍・首領の個体）の反応は `src/server/Combat/Hanno.luau` が決める（数値は `Config.luau` の EnemyReaction 節）。吹き飛びと打ち上げは物理演算に任せず、技の吹き飛ばす強さ（`Knockback`）から決めた初速と重力の軌道（`src/shared/Trajectory.luau`）で、HumanoidRootPart を固定してフレームごとに動かす。空中で受けた攻撃は軌道をやり直し（追撃で浮き直す）、足が地面（`Ground.raycast`）に届いたら仰向けに倒れ（ダウン）、しばらくして起き上がる。飛んでいる間は前のフレームの位置から光線を当て、壁や天井に当たったら面へ向かう速さを消して、面に沿って滑らせる（壁や屋根を通り抜けない。当たり判定の無い部品には当てない）。急な面には着地せず、5 秒たっても着地できなければその場に倒れる。地上でののけぞりは短く止まるだけ。上忍は反応を弱める倍率で短く飛び、のけぞらない。窓口の `DumpEnemies` で受けた攻撃の数（`hits`）と反応の状態（`hanno`）を確かめる。`SetEnemyAI false` で敵の動きと攻撃を止めると、決めた位置の敵に技を当てて確かめられる
 - 奥義の中身は CombatService.registerOugi でキャラクター定義の `ougi` ごとに登録し、技（判定と時間）は `Config.luau` の Ougi 節の Timelines に置く。酉花の毒手裏剣は周りの12方向へ毒手裏剣を撒き、当てた敵を毒にする（`EnemyService.poison`、数値は `Config.luau` の Poison 節）。近くでは直線が重なるので、技の `HitOnce` で同じ時刻の判定を1体に1回だけ当てる。毒の間は間隔ごとにダメージを与え、とどめは酉花の撃破に数える。窓口の `DumpEnemies` の `poison`（毒の残り秒数）で確かめる。石舟斎の無刀取りは、周りを打ち上げてから高さのある円柱の判定で空中の敵を斬り続け（空中で当たるたびに浮き直す）、最後の一撃で吹き飛ばす。空中への斬撃の段数は Timelines.MutoDori の2つ目の判定の `Repeat` で、`DumpEnemies` の `hits` で数える。金鬼の金遁は、長い溜めの後、輪の判定（`HitShape` の Ring。内側と外側の半径の間に当たる）を内側から外へ広げて打ち上げ、最後の輪で周り全体を吹き飛ばす。`DumpEnemies` の `firstHitAgo`（最初に当たってからの秒数）で、内側の敵ほど先に当たったことを確かめる

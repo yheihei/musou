@@ -4,6 +4,7 @@
 -- 一定部隊ごとに上忍を混ぜる。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）敵を片付ける。
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 -- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
+-- 部隊は出撃メンバーの視界の外にだけ出す（視界は CameraViewService。どの位置も視界にかかれば、その回は見送る）。
 -- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
@@ -41,6 +42,7 @@ local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local CameraViewService = require(script.Parent.CameraViewService)
 local DamageService = require(script.Parent.DamageService)
 local KukakuService = require(script.Parent.KukakuService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -130,7 +132,9 @@ local lastCandidates: { [string]: { KogekiToken.Candidate } } = {}
 -- 攻撃トークンの受け渡しと攻撃を出力に出すか。窓口の LogKogekiToken で切り替える
 local logTokens = false
 -- 部隊を出す位置を区画の中から選ぶときに試す回数
-local BUTAI_CENTER_TRIES = 8
+local BUTAI_CENTER_TRIES = 16
+-- 部隊を出した位置と、視界の外に出せず見送ったことを出力に出すか。窓口の LogSpawn で切り替える
+local logSpawns = false
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
 local STAND_OFF_MARGIN = 0.5
 -- Humanoid:MoveTo は、止まった状態から歩かせると目標の手前（スタッド。Studio で測ると 0.7〜0.8）で止まる。
@@ -495,15 +499,23 @@ local function insideBounds(bounds: BasePart, position: Vector3): boolean
 	return Mejirushi.insideBounds(offset.X, offset.Z, bounds.Size.X, bounds.Size.Z)
 end
 
+local function logSpawn(message: string)
+	if logSpawns then
+		print(`[Spawner] {message}`)
+	end
+end
+
 -- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる。
--- 戦闘のフェーズで、区画の中にいるメンバーの周りの、区画の中の位置を選ぶ。選べなければ nil
+-- 戦闘のフェーズで、区画の中にいるメンバーの周りの、区画の中の位置を選ぶ。
+-- 出撃メンバーの誰かの視界にかかる位置は選ばない（CameraViewService）。選べなければ nil（次の湧きで選び直す）
 local function pickButaiCenter(): Vector2?
 	local bounds = battleBounds()
 	if not bounds then
 		return nil
 	end
+	local members = StageService.getMembers()
 	local candidates = {}
-	for _, member in StageService.getMembers() do
+	for _, member in members do
 		local root = member.Character and member.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if root and insideBounds(bounds, root.Position) then
 			table.insert(candidates, root.Position)
@@ -514,14 +526,28 @@ local function pickButaiCenter(): Vector2?
 	end
 
 	local base = candidates[math.random(1, #candidates)]
+	local seen = 0
 	for _ = 1, BUTAI_CENTER_TRIES do
 		local angle = math.random() * math.pi * 2
 		local distance = Config.Spawner.MinDistance
 			+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
 		local center = base + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 		if insideBounds(bounds, center) then
-			return Vector2.new(center.X, center.Z)
+			if not CameraViewService.seenByAny(members, center) then
+				logSpawn(
+					string.format(
+						"部隊を (%.0f, %.0f) に出した（出撃メンバーの視界の外）",
+						center.X,
+						center.Z
+					)
+				)
+				return Vector2.new(center.X, center.Z)
+			end
+			seen += 1
 		end
+	end
+	if seen > 0 then
+		logSpawn(`視界の外に出せる位置が無く、見送った（{seen} か所が視界にかかった）`)
 	end
 	return nil
 end
@@ -842,6 +868,16 @@ function EnemyService.start()
 				})
 			end
 			return HttpService:JSONEncode(result)
+		end
+	)
+
+	DebugCommand.register(
+		"LogSpawn",
+		"<true|false>",
+		"一定間隔の湧きで部隊を出した位置と、出撃メンバーの視界の外に出せず見送ったことを出力に出す（確認用）",
+		function(value)
+			logSpawns = value == true or value == "true"
+			return `湧きの記録を{if logSpawns then "出す" else "止めた"}`
 		end
 	)
 

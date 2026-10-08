@@ -1,5 +1,5 @@
 --!strict
--- ロビー・選択・特技・秘計の熟練度・イベントシーン・台詞・結果・秘計の知らせで使う Remote の引数の型と検証関数。
+-- ロビー・選択・特技・秘計の熟練度・イベントシーン・台詞・結果・秘計の知らせ・視界で使う Remote の引数の型と検証関数。
 -- RemoteEvent は default.project.json の ReplicatedStorage.Remotes に宣言する。
 -- ハンドラは各機能で実装する。ここは型と、クライアントから届く値の検証だけを持つ。
 --
@@ -21,6 +21,7 @@
 -- | NotifyHikei | S→C | HikeiNotice.Notice（秘計の発動・打ち消し・期限切れ・失敗） |
 -- | TokugiState | S→C | Tokugi.State（本人のキャラクターごとの巻物と覚えた特技） |
 -- | JukurendoState | S→C | Jukurendo.State（本人の系統ごとの熟練度と覚えた秘計） |
+-- | ReportCameraView | C→S | カメラの位置（Vector3）、向き（Vector3）、縦の画角（度）、画面の横と縦の比。検証は CameraView.validate |
 
 local Characters = require("./Characters")
 

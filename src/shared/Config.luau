@@ -226,6 +226,17 @@ export type KogekiTokenSection = {
 	WaitGap: number,
 }
 
+-- プレイヤーの視界。クライアントがカメラを送る間隔と、下忍を視界の外に出すときの判定
+export type CameraViewSection = {
+	Interval: number,
+	Stale: number,
+	Margin: number,
+	MaxDistance: number,
+	FallbackHeight: number,
+	FallbackFov: number,
+	FallbackAspect: number,
+}
+
 -- 実体化圏。プレイヤーの周りで、上忍と首領を個体として出す範囲と、個体の動き
 export type JittaikakenSection = {
 	AppearRadius: number,
@@ -518,6 +529,7 @@ export type Config = {
 	EnemyReaction: EnemyReactionSection,
 	Spawner: SpawnerSection,
 	KogekiToken: KogekiTokenSection,
+	CameraView: CameraViewSection,
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
@@ -1637,6 +1649,18 @@ local Config: Config = {
 		Rest = 2, -- 攻撃して攻撃トークンを返した下忍が、次に受け取れるまでの秒数
 		MaxHold = 4, -- 受け取ってからこの秒数たっても攻撃しない下忍は返す（のけぞらされ続けた、近づけない）
 		WaitGap = 5, -- 攻撃トークンを持たない下忍が囲んで待つ位置。攻撃する下忍が止まる位置より、この距離（スタッド）だけ外
+	},
+
+	-- プレイヤーの視界。クライアントがカメラの位置・向き・画角を送り、サーバーは下忍を出撃メンバーの視界の外に出す。
+	-- 判定は CameraView.luau にある
+	CameraView = {
+		Interval = 0.5, -- クライアントがカメラを送る間隔（秒）。サーバーはこれより短い間隔で届いた分を捨てる
+		Stale = 3, -- 最後に届いてからこの秒数を過ぎたカメラは使わず、キャラクターの向きで代える
+		Margin = 12, -- 下忍の部隊を出す位置の周りのこの半径（スタッド）が視界に少しでもかかれば、見えているとみなす
+		MaxDistance = 200, -- キャラクターからこの距離（スタッド）より遠いカメラは受け付けない
+		FallbackHeight = 2, -- カメラが届いていないときに見る位置の、キャラクターの中心からの高さ（スタッド）
+		FallbackFov = 70, -- カメラが届いていないときの縦の画角（度）
+		FallbackAspect = 1.78, -- カメラが届いていないときの画面の横と縦の比（16:9）
 	},
 
 	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）を個体として出し、全員のプレイヤーから離れたらデータに戻す。

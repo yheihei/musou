@@ -1000,6 +1000,15 @@ local SNAPSHOT = {
 		MaxHold = 4,
 		WaitGap = 5,
 	},
+	CameraView = {
+		Interval = 0.5,
+		Stale = 3,
+		Margin = 12,
+		MaxDistance = 200,
+		FallbackHeight = 2,
+		FallbackFov = 70,
+		FallbackAspect = 1.78,
+	},
 	Jittaikaken = {
 		AppearRadius = 120,
 		DisappearRadius = 160,
