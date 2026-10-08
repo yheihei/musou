@@ -6,6 +6,7 @@
 --
 -- - 顔は会話窓と同じ顔グラフィックの登録表から引く。登録の無い話者は顔の枠を出さない
 -- - 長い台詞は折り返し、枠に収まらなければ文字を小さくする
+-- - タッチの配置（スマホの戦闘の操作ボタンを出している間）では、画面の大きさに合わせて枠ごと縮める（Ui.fitTouchLayout）
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextService = game:GetService("TextService")
@@ -80,6 +81,7 @@ local function buildGui(): Gui
 	})
 	local screen = Ui.screenGui("BattleSerifu", Ui.Layer.BattleSerifu, { panel })
 	screen.Enabled = false
+	Ui.fitTouchLayout(panel)
 	return { screen = screen, face = face :: ImageLabel, name = name, text = text }
 end
 

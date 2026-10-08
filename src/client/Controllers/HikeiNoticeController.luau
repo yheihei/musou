@@ -9,6 +9,8 @@
 -- - 出しておけるのは MAX_NOTICES 件まで。超えたら古いものから消す
 -- - 入力を受け取らない表示だけなので、出している間も操作はそのまま
 -- - 発動の知らせ（どちらの軍の秘計でも）には、秘計の発動の効果音（HikeiHatsudo）を添える。ほかの知らせは鳴らさない
+-- - タッチの配置（スマホの戦闘の操作ボタンを出している間）では、画面の大きさに合わせて並びごと縮める（Ui.fitTouchLayout）。
+--   操作ボタンは並びの下に置く（ReplicatedStorage.Shared.TouchLayout）
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -126,6 +128,7 @@ function HikeiNoticeController.start()
 		}),
 	})
 	Ui.screenGui("HikeiNotice", Ui.Layer.HikeiNotice, { list })
+	Ui.fitTouchLayout(list)
 
 	local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("NotifyHikei") :: RemoteEvent
 	remote.OnClientEvent:Connect(function(notice: unknown)

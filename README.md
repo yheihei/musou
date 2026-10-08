@@ -5,18 +5,19 @@
 
 ## 遊び方
 
-PC とゲームパッドで遊ぶ。割り当ては `src/shared/InputMap.luau` の対応表にある。
+PC・ゲームパッド・スマホ（横画面）で遊ぶ。割り当ては `src/shared/InputMap.luau` の対応表にある（スマホの操作ボタンは `src/client/Controllers/TouchControlsController.luau`）。
 
-| 操作 | PC | ゲームパッド |
-|---|---|---|
-| 通常攻撃（長押しで連続）。最大 6 段コンボで、段の中身は武器種ごとに違う | 左クリック・Z | X |
-| チャージ攻撃。それまでの通常攻撃の段数で C1〜C6 に変わる | 右クリック・X・E | Y |
-| ジャンプ | Space | A |
-| ガード（ガード中に方向を入れると緊急回避） | Shift | L1 |
-| 奥義。奥義ゲージを1本使って出す（最大4本まで溜まる）。発動中は無敵。刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁がある | Q | B |
-| 秘計 | 1〜3 | 十字キーの左・上・右 |
+| 操作 | PC | ゲームパッド | スマホ |
+|---|---|---|---|
+| 通常攻撃（長押しで連続）。最大 6 段コンボで、段の中身は武器種ごとに違う | 左クリック・Z | X | 攻撃 |
+| チャージ攻撃。それまでの通常攻撃の段数で C1〜C6 に変わる | 右クリック・X・E | Y | チャージ |
+| ジャンプ | Space | A | 標準のジャンプボタン |
+| ガード（ガード中に方向を入れると緊急回避） | Shift | L1 | ガード（ガード中にサムスティックを倒すと緊急回避） |
+| 奥義。奥義ゲージを1本使って出す（最大4本まで溜まる）。発動中は無敵。刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁がある | Q | B | 奥義（右上の数がストックの本数） |
+| 秘計 | 1〜3 | 十字キーの左・上・右 | 左上の秘計の枚 |
 
 - 右ドラッグでカメラを回す。右クリックは、ドラッグせずに離したときだけチャージ攻撃になる
+- スマホでは、移動は Roblox 標準のサムスティック、ジャンプは標準のジャンプボタンを使う。操作ボタンは戦闘中だけ、右下（秘計の枚は左上）に出る
 - Studio のテストプレイでマウスのクリックがタッチとして届く環境では、Z と X で攻撃する
 - ガード中は動けず、向きも変わらない。正面からの攻撃は被ダメージ 0、背後と側面からは通常どおり受ける
 - 緊急回避はガード中に方向を入れた向きへ動き、動き出しは無敵。続けて出すほど後隙が伸びる
@@ -221,6 +222,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - 出撃前は、リーダーがストーリー（クラン）を選び、そのストーリーのステージを選ぶ（`SelectStory`・`SelectStage`）。選べるのはリーダーが開放したステージのあるストーリーだけで、判定は `src/shared/SelectionRules.luau` の `checkStory`。ステージを選ぶとストーリーもそのクランになり、別のストーリーを選ぶとステージの選択が外れる。窓口の `SelectStory <プレイヤー名> <クラン ID>` で確かめる
 - 勝ったら、出撃して残っている全員にクリアを記録し、新しく開放したステージを `StageResult` に載せる（対象は `src/shared/Progress.luau` の `clearTargets`）。リザルトでリーダーが `ReturnToLobby` を送るとストーリー以外の選択を外してロビーへ、`Retry` を送るとステージと選択を残してロビーへ戻る
 - ミニマップ（MinimapController）は、戦闘のフェーズの出撃メンバーにだけ、画面の右上（戦況の表示の下）に出撃したステージの区画を北を上にして出す（出す条件は戦況の表示と同じ）。出している間は Roblox 標準のプレイヤー一覧を消す。支配エリア（軍の色の薄い円）、兵站線（入っている兵站線の軍の色の線。どちらにも入っていなければ灰色、塞がれたつながりは薄く）、拠点と本陣（軍の色。本陣は「本」、兵糧庫は「糧」、孤立した拠点は薄く「孤」）、部隊（軍の色の点。交戦中は黄色い縁、潜んでいる伏兵部隊は味方軍のものだけ薄く）、上忍と首領（軍の色の丸に頭文字。`Characters.initialOf`）、自分（黄色）と仲間（白）の位置と向き（針付きの丸）を描く。戦場の様子は `ReplicatedStorage` の ShihaiArea・Tsunagari・Kyoten・Butai・Jonin の Attribute から読み、部隊は下忍の個体を見ずに部隊のデータから描く。つながりの経由点は Tsunagari の Attribute（`KeiyutenCount`・`Keiyuten1`…）で複製する。範囲は workspace の Attribute（`MinimapCenter`・`MinimapSize`）、仲間の位置と向きは Player の Attribute（`MinimapPosition`・`MinimapFacing`）から読む。StreamingEnabled のため、どちらもサーバーの MinimapService が書く。描き直す間隔は `Config.luau` の Minimap 節、計算は `src/shared/Minimap.luau`、大きさと位置は `Ui.Minimap`。範囲は区画の範囲の目印を囲むワールドの軸にそろえた四角で、拠点は目印の向き（拠点の Attribute の `Yaw`）に回して描く。秘計の知らせはミニマップの左に積む
+- スマホ横画面の戦闘の操作ボタン（TouchControlsController）は、タッチで遊んでいる人のうち戦闘のフェーズの出撃メンバーにだけ出す（出す条件は戦況の表示と同じ。判断は `src/shared/TouchControls.luau`）。タッチで遊んでいるかは `UserInputService.PreferredInput`（使えなければ最後の入力の種類）で決め、キーボードとマウスやゲームパッドに切り替えたら消す。Studio のテストプレイでは、マウスのクリックがタッチとして届く環境があるので、キーボードが使えるときはタッチとみなさない。押した入力は InputController の行動の入口（キーとゲームパッドと同じ関数）を通し、Remotes.Action だけを送る。ジャンプは標準のジャンプボタンで、ガード中にサムスティックを倒すと緊急回避になる（PC と同じく `Humanoid.MoveDirection` から判定する）。出している間は戦闘の画面をタッチの配置にする（`Ui.setTouchLayout`）。戦闘の画面を、縮める前の大きさが `Config.luau` の TouchControls 節の DesignWidth x DesignHeight 以上になる倍率で縮め、HUD の秘計の枚と操作の案内を隠して撃破数を左上へ移す。ボタンの配置は `src/shared/TouchLayout.luau` が、標準のジャンプボタン・標準のサムスティックの範囲・ほかの戦闘の画面の部品を避けて決める（ほかの部品の位置は各コントローラーの定数を写している）。画面は横向きに固定する。窓口の `SetTouchControls <プレイヤー名> <on|off|auto>` で出すかを強制し（Player の Attribute の `TouchControls`）、`DumpAction <プレイヤー名>` でサーバーが受け取った行動を確かめる。ボタンは PlayerGui.TouchControls の Attack・ChargeKogeki・Guard・Ougi・Hikei1〜3 で読める
 - リザルト画面（ResultController）は、`StageResult` を受けた人にだけ、勝敗と理由・経過時間・全員の撃破数・本人が得た巻物・本人が開放したステージを出す。`Retry` と `ReturnToLobby` のボタンはリーダーにだけ出し、ほかの人には待ちの文を出す。文は `src/shared/ResultMessage.luau` にある。窓口の `SendStageResult Iga1` で、開放したステージを差し替えた結果を送り直して確かめる
 - 進行は DataStore に UserId ごとに保存し、保存済みの記録と和集合にして書く（計算は `src/shared/Progress.luau`）。Studio のテストプレイは本番と別の DataStore（`ProgressStudio`）を使う。DataStore を使えないとき（Studio から API サービスへのアクセスを許していないときなど）は、警告を出してサーバーのメモリにだけ保存する
 - 特技ツリーによる成長は TokugiService が持つ（計算は `src/shared/Tokugi.luau`、ツリーの形と値と巻物の数は `Config.luau` の Tokugi 節、特技の名前は `Tokugi.names`）。記録はプレイヤーごと・キャラクターごとの、得た巻物の合計と覚えた特技（どちらも増えるだけ）で、使える巻物は合計から覚えた特技の巻物の数を引いて求める。進行とは別の DataStore（Studio は `TokugiStudio`）に、共通の部品 `src/server/PlayerStore.luau` で保存する。PlayerStore は記録の変更（巻物を得た・特技を覚えた）を溜め、UpdateAsync で保存済みの記録に当てて書くので、読み込みに失敗したまま保存しても記録は消えない。DataStore を使えないときはメモリにだけ保存する。特技は、出撃前の画面の特技の欄から開く特技ツリーの画面（`src/client/Selection/TokugiWindow.luau`）で押して覚える（`Remotes.LearnTokugi`）。覚えられるのはロビーのフェーズで、記録を読めた後、まだ覚えておらず、前提を覚えていて、巻物が足りる特技だけ（`Tokugi.checkLearn`）。拒否の理由は `SelectionRejected` で返す。本人の記録は `TokugiState` で本人にだけ送る（クライアントは `src/client/TokugiClient.luau` で持つ）。出撃するときに StageService が、使うキャラクターの覚えた特技の補正を固定し（`TokugiService.lock`。体力の最大は出現したときに当てるので、出現し直させる前に呼ぶ）、`PlayerService.addModifierProvider` で能力値に足す。ロビーのフェーズに戻ると固定を外す。決着したときは、勝ち負けによらず出撃して残っている全員（`Progress.remaining`）に、そのとき使っているキャラクターの巻物（撃破数に応じた数と、勝ちなら上乗せ。`Tokugi.makimonoFor`）を渡し、`StageResult` のメンバーごとの `character`・`makimono` に書いてリザルトに出す。試験用ステージでも渡す。窓口の `AddMakimono`・`LearnTokugi`・`DumpTokugi`・`ResetTokugi` と、能力値の `DumpPlayerStats` で確かめる

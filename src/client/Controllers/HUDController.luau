@@ -9,6 +9,9 @@
 --   持ち込みが無いときは出さない
 -- - 体力のゲージの上に操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える（秘計の枚のボタンも）
 -- - イベントシーンの再生中は setVisible で隠す
+-- - タッチの配置（スマホの戦闘の操作ボタンを出している間。Ui.touchLayout）では、右下を操作ボタンに空けるため、
+--   操作の案内と秘計の枚を隠し（秘計の枚はタッチの操作ボタンが名前と使用済みを出す）、撃破数を左上
+--   （ReplicatedStorage.Shared.TouchLayout の gekihasuOf）へ移して左に寄せる。体力と奥義ゲージの枠と撃破数は、画面の大きさに合わせて縮める
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -18,6 +21,7 @@ local TweenService = game:GetService("TweenService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local InputMap = require(ReplicatedStorage.Shared.InputMap)
+local TouchLayout = require(ReplicatedStorage.Shared.TouchLayout)
 local Ui = require(script.Parent.Parent.Ui)
 
 local HUDController = {}
@@ -106,6 +110,8 @@ type Gui = {
 	gaugeFill: Frame,
 	pips: { Frame },
 	gekihasu: TextLabel,
+	-- 撃破数の見出しと数（タッチの配置で寄せる向きを変える）
+	gekihasuLabels: { TextLabel },
 	hint: TextLabel,
 	hikeiRow: Frame,
 	hikeiSlots: { HikeiSlot },
@@ -256,42 +262,47 @@ local function buildGui(): Gui
 		Text = hintText(),
 	})
 
+	local gekihasuTitle = label({
+		Name = "Title",
+		Size = UDim2.new(1, 0, 0, 22),
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextColor3 = Ui.Color.Accent,
+		Text = "撃破数",
+	})
+	local gekihasuCount = label({
+		Name = "Count",
+		Position = UDim2.fromOffset(0, 20),
+		Size = UDim2.new(1, 0, 0, 52),
+		Font = Ui.Font.Heavy,
+		TextSize = Ui.TextSize.Huge,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		TextStrokeTransparency = 0.3,
+		Text = "0",
+	})
 	local gekihasu = Ui.create("Frame", {
 		Name = "Gekihasu",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -MARGIN, 1, -MARGIN),
 		Size = UDim2.fromOffset(240, GEKIHASU_HEIGHT),
 		BackgroundTransparency = 1,
-	}, {
-		label({
-			Name = "Title",
-			Size = UDim2.new(1, 0, 0, 22),
-			TextXAlignment = Enum.TextXAlignment.Right,
-			TextColor3 = Ui.Color.Accent,
-			Text = "撃破数",
-		}),
-		label({
-			Name = "Count",
-			Position = UDim2.fromOffset(0, 20),
-			Size = UDim2.new(1, 0, 0, 52),
-			Font = Ui.Font.Heavy,
-			TextSize = Ui.TextSize.Huge,
-			TextXAlignment = Enum.TextXAlignment.Right,
-			TextStrokeTransparency = 0.3,
-			Text = "0",
-		}),
-	})
+	}, { gekihasuTitle, gekihasuCount })
 
 	local hikeiRow, hikeiSlots = buildHikeiRow()
 
 	screen = Ui.screenGui("HUD", Ui.Layer.Hud, { panel, hint, gekihasu, hikeiRow })
+
+	-- タッチの配置では、体力と奥義ゲージの枠を縮め、撃破数を左上へ移す
+	Ui.fitTouchLayout(panel)
+	local touchGekihasu = TouchLayout.gekihasuOf()
+	Ui.fitTouchLayout(gekihasu, UDim2.fromOffset(touchGekihasu.x, touchGekihasu.y), Vector2.zero)
 
 	return {
 		healthFill = healthFill,
 		healthText = healthText,
 		gaugeFill = gaugeFill,
 		pips = pips,
-		gekihasu = gekihasu:FindFirstChild("Count") :: TextLabel,
+		gekihasu = gekihasuCount,
+		gekihasuLabels = { gekihasuTitle, gekihasuCount },
 		hint = hint,
 		hikeiRow = hikeiRow,
 		hikeiSlots = hikeiSlots,
@@ -340,11 +351,12 @@ function HUDController.start()
 		end
 	end
 
-	-- 持ち込んだ秘計の枚に、名前と切るボタンを出す。使用済みの枚は暗くする
+	-- 持ち込んだ秘計の枚に、名前と切るボタンを出す。使用済みの枚は暗くする。
+	-- タッチの配置では、タッチの操作ボタンが枚を出すので隠す
 	local function refreshHikei()
 		local mochikomi = Hikei.decodeList(player:GetAttribute(Hikei.MOCHIKOMI_ATTRIBUTE))
 		local used = Hikei.decodeList(player:GetAttribute(Hikei.USED_ATTRIBUTE))
-		gui.hikeiRow.Visible = #mochikomi > 0
+		gui.hikeiRow.Visible = #mochikomi > 0 and not Ui.touchLayout().active
 		for slot, view in gui.hikeiSlots do
 			local id = mochikomi[slot]
 			local definition = if id then Hikei.get(id) else nil
@@ -391,13 +403,24 @@ function HUDController.start()
 	if player.Character then
 		task.spawn(watchHealth, player.Character)
 	end
+	-- タッチの配置では操作の案内を隠し、左上へ移した撃破数を左に寄せる（枠の位置と縮めるのは Ui.fitTouchLayout）
+	local function applyTouchLayout(layout: Ui.TouchLayout)
+		gui.hint.Visible = not layout.active
+		local alignment = if layout.active then Enum.TextXAlignment.Left else Enum.TextXAlignment.Right
+		for _, gekihasuLabel in gui.gekihasuLabels do
+			gekihasuLabel.TextXAlignment = alignment
+		end
+		refreshHikei()
+	end
+
 	Ui.onInputKindChanged(function()
 		gui.hint.Text = hintText()
 		refreshHikei()
 	end)
+	Ui.onTouchLayoutChanged(applyTouchLayout)
 	refreshGekihasu()
 	refreshOugi()
-	refreshHikei()
+	applyTouchLayout(Ui.touchLayout())
 end
 
 return HUDController

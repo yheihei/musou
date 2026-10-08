@@ -1,7 +1,7 @@
 --!strict
 -- 画面の共通部品。Instance の生成、書体と文字の大きさ、画面の配色、ボタン、
 -- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ゲームパッドやキーの操作で選んでいる部品の移動、
--- ScreenGui の重なり順をまとめる。
+-- ScreenGui の重なり順、タッチの配置をまとめる。
 -- 軍・クラン・キャラクターの色は ReplicatedStorage.Shared.Colors に置く。
 
 local GuiService = game:GetService("GuiService")
@@ -13,6 +13,7 @@ local Ui = {}
 -- ScreenGui の重なり順（DisplayOrder）。後に書いたものほど上に重なる
 Ui.Layer = {
 	Hud = 10,
+	TouchControls = 12,
 	BattleStatus = 15,
 	Minimap = 20,
 	BattleSerifu = 30,
@@ -274,6 +275,60 @@ function Ui.label(labels: Labels, kind: InputKind?): string
 		return labels.Touch or labels.Keyboard
 	end
 	return labels.Keyboard
+end
+
+-- タッチの配置。タッチの操作ボタンを出している間（TouchControlsController が決める）は、戦闘の画面を
+-- 同じ倍率で縮め、縮める前の大きさの画面に置いたように並べる（計算は ReplicatedStorage.Shared.TouchLayout）
+export type TouchLayout = {
+	-- タッチの操作ボタンを出しているか
+	active: boolean,
+	-- 戦闘の画面を縮める倍率。出していないときは 1
+	scale: number,
+}
+
+local touchLayout: TouchLayout = { active = false, scale = 1 }
+local touchLayoutChanged = Instance.new("BindableEvent")
+
+-- 今のタッチの配置
+function Ui.touchLayout(): TouchLayout
+	return touchLayout
+end
+
+-- タッチの配置を切り替える。TouchControlsController だけが呼ぶ
+function Ui.setTouchLayout(active: boolean, scale: number)
+	local nextScale = if active then scale else 1
+	if active == touchLayout.active and nextScale == touchLayout.scale then
+		return
+	end
+	touchLayout = { active = active, scale = nextScale }
+	touchLayoutChanged:Fire()
+end
+
+-- タッチの配置が変わったときに呼ぶ
+function Ui.onTouchLayoutChanged(callback: (TouchLayout) -> ()): RBXScriptConnection
+	return touchLayoutChanged.Event:Connect(function()
+		callback(touchLayout)
+	end)
+end
+
+-- 戦闘の画面の部品（ScreenGui の直下の Frame）をタッチの配置に合わせる。タッチの配置の間は、部品を倍率で縮め（UIScale）、
+-- 位置の Offset も同じ倍率で縮める（縮める前の大きさの画面に置いた位置になる）。大きさは Offset で決めた部品にだけ使う。
+-- touchPosition と touchAnchor を渡すと、タッチの配置の間はその位置（縮める前の値）と AnchorPoint に移す。
+-- 元の位置と AnchorPoint は、呼んだときの値を覚えておき、タッチの配置をやめたら戻す
+function Ui.fitTouchLayout(object: GuiObject, touchPosition: UDim2?, touchAnchor: Vector2?)
+	local basePosition = object.Position
+	local baseAnchor = object.AnchorPoint
+	local scaler = Ui.create("UIScale", { Name = "TouchScale", Parent = object }) :: UIScale
+	local function apply(layout: TouchLayout)
+		local position = if layout.active and touchPosition then touchPosition else basePosition
+		local scale = if layout.active then layout.scale else 1
+		scaler.Scale = scale
+		object.AnchorPoint = if layout.active and touchAnchor then touchAnchor else baseAnchor
+		object.Position =
+			UDim2.new(position.X.Scale, position.X.Offset * scale, position.Y.Scale, position.Y.Offset * scale)
+	end
+	Ui.onTouchLayoutChanged(apply)
+	apply(touchLayout)
 end
 
 return Ui

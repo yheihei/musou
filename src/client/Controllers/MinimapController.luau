@@ -18,6 +18,7 @@
 --   ロビー・イベントシーン・リザルトのフェーズと、待機中の人と、イベントシーンの再生中には出さない
 -- - 画面上部の戦況の下に置く（Ui.Minimap）。出している間は、右上に重なる Roblox 標準のプレイヤー一覧を消し、
 --   隠したら戻す。隠すときに描いた中身を片付け、次のステージで前の見た目を使い回さない
+-- - タッチの配置（スマホの戦闘の操作ボタンを出している間）では、画面の大きさに合わせて枠ごと縮める（Ui.fitTouchLayout）
 -- - 背景は単色で、区画の範囲を少し明るい色で塗る。北の印を上端に出す
 -- - 支配エリアは軍の色の薄い円で塗る。兵站線が切れて孤立した拠点の円は消える（支配エリアが縮む）
 -- - つながりは経由点をたどる線で、入っている兵站線の軍の色、どちらにも入っていなければ灰色で引く。
@@ -566,6 +567,7 @@ local function buildGui(): Gui
 	})
 	local screen = Ui.screenGui("Minimap", Ui.Layer.Minimap, { panel })
 	screen.Enabled = false
+	Ui.fitTouchLayout(panel)
 	return { screen = screen, layers = layers }
 end
 

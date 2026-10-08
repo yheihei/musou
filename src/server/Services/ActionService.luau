@@ -16,7 +16,11 @@
 -- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする。
 --   受けておいた先行入力も捨て、ガードを押したままでもガードに戻さない（始まっていた行動は最後まで進める）
 -- - 秘計の枚の番号は、onHikei で登録した関数（HikeiService）に渡す。行動の状態遷移には入れない
+-- - 受け取った行動は、プレイヤーごとに新しいものから RECEIVED_MAX 件を覚え、窓口の DumpAction で返す
+--   （スマホの操作ボタンなど、入力から Remotes.Action が届いたことを確かめるため）
+-- - 窓口の SetTouchControls で、スマホの戦闘の操作ボタンを出すかを Player の Attribute の TouchControls に書く
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -26,6 +30,7 @@ local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+local TouchControls = require(ReplicatedStorage.Shared.TouchControls)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -63,6 +68,21 @@ local kaihiDirections: { [Player]: Vector3 } = {}
 local kaihiChains: { [Player]: KinkyuKaihi.Chain } = {}
 -- 秘計の枚の番号を受け取る関数（HikeiService が onHikei で登録する）
 local hikeiHandler: ((Player, number) -> ())? = nil
+
+-- 受け取った行動を覚えておく件数（プレイヤーごと）と、行動の名前を覚える長さの上限
+local RECEIVED_MAX = 20
+local RECEIVED_NAME_MAX = 32
+
+-- 受け取った行動1件。argument は JSON にできる形に直した引数
+type Received = {
+	action: string,
+	argument: any,
+	at: number,
+	valid: boolean,
+}
+
+-- 受け取った行動（古い順）
+local received: { [Player]: { Received } } = {}
 
 -- 被弾の反応の行動。入力からは始めず、interrupt と続き（Next）で始める
 local REACTIONS: { [string]: ActionState.Timeline } = {
@@ -278,8 +298,42 @@ end
 -- 受け取った行動をコンソールに出すか。窓口の LogAction で切り替える
 local logActions = false
 
+local function round2(value: number): number
+	return math.round(value * 100) / 100
+end
+
+-- 引数を JSON にできる形に直す。緊急回避の方向は水平の成分、数と真偽はそのまま、ほかは型の名前だけにする
+local function describeArgument(argument: unknown): any
+	if typeof(argument) == "Vector3" then
+		local direction = argument :: Vector3
+		return { x = round2(direction.X), z = round2(direction.Z) }
+	elseif type(argument) == "number" or type(argument) == "boolean" or argument == nil then
+		return argument
+	end
+	return typeof(argument)
+end
+
+-- 受け取った行動を覚える。古いものから捨てて RECEIVED_MAX 件にする
+local function remember(player: Player, action: unknown, argument: unknown, valid: boolean)
+	local list = received[player]
+	if not list then
+		list = {}
+		received[player] = list
+	end
+	table.insert(list, {
+		action = string.sub(tostring(action), 1, RECEIVED_NAME_MAX),
+		argument = describeArgument(argument),
+		at = os.clock(),
+		valid = valid,
+	})
+	while #list > RECEIVED_MAX do
+		table.remove(list, 1)
+	end
+end
+
 local function onAction(player: Player, action: unknown, argument: unknown)
 	local valid = Actions.validate(action, argument)
+	remember(player, action, argument, valid)
 	if logActions then
 		print(`[Action] {player.Name} {tostring(action)} {tostring(argument)}{if valid then "" else " 拒否"}`)
 	end
@@ -359,6 +413,45 @@ local function registerDebugCommands()
 			return `受け取った行動の表示を{if logActions then "オン" else "オフ"}にした`
 		end
 	)
+	DebugCommand.register(
+		"DumpAction",
+		"<プレイヤー名>",
+		`今の行動・ガードを押しているか・受け取った行動（新しい順に {RECEIVED_MAX} 件まで。ago は受け取ってからの秒数）を JSON で返す`,
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local now = os.clock()
+			local list = {}
+			local entries = received[player] or {}
+			for index = #entries, 1, -1 do
+				local entry = entries[index]
+				table.insert(list, {
+					action = entry.action,
+					argument = entry.argument,
+					ago = round2(now - entry.at),
+					valid = entry.valid,
+				})
+			end
+			return HttpService:JSONEncode({
+				action = ActionService.current(player),
+				guardHeld = guardHeld[player] == true,
+				received = list,
+			})
+		end
+	)
+	DebugCommand.register(
+		"SetTouchControls",
+		"<プレイヤー名> <on|off|auto>",
+		"スマホの戦闘の操作ボタンを出すかを決める。on は端末を問わず出し、off は出さず、auto は端末の入力で決める（どれも戦闘のフェーズの出撃メンバーにだけ出す）",
+		function(name, value)
+			local player = DebugCommand.findPlayer(name)
+			local mode = TouchControls.parseMode(value)
+			if not mode then
+				error(`on・off・auto のどれかで指定する（{tostring(value)}）`, 0)
+			end
+			player:SetAttribute(TouchControls.ATTRIBUTE, mode)
+			return `{player.Name} のスマホの操作ボタンを {mode} にした`
+		end
+	)
 end
 
 function ActionService.start()
@@ -375,6 +468,7 @@ function ActionService.start()
 		guardHeld[player] = nil
 		kaihiDirections[player] = nil
 		kaihiChains[player] = nil
+		received[player] = nil
 	end)
 
 	-- 終わった行動を待機に戻し、続きの行動と先行入力を始める。待機でガードを押したままならガードに戻る

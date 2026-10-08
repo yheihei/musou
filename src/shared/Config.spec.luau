@@ -1276,6 +1276,18 @@ local SNAPSHOT = {
 	Minimap = {
 		UpdateInterval = 0.25,
 	},
+	TouchControls = {
+		DesignWidth = 1120,
+		DesignHeight = 640,
+		Margin = 24,
+		Gap = 12,
+		AttackSize = 140,
+		ChargeKogekiSize = 110,
+		GuardSize = 94,
+		OugiSize = 94,
+		HikeiWidth = 140,
+		HikeiHeight = 96,
+	},
 }
 
 local ALLOWED_TYPES = { number = true, string = true, boolean = true, table = true }

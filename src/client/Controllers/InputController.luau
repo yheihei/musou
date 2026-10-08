@@ -1,13 +1,17 @@
 --!strict
 -- 入力をサーバーへの Remotes.Action に変換する。割り当ては ReplicatedStorage.Shared.InputMap にある。
 -- クライアントは入力を送るだけで、行動を出せるかはサーバーが決める。
+-- 行動を送る入口（pressAttack・releaseAttack・pressGuard・releaseGuard・chargeKogeki・ougi・hikei）は、
+-- キーとゲームパッド（ContextActionService）と、タッチの操作ボタン（TouchControlsController）の両方から呼ぶ。
 --
 -- - 通常攻撃は押しっぱなしで連打扱いにする。実際の攻撃間隔はサーバーが決める
+-- - 通常攻撃とガードは、押している入力の元（キーとタッチのボタン）ごとに覚え、全部を離すまで続ける
 -- - 右クリックは、ドラッグせずに離したときだけ送る（右ドラッグはカメラの回転に使う）
--- - ガードは押したときと離したときに送り、ガード中に方向を入れ始めたら緊急回避を送る
--- - タッチ用のボタンは出さない（スマホの操作は M2 で作る）
+-- - ガードは押したときと離したときに送り、ガード中に方向を入れ始めたら緊急回避を送る。方向は Humanoid.MoveDirection から
+--   読むので、キー・スティック・タッチのサムスティックのどれで方向を入れても同じに出る
+-- - タッチの操作ボタンは TouchControlsController が出す。ジャンプは Roblox 標準の入力（Space・A・標準のジャンプボタン）のまま
 -- - 秘計の 1〜3 キーと重なる道具の持ち物欄は消す
--- - setEnabled(false) の間（イベントシーンの再生中）は何も送らない。止めるときに押していたガードは離したことにする
+-- - setEnabled(false) の間（イベントシーンの再生中）は何も送らない。止めるときに押していた通常攻撃とガードは離したことにする
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -31,9 +35,15 @@ local DIRECTION_THRESHOLD = 0.5
 
 local RIGHT_CLICK = "UserInputType.MouseButton2"
 
+-- 押している入力の元。Key はキーとゲームパッド、Touch はタッチの操作ボタン
+export type Source = "Key" | "Touch"
+
 local remote: RemoteEvent
-local attackHeld = false
-local guardHeld = false
+-- 通常攻撃とガードを押している入力の元
+local attackHolders: { [Source]: boolean } = {}
+local guardHolders: { [Source]: boolean } = {}
+-- 押しっぱなしの通常攻撃を送り直すループの番号。押し直したら前のループを止める
+local attackLoop = 0
 -- 入力を送るか。イベントシーンの再生中は false
 local enabled = true
 
@@ -45,12 +55,71 @@ local function send(action: Actions.Action, argument: any?)
 	end
 end
 
+local function isHeld(holders: { [Source]: boolean }): boolean
+	return next(holders) ~= nil
+end
+
+-- 通常攻撃を押す。どれかの入力の元で押している間、HOLD_REPEAT_INTERVAL ごとに送り直す
+function InputController.pressAttack(source: Source)
+	local wasHeld = isHeld(attackHolders)
+	attackHolders[source] = true
+	if wasHeld then
+		return
+	end
+	attackLoop += 1
+	local loop = attackLoop
+	task.spawn(function()
+		while loop == attackLoop and isHeld(attackHolders) do
+			send(Actions.Attack)
+			task.wait(HOLD_REPEAT_INTERVAL)
+		end
+	end)
+end
+
+-- 通常攻撃を離す
+function InputController.releaseAttack(source: Source)
+	attackHolders[source] = nil
+end
+
+-- ガードを押す。どれかの入力の元で押し始めたときに送る
+function InputController.pressGuard(source: Source)
+	local wasHeld = isHeld(guardHolders)
+	guardHolders[source] = true
+	if not wasHeld then
+		send(Actions.Guard, true)
+	end
+end
+
+-- ガードを離す。全部の入力の元で離したときに送る
+function InputController.releaseGuard(source: Source)
+	if not guardHolders[source] then
+		return
+	end
+	guardHolders[source] = nil
+	if not isHeld(guardHolders) then
+		send(Actions.Guard, false)
+	end
+end
+
+function InputController.chargeKogeki()
+	send(Actions.ChargeKogeki)
+end
+
+function InputController.ougi()
+	send(Actions.Ougi)
+end
+
+-- 秘計の枚を切る。slot は枚の番号
+function InputController.hikei(slot: number)
+	send(Actions.Hikei, slot)
+end
+
 -- 入力を送るかを切り替える。止めるときは、押しっぱなしの通常攻撃をやめ、押していたガードは離したことにする
 function InputController.setEnabled(value: boolean)
 	if not value and enabled then
-		attackHeld = false
-		if guardHeld then
-			guardHeld = false
+		table.clear(attackHolders)
+		if isHeld(guardHolders) then
+			table.clear(guardHolders)
 			remote:FireServer(Actions.Guard, false)
 		end
 	end
@@ -129,15 +198,9 @@ local function bindAttack()
 	local enums = toEnums(InputMap.Attack)
 	ContextActionService:BindAction("Attack", function(_, state)
 		if state == Enum.UserInputState.Begin then
-			attackHeld = true
-			task.spawn(function()
-				while attackHeld do
-					send(Actions.Attack)
-					task.wait(HOLD_REPEAT_INTERVAL)
-				end
-			end)
+			InputController.pressAttack("Key")
 		elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
-			attackHeld = false
+			InputController.releaseAttack("Key")
 		end
 		-- マウスの左ボタンは画面の操作にも渡す
 		return Enum.ContextActionResult.Pass
@@ -147,19 +210,18 @@ end
 local function bindGuard()
 	local enums = toEnums(InputMap.Guard)
 	ContextActionService:BindAction("Guard", function(_, state)
-		if state == Enum.UserInputState.Begin and not guardHeld then
-			guardHeld = true
-			send(Actions.Guard, true)
-		elseif (state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel) and guardHeld then
-			guardHeld = false
-			send(Actions.Guard, false)
+		if state == Enum.UserInputState.Begin then
+			InputController.pressGuard("Key")
+		elseif state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+			InputController.releaseGuard("Key")
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, table.unpack(enums))
 end
 
 -- ガード中に方向を入れ始めたら、その水平の方向で緊急回避を送る。
--- 方向は Humanoid.MoveDirection（移動の入力をカメラの向きでワールドの向きにしたもの）から読む
+-- 方向は Humanoid.MoveDirection（移動の入力をカメラの向きでワールドの向きにしたもの）から読む。
+-- キー・ゲームパッドのスティック・タッチのサムスティックのどれも、Roblox 標準の操作が MoveDirection に書く
 local function watchKinkyuKaihi()
 	local wasMoving = false
 	RunService.RenderStepped:Connect(function()
@@ -168,7 +230,7 @@ local function watchKinkyuKaihi()
 		local move = if humanoid then humanoid.MoveDirection else Vector3.zero
 		local flat = Vector3.new(move.X, 0, move.Z)
 		local moving = flat.Magnitude > DIRECTION_THRESHOLD
-		if guardHeld and moving and not wasMoving then
+		if isHeld(guardHolders) and moving and not wasMoving then
 			send(Actions.KinkyuKaihi, flat.Unit)
 		end
 		wasMoving = moving
@@ -195,15 +257,11 @@ function InputController.start()
 
 	bindAttack()
 	bindGuard()
-	bindPress("ChargeKogeki", InputMap.ChargeKogeki, function()
-		send(Actions.ChargeKogeki)
-	end)
-	bindPress("Ougi", InputMap.Ougi, function()
-		send(Actions.Ougi)
-	end)
+	bindPress("ChargeKogeki", InputMap.ChargeKogeki, InputController.chargeKogeki)
+	bindPress("Ougi", InputMap.Ougi, InputController.ougi)
 	for slot, binding in InputMap.Hikei do
 		bindPress(`Hikei{slot}`, binding, function()
-			send(Actions.Hikei, slot)
+			InputController.hikei(slot)
 		end)
 	end
 	watchRightClick()

@@ -13,6 +13,7 @@
 -- - 拠点の軍が変わったら（ReplicatedStorage.Kyoten の拠点ごとの Attribute の Gun）、戦況を出している間だけ、
 --   自分の軍（味方軍）が制圧したときは Seiatsu、自分の軍の拠点が陥落したときは Kanraku の効果音を本人に鳴らす
 --   （判断は ReplicatedStorage.Shared.Sounds の kyotenSceneFor）。出撃で拠点を作ったときと、途中で読み込んだときは鳴らさない
+-- - タッチの配置（スマホの戦闘の操作ボタンを出している間）では、画面の大きさに合わせて縮める（Ui.fitTouchLayout）
 -- - テストプレイでの確認用に、文は PlayerGui.BattleStatus.Panel の Remaining と Heiryoku、
 --   ゲージは Mikatagun と Tekigun の Gauge.Fill（Size の X の Scale が長さの割合）で読める
 
@@ -170,6 +171,7 @@ local function buildGui(): Gui
 	}, children)
 	local screen = Ui.screenGui("BattleStatus", Ui.Layer.BattleStatus, { panel })
 	screen.Enabled = false
+	Ui.fitTouchLayout(panel)
 	return { screen = screen, remaining = remaining, heiryoku = heiryoku, fills = fills }
 end
 

@@ -438,6 +438,19 @@ export type MinimapSection = {
 	UpdateInterval: number,
 }
 
+export type TouchControlsSection = {
+	DesignWidth: number,
+	DesignHeight: number,
+	Margin: number,
+	Gap: number,
+	AttackSize: number,
+	ChargeKogekiSize: number,
+	GuardSize: number,
+	OugiSize: number,
+	HikeiWidth: number,
+	HikeiHeight: number,
+}
+
 export type Config = {
 	Party: PartySection,
 	PartySize: PartySizeSection,
@@ -479,6 +492,7 @@ export type Config = {
 	Bgm: BgmSection,
 	BattleStatus: BattleStatusSection,
 	Minimap: MinimapSection,
+	TouchControls: TouchControlsSection,
 }
 
 local Config: Config = {
@@ -1935,6 +1949,26 @@ local Config: Config = {
 	-- ミニマップ。描き方の計算は Minimap.luau にある
 	Minimap = {
 		UpdateInterval = 0.25, -- 自分と仲間の位置を描き直す間隔（秒）。サーバーが出撃メンバーの位置を複製する間隔も同じ
+	},
+
+	-- スマホ横画面の戦闘の操作ボタン（タッチの操作）。配置の計算は TouchLayout.luau、出すかの判断は TouchControls.luau にある。
+	-- 大きさと余白は、戦闘の画面を縮める前の大きさ（設計の大きさ）のピクセル。実際の画面では倍率を掛けた大きさになる
+	TouchControls = {
+		-- 戦闘の画面を縮めて、縮める前の大きさの画面がこの幅と高さ以上になるようにする（大きい画面では縮めない）。
+		-- 高さは、スマホでジャンプボタンの上にガードと奥義が入るように決める
+		DesignWidth = 1120,
+		DesignHeight = 640,
+		Margin = 24, -- 画面の端からの余白（HUD と同じ）
+		Gap = 12, -- ボタンどうしと、ほかの画面の部品との間隔
+		AttackSize = 140, -- 通常攻撃のボタンの直径。ジャンプボタンの左に置く
+		ChargeKogekiSize = 110, -- チャージ攻撃のボタンの直径。通常攻撃の左に置く
+		-- ガードと奥義のボタンの直径。ジャンプボタンの上（ミニマップの下）に、ミニマップの幅に収まるように並べる。
+		-- スマホでも指で押せる大きさ（44 ピクセル）を下回らないようにする
+		GuardSize = 94,
+		OugiSize = 94,
+		-- 秘計の枚のボタンの幅と高さ。左上の撃破数の下に横に並べる
+		HikeiWidth = 140,
+		HikeiHeight = 96,
 	},
 }
 
