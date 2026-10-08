@@ -5,9 +5,9 @@
 -- - 出すのは、タッチで遊んでいる人のうち、戦闘のフェーズの出撃メンバーだけ（画面上部の戦況と同じ条件。BattleStatus.isVisible）
 -- - タッチで遊んでいるかは、UserInputService.PreferredInput が Touch か（使えなければ最後の入力の種類が Touch か）で決める。
 --   ゲームパッドやキーボードとマウスに切り替えたら出さない
--- - Studio のテストプレイでは、マウスのクリックがタッチとして届く環境があり、PreferredInput も最後の入力の種類も
---   クリックのたびにタッチに変わる。PC の開発者に出し続けないよう、Studio ではキーボードが使えるときはタッチとみなさない
---   （デバイスエミュレーターでキーボードの無い端末を選んだときだけタッチにする）
+-- - Studio のテストプレイでは、Auto ならタッチとみなさない。マウスのクリックがタッチとして届き、キーボードも無い端末と
+--   報告する環境がある（開発者の Studio は TouchEnabled が true、KeyboardEnabled が false）。PC の開発者に出し続けないため。
+--   デバイスエミュレーターや Studio で確かめるときは、窓口の SetTouchControls で On にする
 -- - Player の Attribute の TouchControls（窓口の SetTouchControls が書く）で、On なら端末を問わずタッチとみなし、
 --   Off なら出さない。Auto か無ければ端末で決める
 
@@ -65,7 +65,7 @@ end
 -- 端末の入力の様子から、タッチで遊んでいるとみなすか
 function TouchControls.prefersTouch(device: Device): boolean
 	if device.studio then
-		return device.touchEnabled and not device.keyboardEnabled
+		return false
 	end
 	if device.preferredInput ~= nil then
 		return device.preferredInput == "Touch"

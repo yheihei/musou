@@ -64,19 +64,21 @@ test("PreferredInput が使えないときは、最後に使った入力の種�
 end)
 
 test(
-	"Studio では、キーボードが使えればクリックがタッチとして届いてもタッチとみなさない",
+	"Studio では、クリックがタッチとして届いても、キーボードが無いと報告されてもタッチとみなさない",
 	function()
 		local clickAsTouch =
 			device({ studio = true, touchEnabled = true, preferredInput = "Touch", lastInputKind = "Touch" })
 		expect(TouchControls.prefersTouch(clickAsTouch)).toBe(false)
-		local emulator = device({
+		local noKeyboard = device({
 			studio = true,
 			touchEnabled = true,
 			keyboardEnabled = false,
 			preferredInput = "Touch",
 			lastInputKind = "Touch",
 		})
-		expect(TouchControls.prefersTouch(emulator)).toBe(true)
+		expect(TouchControls.prefersTouch(noKeyboard)).toBe(false)
+		expect(TouchControls.isActive("Auto", noKeyboard)).toBe(false)
+		expect(TouchControls.isActive("On", noKeyboard)).toBe(true)
 	end
 )
 
