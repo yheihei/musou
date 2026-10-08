@@ -10,6 +10,9 @@
 -- - 入力を受け取らない表示だけなので、出している間も操作はそのまま
 -- - 発動の知らせ（どちらの軍の秘計でも）には、秘計の発動の効果音（HikeiHatsudo）を添える。ほかの知らせは鳴らさない
 -- - タッチの配置（スマホの戦闘の操作ボタンを出している間）では、画面の大きさに合わせて並びごと縮める（Ui.fitTouchLayout）。
+--   ただし一番小さい文字（Detail の Ui.TextSize.Small）が読める下限（Config.luau の SmallScreen 節の MinTextSize）を
+--   下回るほどは縮めず（TouchLayout.hikeiNoticeScaleOf）、その分、出しておく件数を Config.luau の TouchControls 節の
+--   HikeiNoticeMax までにし、左の秘計の枚に近づく画面では幅を狭める（Ui.touchLayout の placement の hikeiNoticeWidth）。
 --   操作ボタンは並びの下に置く（ReplicatedStorage.Shared.TouchLayout）
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -19,6 +22,7 @@ local Colors = require(ReplicatedStorage.Shared.Colors)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HikeiNotice = require(ReplicatedStorage.Shared.HikeiNotice)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+local TouchLayout = require(ReplicatedStorage.Shared.TouchLayout)
 local Ui = require(script.Parent.Parent.Ui)
 
 local HikeiNoticeController = {}
@@ -48,6 +52,29 @@ local function remove(panel: Frame)
 	panel:Destroy()
 end
 
+-- 出しておける件数と、知らせ1件の幅。タッチの配置では読める大きさで出すので、件数を減らし、狭い画面では幅も狭める
+local function maxNotices(): number
+	return if Ui.touchLayout().active then Config.TouchControls.HikeiNoticeMax else MAX_NOTICES
+end
+
+local function noticeWidth(): number
+	local layout = Ui.touchLayout()
+	local placement = layout.placement
+	return if layout.active and placement then placement.hikeiNoticeWidth else WIDTH
+end
+
+-- 並びの幅と、出している知らせの幅と件数を、今の配置に合わせる
+local function applyLayout()
+	local width = noticeWidth()
+	list.Size = UDim2.fromOffset(width, (HEIGHT + GAP) * MAX_NOTICES)
+	for _, panel in shown do
+		panel.Size = UDim2.fromOffset(width, HEIGHT)
+	end
+	while #shown > maxNotices() do
+		remove(shown[#shown])
+	end
+end
+
 local function fadeOut(panel: Frame)
 	if not panel.Parent then
 		return
@@ -74,7 +101,7 @@ local function show(notice: HikeiNotice.Notice)
 	local panel = Ui.create("Frame", {
 		Name = "Notice",
 		LayoutOrder = order,
-		Size = UDim2.fromOffset(WIDTH, HEIGHT),
+		Size = UDim2.fromOffset(noticeWidth(), HEIGHT),
 		BackgroundColor3 = Ui.Color.Panel,
 		BackgroundTransparency = 0.2,
 		BorderSizePixel = 0,
@@ -108,7 +135,7 @@ local function show(notice: HikeiNotice.Notice)
 	})
 	panel.Parent = list
 	table.insert(shown, 1, panel)
-	while #shown > MAX_NOTICES do
+	while #shown > maxNotices() do
 		remove(shown[#shown])
 	end
 	task.delay(Config.Hikei.NoticeTime, fadeOut, panel)
@@ -128,7 +155,9 @@ function HikeiNoticeController.start()
 		}),
 	})
 	Ui.screenGui("HikeiNotice", Ui.Layer.HikeiNotice, { list })
-	Ui.fitTouchLayout(list)
+	Ui.fitTouchLayout(list, nil, nil, TouchLayout.hikeiNoticeScaleOf)
+	Ui.onTouchLayoutChanged(applyLayout)
+	applyLayout()
 
 	local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("NotifyHikei") :: RemoteEvent
 	remote.OnClientEvent:Connect(function(notice: unknown)

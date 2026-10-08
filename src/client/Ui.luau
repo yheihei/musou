@@ -1,12 +1,16 @@
 --!strict
 -- 画面の共通部品。Instance の生成、書体と文字の大きさ、画面の配色、ボタン、
 -- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ゲームパッドやキーの操作で選んでいる部品の移動、
--- ScreenGui の重なり順、タッチの配置をまとめる。
+-- ScreenGui の重なり順、タッチの配置、タッチで遊んでいるか、安全な範囲の大きさと小さい画面（スマホ横画面）の部品をまとめる。
 -- 軍・クラン・キャラクターの色は ReplicatedStorage.Shared.Colors に置く。
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
+
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
+local TouchLayout = require(ReplicatedStorage.Shared.TouchLayout)
 
 local Ui = {}
 
@@ -284,9 +288,11 @@ export type TouchLayout = {
 	active: boolean,
 	-- 戦闘の画面を縮める倍率。出していないときは 1
 	scale: number,
+	-- 出しているときの配置（TouchLayout.compute の結果）。台詞と秘計の知らせは、ここから位置と倍率を読む
+	placement: TouchLayout.Layout?,
 }
 
-local touchLayout: TouchLayout = { active = false, scale = 1 }
+local touchLayout: TouchLayout = { active = false, scale = 1, placement = nil }
 local touchLayoutChanged = Instance.new("BindableEvent")
 
 -- 今のタッチの配置
@@ -294,13 +300,16 @@ function Ui.touchLayout(): TouchLayout
 	return touchLayout
 end
 
--- タッチの配置を切り替える。TouchControlsController だけが呼ぶ
-function Ui.setTouchLayout(active: boolean, scale: number)
-	local nextScale = if active then scale else 1
-	if active == touchLayout.active and nextScale == touchLayout.scale then
+-- タッチの配置を切り替える。placement は今の画面の大きさで決めた配置。TouchControlsController だけが呼ぶ
+function Ui.setTouchLayout(active: boolean, placement: TouchLayout.Layout)
+	local nextScale = if active then placement.scale else 1
+	local previous = touchLayout.placement
+	local samePlacement = not active
+		or (previous ~= nil and previous.width == placement.width and previous.height == placement.height)
+	if active == touchLayout.active and nextScale == touchLayout.scale and samePlacement then
 		return
 	end
-	touchLayout = { active = active, scale = nextScale }
+	touchLayout = { active = active, scale = nextScale, placement = if active then placement else nil }
 	touchLayoutChanged:Fire()
 end
 
@@ -314,21 +323,134 @@ end
 -- 戦闘の画面の部品（ScreenGui の直下の Frame）をタッチの配置に合わせる。タッチの配置の間は、部品を倍率で縮め（UIScale）、
 -- 位置の Offset も同じ倍率で縮める（縮める前の大きさの画面に置いた位置になる）。大きさは Offset で決めた部品にだけ使う。
 -- touchPosition と touchAnchor を渡すと、タッチの配置の間はその位置（縮める前の値）と AnchorPoint に移す。
+-- scaleOf を渡すと、タッチの配置の間の部品の倍率を、戦闘の画面の倍率から scaleOf で決める（読ませる部品を読める下限で止めるとき）。
 -- 元の位置と AnchorPoint は、呼んだときの値を覚えておき、タッチの配置をやめたら戻す
-function Ui.fitTouchLayout(object: GuiObject, touchPosition: UDim2?, touchAnchor: Vector2?)
+function Ui.fitTouchLayout(
+	object: GuiObject,
+	touchPosition: UDim2?,
+	touchAnchor: Vector2?,
+	scaleOf: ((scale: number) -> number)?
+)
 	local basePosition = object.Position
 	local baseAnchor = object.AnchorPoint
 	local scaler = Ui.create("UIScale", { Name = "TouchScale", Parent = object }) :: UIScale
 	local function apply(layout: TouchLayout)
 		local position = if layout.active and touchPosition then touchPosition else basePosition
 		local scale = if layout.active then layout.scale else 1
-		scaler.Scale = scale
+		scaler.Scale = if layout.active and scaleOf then scaleOf(scale) else scale
 		object.AnchorPoint = if layout.active and touchAnchor then touchAnchor else baseAnchor
 		object.Position =
 			UDim2.new(position.X.Scale, position.X.Offset * scale, position.Y.Scale, position.Y.Offset * scale)
 	end
 	Ui.onTouchLayoutChanged(apply)
 	apply(touchLayout)
+end
+
+-- タッチで遊んでいるか（フェーズを問わない）。TouchControlsController が ReplicatedStorage.Shared.TouchControls の
+-- isActive で決める（戦闘の操作ボタンを出すかと同じ判断。窓口の SetTouchControls で強制できる）。
+-- イベントシーンのスキップのボタンなど、戦闘の外の画面もこれでタッチの見た目にする
+local touchInput = false
+local touchInputChanged = Instance.new("BindableEvent")
+
+function Ui.isTouchInput(): boolean
+	return touchInput
+end
+
+-- TouchControlsController だけが呼ぶ
+function Ui.setTouchInput(active: boolean)
+	if active ~= touchInput then
+		touchInput = active
+		touchInputChanged:Fire(active)
+	end
+end
+
+-- タッチで遊んでいるかが変わったときに呼ぶ
+function Ui.onTouchInputChanged(callback: (boolean) -> ()): RBXScriptConnection
+	return touchInputChanged.Event:Connect(callback)
+end
+
+-- 安全な範囲（Roblox のトップバーと、端末のノッチやホームバーを除いた範囲）。IgnoreGuiInset でない ScreenGui の中身が
+-- 置かれる範囲で、小さい画面か（ReplicatedStorage.Shared.SmallScreen）はこの大きさで決める。
+-- 窓口の SetScreenSize が Player の Attribute（SmallScreen.SIZE_ATTRIBUTE）に仮の大きさを書いたら、その大きさを使う
+-- （Studio でスマホの配置を確かめる用。小さい画面の配置は、安全な範囲の左上からその大きさの中に並ぶ）
+local safeAreaProbe: ScreenGui? = nil
+local safeAreaChanged = Instance.new("BindableEvent")
+
+-- 入力がタッチとキーボード・ゲームパッドの間で切り替わったときも、各画面のスマホ配置を決め直す。
+touchInputChanged.Event:Connect(function()
+	safeAreaChanged:Fire()
+end)
+
+-- 安全な範囲の大きさを測る、中身の無い ScreenGui。初めて使うときに作る
+local function getSafeAreaProbe(): ScreenGui
+	local probe = safeAreaProbe
+	if probe then
+		return probe
+	end
+	local created = Ui.screenGui("SafeArea", 0)
+	created:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		safeAreaChanged:Fire()
+	end)
+	Players.LocalPlayer:GetAttributeChangedSignal(SmallScreen.SIZE_ATTRIBUTE):Connect(function()
+		safeAreaChanged:Fire()
+	end)
+	safeAreaProbe = created
+	return created
+end
+
+-- 安全な範囲の大きさ（窓口の SetScreenSize で決めた仮の大きさがあれば、その大きさ）
+function Ui.safeAreaSize(): Vector2
+	local override = Players.LocalPlayer:GetAttribute(SmallScreen.SIZE_ATTRIBUTE)
+	if typeof(override) == "Vector2" then
+		return override
+	end
+	return getSafeAreaProbe().AbsoluteSize
+end
+
+-- 小さい画面でタッチを使っているか（スマホ横画面の配置にするか）
+function Ui.isSmallScreen(): boolean
+	local size = Ui.safeAreaSize()
+	return SmallScreen.useCompactLayout(size.X, size.Y, touchInput)
+end
+
+-- 安全な範囲の大きさかタッチ入力が変わったとき（窓口で仮の大きさを決めたときも）に呼ぶ
+function Ui.onSafeAreaChanged(callback: () -> ()): RBXScriptConnection
+	getSafeAreaProbe()
+	return safeAreaChanged.Event:Connect(callback)
+end
+
+-- 幕で画面全体を覆う画面（タイトル画面・特技ツリーの窓・リザルト）の、中身を置く範囲を切り替える。
+-- safe なら、中身を安全な範囲に置き（小さい画面。トップバーとノッチに掛けない）、幕は画面の外まで広げて全体を覆う。
+-- safe でなければ、今までどおり画面全体（IgnoreGuiInset）に置き、幕も画面全体にする
+local BACKDROP_BLEED = 200
+function Ui.useSafeArea(screen: ScreenGui, backdrop: GuiObject, safe: boolean)
+	screen.IgnoreGuiInset = not safe
+	-- 安全な範囲の外へ広げた幕を、ノッチの側で切らない
+	screen.ClipToDeviceSafeArea = not safe
+	backdrop.Position = if safe then UDim2.fromOffset(-BACKDROP_BLEED, -BACKDROP_BLEED) else UDim2.new()
+	backdrop.Size = if safe then UDim2.new(1, BACKDROP_BLEED * 2, 1, BACKDROP_BLEED * 2) else UDim2.fromScale(1, 1)
+end
+
+-- object（AutomaticSize の Y で高さが文の長さで決まる部品）を、limit が返す高さに収まるよう UIScale（FitScale）で縮める。
+-- limit は収める高さと縮めてよい倍率の下限（SmallScreen.minScale）を返す。高さが nil なら縮めない。
+-- 部品の大きさが変わるたびに決め直す。返り値は、limit の値が変わったとき（配置を変えたとき）に呼ぶ決め直しの関数
+function Ui.fitHeight(object: GuiObject, limit: () -> (number?, number)): () -> ()
+	local scaler = Ui.create("UIScale", { Name = "FitScale", Parent = object }) :: UIScale
+	local function refresh()
+		local maxHeight, minScale = limit()
+		local scale = 1
+		if maxHeight then
+			-- AbsoluteSize は縮めた後の大きさなので、今の倍率で割って縮める前の高さにする
+			scale = SmallScreen.fitScale(object.AbsoluteSize.Y / scaler.Scale, maxHeight, minScale)
+		end
+		-- 測り直した高さの端数で倍率が行き来しないよう、小さな違いでは変えない
+		if math.abs(scaler.Scale - scale) > 1e-3 then
+			scaler.Scale = scale
+		end
+	end
+	object:GetPropertyChangedSignal("AbsoluteSize"):Connect(refresh)
+	refresh()
+	return refresh
 end
 
 return Ui

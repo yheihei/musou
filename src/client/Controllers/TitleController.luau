@@ -13,6 +13,8 @@
 -- - 窓口の ShowTitle が Player の Attribute（Title.REQUEST_ATTRIBUTE）を書き換えたら、もう一度出す（確認用）
 -- - 出撃メンバーとしてステージに出ている間は出さない。出している間に出撃したら、押さずに閉じる（Title.canShow）
 -- - 後ろの画面は幕で覆う。押した音は Confirm
+-- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、中身を安全な範囲（トップバーとノッチの内側）の中央に置き、
+--   行の間隔を詰める。それでも高さに収まらなければ、文字が読める下限とボタンが押せる大きさを下回らない範囲で縮める（Ui.fitHeight）
 
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
@@ -21,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local Notice = require(ReplicatedStorage.Shared.Notice)
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local Title = require(ReplicatedStorage.Shared.Title)
 local PartyClient = require(script.Parent.Parent.PartyClient)
@@ -43,9 +46,16 @@ local HEADLINE_HEIGHT = Ui.TextSize.Huge + 8
 -- はじめるのボタンの大きさ
 local BUTTON_WIDTH = 240
 local BUTTON_HEIGHT = 52
+-- 小さい画面での中身の行の間隔と、縮めてよい倍率の下限（一番小さい文字は Ui.TextSize.Body、ボタンははじめる）
+local SMALL_GAP = 8
+local MIN_SCALE = SmallScreen.minScale(Ui.TextSize.Body, BUTTON_HEIGHT)
 
 type Gui = {
 	screen: ScreenGui,
+	backdrop: Frame,
+	-- タイトル・表記・はじめるを縦に並べる中身と、その並び
+	content: Frame,
+	list: UIListLayout,
 	hajimeru: TextButton,
 }
 
@@ -134,21 +144,21 @@ local function buildGui(): Gui
 		TextSize = Ui.TextSize.Large,
 		Text = HAJIMERU_TEXT,
 	})
+	local list = Ui.create("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		Padding = UDim.new(0, GAP),
+	})
+	-- 位置と幅は applyLayout が画面の大きさに合わせて決める
 	local content = Ui.create("Frame", {
 		Name = "Content",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.new(1, -2 * MARGIN, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		ZIndex = 2,
 	}, {
 		Ui.create("UISizeConstraint", { MaxSize = Vector2.new(CONTENT_WIDTH, math.huge) }),
-		Ui.create("UIListLayout", {
-			SortOrder = Enum.SortOrder.LayoutOrder,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			Padding = UDim.new(0, GAP),
-		}),
+		list,
 		headline,
 		subtitle,
 		noticeBox(3),
@@ -166,7 +176,35 @@ local function buildGui(): Gui
 	local screen = Ui.screenGui("Title", Ui.Layer.Title, { backdrop, content })
 	screen.IgnoreGuiInset = true
 	screen.Enabled = false
-	return { screen = screen, hajimeru = hajimeru }
+	return {
+		screen = screen,
+		backdrop = backdrop :: Frame,
+		content = content :: Frame,
+		list = list :: UIListLayout,
+		hajimeru = hajimeru,
+	}
+end
+
+-- 小さい画面で、中身を収める高さ（大きい画面では nil）
+local contentLimit: number? = nil
+
+-- 中身の位置と幅と行の間隔を、画面の大きさに合わせる。小さい画面では安全な範囲の中央に置き、間隔を詰める
+local function applyLayout(current: Gui)
+	local small = Ui.isSmallScreen()
+	Ui.useSafeArea(current.screen, current.backdrop, small)
+	if small then
+		local size = Ui.safeAreaSize()
+		local inner = SmallScreen.innerOf(size.X, size.Y)
+		current.content.Position = UDim2.fromOffset(inner.x + inner.width / 2, inner.y + inner.height / 2)
+		current.content.Size = UDim2.fromOffset(math.min(CONTENT_WIDTH, inner.width), 0)
+		current.list.Padding = UDim.new(0, SMALL_GAP)
+		contentLimit = inner.height
+	else
+		current.content.Position = UDim2.fromScale(0.5, 0.5)
+		current.content.Size = UDim2.new(1, -2 * MARGIN, 0, 0)
+		current.list.Padding = UDim.new(0, GAP)
+		contentLimit = nil
+	end
 end
 
 -- はじめるのボタン表記。キーボードとゲームパッドでは押すキーを添え、タッチでは添えない
@@ -271,6 +309,16 @@ end
 function TitleController.start()
 	local current = buildGui()
 	gui = current
+	-- 小さい画面で高さに収まらなければ縮める
+	local refit = Ui.fitHeight(current.content, function()
+		return contentLimit, MIN_SCALE
+	end)
+	local function relayout()
+		applyLayout(current)
+		refit()
+	end
+	Ui.onSafeAreaChanged(relayout)
+	relayout()
 	current.hajimeru.Activated:Connect(press)
 	PartyClient.changed:Connect(function()
 		-- 出している間に出撃メンバーとしてステージに出たら（窓口で出し直した後に出撃したときなど）、押さずに閉じる

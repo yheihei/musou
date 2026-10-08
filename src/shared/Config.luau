@@ -468,6 +468,23 @@ export type TouchControlsSection = {
 	OugiSize: number,
 	HikeiWidth: number,
 	HikeiHeight: number,
+	HikeiNoticeMax: number,
+}
+
+export type SmallScreenSection = {
+	Width: number,
+	Height: number,
+	Margin: number,
+	Gap: number,
+	MinTextSize: number,
+	MinTouchSize: number,
+	NoticeMinWidth: number,
+	PanelMinWidth: number,
+	PanelMaxWidth: number,
+	DialogueHeight: number,
+	DialogueFaceSize: number,
+	SkipWidth: number,
+	SkipHeight: number,
 }
 
 export type Config = {
@@ -513,6 +530,7 @@ export type Config = {
 	BattleStatus: BattleStatusSection,
 	Minimap: MinimapSection,
 	TouchControls: TouchControlsSection,
+	SmallScreen: SmallScreenSection,
 }
 
 local Config: Config = {
@@ -2031,6 +2049,37 @@ local Config: Config = {
 		-- 秘計の枚のボタンの幅と高さ。左上の撃破数の下に横に並べる
 		HikeiWidth = 140,
 		HikeiHeight = 96,
+		-- タッチの配置で積む秘計の知らせの数の上限（超えたら古いものから消す）。知らせは文字が読めるよう
+		-- ほかの部品ほど縮めないので（SmallScreen 節の MinTextSize）、積む数を減らしてボタンと重ねない
+		HikeiNoticeMax = 1,
+	},
+
+	-- 小さい画面（スマホ横画面）の配置と、読める文字の大きさ。計算は SmallScreen.luau にある。
+	-- 大きさは実際の画面のピクセル（スマホでは端末の point。iPhone SE の横画面は 667x375）
+	SmallScreen = {
+		-- 安全な範囲（Roblox のトップバーと、端末のノッチやホームバーを除いた範囲）の幅か高さがこれに満たない画面を
+		-- 小さい画面とし、出撃前の画面・特技ツリーの窓・リザルト・タイトル画面・会話窓を詰めて並べる。
+		-- 幅はロビーの非公式の表記と出撃前の画面が横に並ぶ幅（16 + 480 + 16 + 460 + 16）、高さは出撃前の画面の欄の
+		-- スクロールに 160 ほど残る高さ。PC の窓（1280x600 で安全な範囲は 1280x542）とタブレットは大きい画面のまま
+		Width = 1000,
+		Height = 480,
+		Margin = 8, -- 小さい画面での、画面の端と部品の間の余白
+		Gap = 8, -- 小さい画面での、部品どうしの間隔
+		-- 読める文字の下限。スマホで漢字の線がつぶれずに読める大きさとして 12 にする。小さい画面では文字を縮めずに使い
+		-- （一番小さい Ui.TextSize.Small は 14）、戦闘の画面を縮めるときも、台詞と秘計の知らせはこれを下回るほど縮めない
+		MinTextSize = 12,
+		MinTouchSize = 44, -- 指で押せるボタンの短い辺の下限（TouchLayout の操作ボタンと同じ 44）
+		-- ロビー。左上に非公式の表記、右に出撃前の画面を並べる。出撃前の画面の幅は下限と上限の間で、表記に NoticeMinWidth を残す。
+		-- NoticeMinWidth は、表記の見出し（Ui.TextSize.Large で9文字）が内側の余白を除いて収まる幅
+		NoticeMinWidth = 248,
+		PanelMinWidth = 360,
+		PanelMaxWidth = 460, -- 大きい画面の出撃前の画面の幅（SelectionController の PANEL_WIDTH）
+		-- 会話窓（イベントシーン）の高さと、顔グラフィックの一辺。台詞は Ui.TextSize.Large から 14 まで縮めて収める
+		DialogueHeight = 128,
+		DialogueFaceSize = 104,
+		-- タッチの端末のイベントシーンのスキップのボタンの幅と高さ。安全な範囲の右上に置く
+		SkipWidth = 220,
+		SkipHeight = 52,
 	},
 }
 

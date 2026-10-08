@@ -16,6 +16,10 @@
 -- - ゲームパッドのときは、画面が開いたら最初のボタンを選ぶ（スティックで左右に移動、A で決定）。
 --   押したら選択を外し、ロビーに戻ったときに出撃前の画面が最初のボタンを選べるようにする
 -- - 押した音は Confirm。ゲームパッドやキーの操作で選んでいるボタンが移ったら Cursor を鳴らす
+-- - 中身が画面の高さに収まらなければ、パネルの中をスクロールする（applyLayout）。
+--   小さい画面（スマホ横画面。Ui.isSmallScreen）では、文字とボタンを縮めずに、パネルを安全な範囲（トップバーとノッチの内側）
+--   に置き、勝敗の見出しと余白を詰め、ボタンの帯をパネルの下に出す（スクロールしてもいつも押せる。
+--   ReplicatedStorage.Shared.SmallScreen の resultOf）
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
@@ -24,6 +28,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Jukurendo = require(ReplicatedStorage.Shared.Jukurendo)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local ResultMessage = require(ReplicatedStorage.Shared.ResultMessage)
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
@@ -40,6 +45,11 @@ local BUTTON_HEIGHT = 52
 local BUTTON_GAP = 16
 -- 勝敗の見出しの文字の大きさ
 local HEADLINE_SIZE = 64
+-- 小さい画面での、勝敗の見出しの文字の大きさと、パネルの内側の余白
+local SMALL_HEADLINE_SIZE = 44
+local SMALL_PADDING = 12
+-- 大きい画面で、中身が画面の高さに収まらないときに、パネルの上下に残す余白
+local SCREEN_MARGIN = 16
 -- 後ろの画面を暗くする幕の透明度
 local BACKDROP_TRANSPARENCY = 0.45
 -- 押した後、フェーズが変わらなければボタンを戻すまでの秒数
@@ -49,6 +59,15 @@ local SELECT_AFTER_OPEN = 1
 
 type Gui = {
 	screen: ScreenGui,
+	backdrop: Frame,
+	-- 結果のパネル。中身が収まらなければスクロールする
+	panel: ScrollingFrame,
+	-- パネルの中身を並べる UIListLayout と、内側の余白
+	list: UIListLayout,
+	padding: UIPadding,
+	-- ボタンの帯と、小さい画面で帯をパネルの下に出す枠
+	footer: Frame,
+	dock: Frame,
 	headline: TextLabel,
 	reason: TextLabel,
 	elapsed: TextLabel,
@@ -224,16 +243,22 @@ local function buildGui(): Gui
 		BackgroundTransparency = 1,
 	}, { retry, returnToLobby, waiting })
 
-	local panel = Ui.create("Frame", {
+	-- 位置と高さは applyLayout が画面の大きさと中身の高さに合わせて決める
+	local panel = Ui.create("ScrollingFrame", {
 		Name = "Panel",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(PANEL_WIDTH, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundColor3 = Ui.Color.Panel,
 		BackgroundTransparency = 0.1,
 		BorderSizePixel = 0,
 		ZIndex = 2,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollBarThickness = 6,
+		ScrollBarImageColor3 = Ui.Color.Accent,
+		Selectable = false,
 	}, {
 		Ui.create("UICorner", { CornerRadius = UDim.new(0, 10) }),
 		Ui.create("UIStroke", { Color = Ui.Color.Accent, Thickness = 1 }),
@@ -262,11 +287,24 @@ local function buildGui(): Gui
 		BorderSizePixel = 0,
 		ZIndex = 1,
 	})
-	local screen = Ui.screenGui("Result", Ui.Layer.Result, { backdrop, panel })
+	-- 小さい画面で、ボタンの帯をパネルの下に出す枠
+	local dock = Ui.create("Frame", {
+		Name = "Dock",
+		BackgroundTransparency = 1,
+		ZIndex = 2,
+		Visible = false,
+	})
+	local screen = Ui.screenGui("Result", Ui.Layer.Result, { backdrop, panel, dock })
 	screen.IgnoreGuiInset = true
 	screen.Enabled = false
 	return {
 		screen = screen,
+		backdrop = backdrop :: Frame,
+		panel = panel :: ScrollingFrame,
+		list = panel:FindFirstChildOfClass("UIListLayout") :: UIListLayout,
+		padding = panel:FindFirstChildOfClass("UIPadding") :: UIPadding,
+		footer = footer :: Frame,
+		dock = dock :: Frame,
 		headline = headline,
 		reason = reason,
 		elapsed = elapsed,
@@ -281,6 +319,39 @@ local function buildGui(): Gui
 		returnToLobby = returnToLobby,
 		waiting = waiting,
 	}
+end
+
+-- パネルの大きさと位置を、画面の大きさと中身の高さに合わせる。中身が画面に収まらなければパネルの中をスクロールする。
+-- 小さい画面では、中身を安全な範囲に置き、勝敗の見出しと余白を詰め、ボタンの帯をパネルの下の枠へ移す
+local function applyLayout(gui: Gui)
+	local small = Ui.isSmallScreen()
+	Ui.useSafeArea(gui.screen, gui.backdrop, small)
+	local padding = if small then SMALL_PADDING else PADDING
+	gui.padding.PaddingTop = UDim.new(0, padding)
+	gui.padding.PaddingBottom = UDim.new(0, padding)
+	gui.padding.PaddingLeft = UDim.new(0, padding)
+	gui.padding.PaddingRight = UDim.new(0, padding)
+	local headline = if small then SMALL_HEADLINE_SIZE else HEADLINE_SIZE
+	gui.headline.TextSize = headline
+	gui.headline.Size = UDim2.new(1, 0, 0, headline + 8)
+	gui.footer.Parent = if small then gui.dock else gui.panel
+	gui.dock.Visible = small
+	local content = gui.list.AbsoluteContentSize.Y + padding * 2
+	if small then
+		local size = Ui.safeAreaSize()
+		local layout = SmallScreen.resultOf(size.X, size.Y, PANEL_WIDTH, content, BUTTON_HEIGHT)
+		gui.panel.AnchorPoint = Vector2.zero
+		gui.panel.Position = UDim2.fromOffset(layout.panel.x, layout.panel.y)
+		gui.panel.Size = UDim2.fromOffset(layout.panel.width, layout.panel.height)
+		gui.dock.Position = UDim2.fromOffset(layout.footer.x, layout.footer.y)
+		gui.dock.Size = UDim2.fromOffset(layout.footer.width, layout.footer.height)
+	else
+		-- 画面の中央。中身が画面の高さに収まるうちは中身の高さ（スクロールしない）
+		local maxHeight = gui.screen.AbsoluteSize.Y - SCREEN_MARGIN * 2
+		gui.panel.AnchorPoint = Vector2.new(0.5, 0.5)
+		gui.panel.Position = UDim2.fromScale(0.5, 0.5)
+		gui.panel.Size = UDim2.fromOffset(PANEL_WIDTH, if maxHeight > 0 then math.min(content, maxHeight) else content)
+	end
 end
 
 -- PartyState の中のリーダーの名前。リーダーがいないか、メンバーに見つからなければ nil
@@ -388,6 +459,14 @@ function ResultController.start()
 	local returnRemote = remotes:WaitForChild("ReturnToLobby") :: RemoteEvent
 	local gui = buildGui()
 	local buttons = { gui.retry, gui.returnToLobby }
+	-- 中身の高さ（結果を書いたとき）と画面の大きさが変わるたびに、パネルの大きさを決め直す
+	gui.list:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+		applyLayout(gui)
+	end)
+	Ui.onSafeAreaChanged(function()
+		applyLayout(gui)
+	end)
+	applyLayout(gui)
 
 	-- 受けた結果。フェーズがリザルトでなくなったら捨てる
 	local result: RemoteSchema.StageResult? = nil

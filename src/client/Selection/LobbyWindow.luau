@@ -8,10 +8,14 @@
 -- - 開いたとき、ゲームパッドなら firstButton（無ければ閉じるボタン）を選ぶ。
 --   閉じたとき、開く前に選んでいたボタンがまだ見えていればそれに戻す
 -- - 閉じるボタンは、マウス・タッチ・ゲームパッド（A）で押せる。閉じる音は Cancel
+-- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、文字とボタンを縮めずに、窓を安全な範囲（トップバーとノッチの内側）
+--   いっぱいに置き（ReplicatedStorage.Shared.SmallScreen の windowOf）、閉じるボタンを指で押せる高さにする。
+--   下の文は案内の文に重ねて出し、その分だけ中身のスクロールを広くする
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local Ui = require(script.Parent.Parent.Ui)
 
@@ -26,6 +30,8 @@ local HINT_HEIGHT = 44
 local MESSAGE_HEIGHT = 36
 local PADDING = 16
 local CLOSE_WIDTH = 104
+-- 小さい画面での閉じるボタンの高さ（指で押せる大きさ。Config.luau の SmallScreen 節の MinTouchSize 以上）
+local SMALL_CLOSE_HEIGHT = 44
 -- 後ろの画面を暗くする幕の透明度
 local BACKDROP_TRANSPARENCY = 0.45
 -- 下の文を出しておく秒数
@@ -85,11 +91,10 @@ function LobbyWindow.build(options: Options): Window
 		TextTruncate = Enum.TextTruncate.AtEnd,
 		Text = options.title,
 	})
+	-- 閉じるボタン・中身・下の文の位置と大きさ、窓の位置と大きさは applyLayout が画面の大きさに合わせて決める
 	local closeButton = Ui.button({
 		Name = "Close",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -PADDING, 0, 8),
-		Size = UDim2.fromOffset(CLOSE_WIDTH, HEADER_HEIGHT - 12),
 		Text = "閉じる",
 	})
 	local hint = Ui.text({
@@ -102,10 +107,9 @@ function LobbyWindow.build(options: Options): Window
 		TextYAlignment = Enum.TextYAlignment.Top,
 		Text = "",
 	})
-	local body = Ui.create("ScrollingFrame", {
+	local body: ScrollingFrame = Ui.create("ScrollingFrame", {
 		Name = "Body",
 		Position = UDim2.fromOffset(0, HEADER_HEIGHT + HINT_HEIGHT),
-		Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + HINT_HEIGHT + MESSAGE_HEIGHT)),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
@@ -123,21 +127,18 @@ function LobbyWindow.build(options: Options): Window
 			PaddingRight = UDim.new(0, PADDING + 4),
 		}),
 	})
+	-- 小さい画面では案内の文に重ねて出すので、文の後ろを塗れるようにし、案内の文より上に重ねる
 	local message = Ui.text({
 		Name = "Message",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, PADDING, 1, -4),
-		Size = UDim2.new(1, -PADDING * 2, 0, MESSAGE_HEIGHT - 8),
+		ZIndex = 2,
+		BackgroundColor3 = Ui.Color.Panel,
 		Font = Ui.Font.Bold,
 		TextColor3 = Ui.Color.HealthLow,
 		TextWrapped = true,
 		Text = "",
 	})
-	local panel = Ui.create("Frame", {
+	local panel: Frame = Ui.create("Frame", {
 		Name = "Window",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(WIDTH_SCALE, HEIGHT_SCALE),
 		BackgroundColor3 = Ui.Color.Panel,
 		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
@@ -159,7 +160,7 @@ function LobbyWindow.build(options: Options): Window
 		message,
 	})
 	-- 後ろの画面を暗くし、押せなくする幕。押したら閉じる
-	local backdrop = Ui.create("TextButton", {
+	local backdrop: TextButton = Ui.create("TextButton", {
 		Name = "Backdrop",
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(0, 0, 0),
@@ -173,6 +174,47 @@ function LobbyWindow.build(options: Options): Window
 	local screen = Ui.screenGui(options.name, Ui.Layer.LobbyWindow, { backdrop, panel })
 	screen.IgnoreGuiInset = true
 	screen.Enabled = false
+
+	local small = false
+	-- 小さい画面で案内の文に重ねた下の文は、出している間だけ後ろを塗って案内の文を隠す
+	local function paintMessage()
+		message.BackgroundTransparency = if small and message.Text ~= "" then 0 else 1
+	end
+	-- 窓と、閉じるボタン・中身・下の文の位置と大きさを、画面の大きさに合わせる
+	local function applyLayout()
+		small = Ui.isSmallScreen()
+		Ui.useSafeArea(screen, backdrop, small)
+		if small then
+			local size = Ui.safeAreaSize()
+			local rect = SmallScreen.windowOf(size.X, size.Y, options.width)
+			panel.AnchorPoint = Vector2.zero
+			panel.Position = UDim2.fromOffset(rect.x, rect.y)
+			panel.Size = UDim2.fromOffset(rect.width, rect.height)
+			closeButton.Position = UDim2.new(1, -PADDING, 0, (HEADER_HEIGHT - SMALL_CLOSE_HEIGHT) / 2)
+			closeButton.Size = UDim2.fromOffset(CLOSE_WIDTH, SMALL_CLOSE_HEIGHT)
+			-- 下の文は案内の文に重ねる。長い文は折り返して下へ伸びる
+			message.AnchorPoint = Vector2.zero
+			message.Position = UDim2.fromOffset(PADDING, HEADER_HEIGHT)
+			message.Size = UDim2.new(1, -PADDING * 2, 0, HINT_HEIGHT)
+			message.AutomaticSize = Enum.AutomaticSize.Y
+			body.Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + HINT_HEIGHT))
+		else
+			panel.AnchorPoint = Vector2.new(0.5, 0.5)
+			panel.Position = UDim2.fromScale(0.5, 0.5)
+			panel.Size = UDim2.fromScale(WIDTH_SCALE, HEIGHT_SCALE)
+			closeButton.Position = UDim2.new(1, -PADDING, 0, 8)
+			closeButton.Size = UDim2.fromOffset(CLOSE_WIDTH, HEADER_HEIGHT - 12)
+			message.AnchorPoint = Vector2.new(0, 1)
+			message.Position = UDim2.new(0, PADDING, 1, -4)
+			message.Size = UDim2.new(1, -PADDING * 2, 0, MESSAGE_HEIGHT - 8)
+			message.AutomaticSize = Enum.AutomaticSize.None
+			body.Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + HINT_HEIGHT + MESSAGE_HEIGHT))
+		end
+		paintMessage()
+	end
+	applyLayout()
+	Ui.onSafeAreaChanged(applyLayout)
+	message:GetPropertyChangedSignal("Text"):Connect(paintMessage)
 
 	local opened = false
 	-- 開く前に選んでいたボタン

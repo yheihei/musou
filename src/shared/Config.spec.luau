@@ -1319,6 +1319,22 @@ local SNAPSHOT = {
 		OugiSize = 94,
 		HikeiWidth = 140,
 		HikeiHeight = 96,
+		HikeiNoticeMax = 1,
+	},
+	SmallScreen = {
+		Width = 1000,
+		Height = 480,
+		Margin = 8,
+		Gap = 8,
+		MinTextSize = 12,
+		MinTouchSize = 44,
+		NoticeMinWidth = 248,
+		PanelMinWidth = 360,
+		PanelMaxWidth = 460,
+		DialogueHeight = 128,
+		DialogueFaceSize = 104,
+		SkipWidth = 220,
+		SkipHeight = 52,
 	},
 }
 

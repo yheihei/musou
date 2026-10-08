@@ -41,8 +41,9 @@ local function avoidedOf(layout: TouchLayout.Layout): { { name: string, rect: To
 	local list = {
 		{ name = "Jump", rect = layout.jump },
 		{ name = "Thumbstick", rect = TouchLayout.thumbstickOf(layout.width, layout.height) },
+		{ name = "Serifu", rect = layout.serifu },
 	}
-	for name, rect in TouchLayout.screensOf(layout.width, layout.height) do
+	for name, rect in TouchLayout.screensOf(layout.width, layout.height, nil, layout.scale) do
 		table.insert(list, { name = name, rect = rect })
 	end
 	return list
@@ -162,7 +163,7 @@ test(
 		expect(layout.guard.x + layout.guard.width + p.Gap).toBeNear(layout.jump.x)
 		expect(layout.guard.y + layout.guard.height + p.Gap).toBeNear(layout.attack.y)
 		-- 秘計の知らせの下に入れる
-		local notice = TouchLayout.screensOf(layout.width, layout.height).HikeiNotice
+		local notice = layout.hikeiNotice
 		expect(layout.ougi.y >= notice.y + notice.height + p.Gap).toBe(true)
 	end
 )
@@ -197,9 +198,9 @@ end)
 
 test("撃破数は左上の、画面上部の戦況と重ならない位置に移す", function()
 	local layout = TouchLayout.compute(667, 317)
-	local screens = TouchLayout.screensOf(layout.width, layout.height)
+	local screens = TouchLayout.screensOf(layout.width, layout.height, nil, layout.scale)
 	expect(TouchLayout.overlaps(screens.Gekihasu, screens.BattleStatus)).toBe(false)
-	expect(TouchLayout.overlaps(screens.Gekihasu, screens.Serifu)).toBe(false)
+	expect(TouchLayout.overlaps(screens.Gekihasu, layout.serifu)).toBe(false)
 	expect(screens.Gekihasu.x).toBe(Config.TouchControls.Margin)
 end)
 
@@ -213,3 +214,122 @@ test(
 		expect(TouchLayout.overlaps(a, { x = 21, y = 0, width = 5, height = 5 }, 12)).toBe(true)
 	end
 )
+
+-- スマホの横画面（上のバーを除いた画面の大きさ）。iPhone SE（第1世代）は一番小さい横画面として加える
+local PHONES = {
+	{ name = "iPhone SE", width = 667, height = 317 },
+	{ name = "小さい Android", width = 640, height = 302 },
+	{ name = "iPhone 14（ノッチとホームバーを除く）", width = 750, height = 311 },
+	{ name = "iPhone 15 Pro Max（ノッチとホームバーを除く）", width = 814, height = 351 },
+	{ name = "横長の Android", width = 800, height = 302 },
+	{ name = "iPhone SE（第1世代）", width = 568, height = 262 },
+}
+
+test(
+	"スマホでも、戦闘中の台詞と秘計の知らせの一番小さい文字は読める下限を下回らない",
+	function()
+		local minText = Config.SmallScreen.MinTextSize
+		for _, phone in PHONES do
+			local layout = TouchLayout.compute(phone.width, phone.height)
+			-- 台詞は 13（SerifuController の TEXT_SIZE_MIN）、秘計の知らせは 14（Ui.TextSize.Small）まで小さくなる
+			local serifu = 13 * layout.serifuScale
+			local notice = 14 * layout.hikeiNoticeScale
+			if serifu < minText - 1e-9 or notice < minText - 1e-9 then
+				error(`{phone.name}: 台詞 {serifu}、秘計の知らせ {notice} ピクセル`)
+			end
+			-- ほかの部品はもっと縮めている
+			expect(layout.scale < layout.serifuScale).toBe(true)
+			expect(layout.scale < layout.hikeiNoticeScale).toBe(true)
+		end
+	end
+)
+
+test("大きい画面では、台詞と秘計の知らせもほかの部品と同じ倍率", function()
+	for _, size in { { 1366, 966 }, { 1920, 1022 }, { 1280, 742 } } do
+		local layout = TouchLayout.compute(size[1], size[2])
+		expect(layout.scale).toBe(1)
+		expect(layout.serifuScale).toBe(1)
+		expect(layout.hikeiNoticeScale).toBe(1)
+		expect(layout.hikeiNoticeWidth).toBeNear(320)
+	end
+end)
+
+test("スマホでは、台詞を既定の位置（左下の HUD の上）に置く", function()
+	for _, phone in PHONES do
+		local layout = TouchLayout.compute(phone.width, phone.height)
+		-- SerifuController の BOTTOM（画面の下端から台詞の枠の下端まで）
+		expect(layout.serifu.y + layout.serifu.height).toBeNear(layout.height - 148)
+		expect(layout.serifu.x).toBe(24)
+	end
+end)
+
+-- 台詞と秘計の知らせの、画面からのはみ出しと、ほかの部品との重なりを文にして集める（無ければ空）
+local function overlayProblemsOf(layout: TouchLayout.Layout): { string }
+	local p = Config.TouchControls
+	local problems = {}
+	local screens = TouchLayout.screensOf(layout.width, layout.height, nil, layout.scale)
+	local serifu = layout.serifu
+	if
+		serifu.x < 0
+		or serifu.y < 0
+		or serifu.x + serifu.width > layout.width
+		or serifu.y + serifu.height > layout.height
+	then
+		table.insert(problems, "Serifu が画面からはみ出す")
+	end
+	-- ボタン（とジャンプボタン）とは間隔 Gap をあけ、ほかの部品とは重ならなければよい
+	local others = {
+		{ name = "Jump", rect = layout.jump, gap = p.Gap },
+		{ name = "Attack", rect = layout.attack, gap = p.Gap },
+		{ name = "ChargeKogeki", rect = layout.chargeKogeki, gap = p.Gap },
+		{ name = "Guard", rect = layout.guard, gap = p.Gap },
+		{ name = "Ougi", rect = layout.ougi, gap = p.Gap },
+	}
+	for slot, rect in layout.hikei do
+		table.insert(others, { name = `Hikei{slot}`, rect = rect, gap = p.Gap })
+	end
+	for name, rect in screens do
+		table.insert(others, { name = name, rect = rect, gap = 0 })
+	end
+	for _, other in others do
+		if TouchLayout.overlaps(serifu, other.rect, other.gap) then
+			table.insert(problems, `Serifu と {other.name} が重なる`)
+		end
+	end
+	local notice = layout.hikeiNotice
+	for _, other in others do
+		if other.name ~= "HikeiNotice" and TouchLayout.overlaps(notice, other.rect, other.gap) then
+			table.insert(problems, `HikeiNotice と {other.name} が重なる`)
+		end
+	end
+	return problems
+end
+
+test(
+	"横画面のどの大きさでも、台詞と秘計の知らせは収まり、ボタンにもほかの部品にも互いにも重ならない",
+	function()
+		local failures = {}
+		for width = 560, 2600, 40 do
+			for height = 240, 1100, 20 do
+				if width >= height then
+					local problems = overlayProblemsOf(TouchLayout.compute(width, height))
+					if #problems > 0 then
+						table.insert(failures, `{width}x{height}: {table.concat(problems, "、")}`)
+					end
+				end
+			end
+		end
+		expect(failures).toEqual({})
+	end
+)
+
+test("秘計の知らせが左の秘計の枚に近づく画面では、知らせを狭める", function()
+	local p = Config.TouchControls
+	-- 幅で縮める倍率が決まる、正方形に近い画面
+	local layout = TouchLayout.compute(600, 400)
+	local hikei = layout.hikei[#layout.hikei]
+	expect(layout.hikeiNotice.x).toBeNear(hikei.x + hikei.width + p.Gap)
+	expect(layout.hikeiNoticeWidth < 320).toBe(true)
+	-- 知らせ1件の幅（縮める前）と倍率から、範囲の幅が決まる
+	expect(layout.hikeiNoticeWidth * layout.hikeiNoticeScale / layout.scale).toBeNear(layout.hikeiNotice.width)
+end)

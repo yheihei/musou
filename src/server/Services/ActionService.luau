@@ -19,6 +19,8 @@
 -- - 受け取った行動は、プレイヤーごとに新しいものから RECEIVED_MAX 件を覚え、窓口の DumpAction で返す
 --   （スマホの操作ボタンなど、入力から Remotes.Action が届いたことを確かめるため）
 -- - 窓口の SetTouchControls で、スマホの戦闘の操作ボタンを出すかを Player の Attribute の TouchControls に書く
+-- - 窓口の SetScreenSize で、本人の画面の配置に使う画面の大きさを Player の Attribute（SmallScreen.SIZE_ATTRIBUTE）に書く
+--   （Studio でスマホの小さい画面の配置を確かめる用。デバイスエミュレーターを使わずに、安全な範囲の左上にその大きさで並ぶ）
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -29,6 +31,7 @@ local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local TouchControls = require(ReplicatedStorage.Shared.TouchControls)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
@@ -450,6 +453,29 @@ local function registerDebugCommands()
 			end
 			player:SetAttribute(TouchControls.ATTRIBUTE, mode)
 			return `{player.Name} のスマホの操作ボタンを {mode} にした`
+		end
+	)
+	DebugCommand.register(
+		"SetScreenSize",
+		"<プレイヤー名> <幅> <高さ>|off",
+		"本人の画面の配置（出撃前の画面・リザルト・タイトル画面・会話窓など）を、安全な範囲がその大きさの画面として決める（Studio でスマホの配置を確かめる用。iPhone SE は 667 317）。off で実際の大きさに戻す。戦闘の画面のタッチの配置は実際の大きさのまま",
+		function(name, width, height)
+			local player = DebugCommand.findPlayer(name)
+			if type(width) == "string" and string.lower(width) == "off" then
+				player:SetAttribute(SmallScreen.SIZE_ATTRIBUTE, nil)
+				return `{player.Name} の画面の大きさを実際の大きさに戻した`
+			end
+			local w = DebugCommand.toNumber(width, "幅")
+			local h = DebugCommand.toNumber(height, "高さ")
+			if not SmallScreen.isValidSize(w, h) then
+				error(
+					`幅と高さは {SmallScreen.SIZE_MIN} から {SmallScreen.SIZE_MAX} で指定する（{w}x{h}）`,
+					0
+				)
+			end
+			player:SetAttribute(SmallScreen.SIZE_ATTRIBUTE, Vector2.new(w, h))
+			local kind = if SmallScreen.isSmall(w, h) then "小さい画面" else "大きい画面"
+			return `{player.Name} の画面の大きさを {w}x{h}（{kind}）にした`
 		end
 	)
 end

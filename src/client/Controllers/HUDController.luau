@@ -9,6 +9,8 @@
 --   持ち込みが無いときは出さない
 -- - 体力のゲージの上に操作の案内。ボタン表記は入力の対応表から引き、入力の種類で切り替える（秘計の枚のボタンも）
 -- - イベントシーンの再生中は setVisible で隠す
+-- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、戦闘のフェーズの出撃メンバーにだけ出す。ロビー・リザルトと
+--   待機中の人には出さない（狭い画面を出撃前の画面と非公式の表記に使う。出す条件は画面上部の戦況と同じ BattleStatus.isVisible）
 -- - タッチの配置（スマホの戦闘の操作ボタンを出している間。Ui.touchLayout）では、右下を操作ボタンに空けるため、
 --   操作の案内と秘計の枚を隠し（秘計の枚はタッチの操作ボタンが名前と使用済みを出す）、撃破数を左上
 --   （ReplicatedStorage.Shared.TouchLayout の gekihasuOf）へ移して左に寄せる。体力と奥義ゲージの枠と撃破数は、画面の大きさに合わせて縮める
@@ -18,16 +20,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StarterGui = game:GetService("StarterGui")
 local TweenService = game:GetService("TweenService")
 
+local BattleStatus = require(ReplicatedStorage.Shared.BattleStatus)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local TouchLayout = require(ReplicatedStorage.Shared.TouchLayout)
+local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
 
 local HUDController = {}
 
 local player = Players.LocalPlayer
 local screen: ScreenGui? = nil
+-- イベントシーンの再生中でないか（setVisible）
+local eventVisible = true
 
 -- 画面の端からの余白と、左下の枠の大きさ（ピクセル）
 local MARGIN = 24
@@ -323,11 +329,23 @@ local function disableCoreHealth()
 	warn("HUDController: 標準の体力表示を消せなかった")
 end
 
+-- 出すかを決め直す。イベントシーンの再生中は隠し、小さい画面では戦闘のフェーズの出撃メンバーにだけ出す。
+-- 渡される PartyState は、続けて届いたときに最新でないことがあるので、最新の写しで決める
+local function refreshVisible()
+	local current = screen
+	if not current then
+		return
+	end
+	local state = PartyClient.get()
+	local me = PartyClient.me()
+	local fighting = BattleStatus.isVisible(if state then state.phase else nil, me == nil or me.waiting, false)
+	current.Enabled = eventVisible and (fighting or not Ui.isSmallScreen())
+end
+
 -- HUD を出すか隠すかを切り替える（イベントシーンの再生中は隠す）
 function HUDController.setVisible(visible: boolean)
-	if screen then
-		screen.Enabled = visible
-	end
+	eventVisible = visible
+	refreshVisible()
 end
 
 function HUDController.start()
@@ -418,9 +436,12 @@ function HUDController.start()
 		refreshHikei()
 	end)
 	Ui.onTouchLayoutChanged(applyTouchLayout)
+	PartyClient.changed:Connect(refreshVisible)
+	Ui.onSafeAreaChanged(refreshVisible)
 	refreshGekihasu()
 	refreshOugi()
 	applyTouchLayout(Ui.touchLayout())
+	refreshVisible()
 end
 
 return HUDController

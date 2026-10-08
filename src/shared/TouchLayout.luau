@@ -12,9 +12,16 @@
 -- - 上の段は、右からガードと奥義。ジャンプボタンの上（ミニマップの下）に置き、入らなければ通常攻撃の上に置く
 -- - 秘計の枚は、左上へ移した撃破数（HUD）の下に、枚の順に横に並べる
 -- - ほかの戦闘の画面の部品（screensOf）と、標準のサムスティックを出す範囲とは Gap 以上あける
+-- - 戦闘中の台詞と秘計の知らせは、文字が読める下限（SmallScreen.withReadableFloor）を下回るほどは縮めないので、
+--   ほかの部品より大きく出る。秘計の知らせは、ミニマップの左に HikeiNoticeMax 件まで積み、左の秘計の枚に重なるなら
+--   重ならない幅まで狭める。ボタンは秘計の知らせも避ける
+-- - 台詞は、ボタンを置いた後に、左下の HUD の上（既定の位置）に置く。ボタンや秘計の知らせに重なるときは、
+--   重ならない高さのうち既定の位置に一番近い高さへずらす（スマホより正方形に近い小さい画面で、それでも置けなければ、
+--   読める下限の倍率から縮める）。サムスティックの範囲には重ねてよい（入力を受け取らない表示だけ）
 
 local Config = require("./Config")
 local Hikei = require("./Hikei")
+local SmallScreen = require("./SmallScreen")
 
 export type Rect = {
 	x: number,
@@ -37,7 +44,15 @@ export type Layout = {
 	ougi: Rect,
 	-- 秘計の枚。枚の順
 	hikei: { Rect },
-	-- 全部のボタンが画面に収まり、ほかの部品と重ならないか
+	-- 戦闘中の台詞の枠の範囲（設計の大きさ）と、枠を縮める倍率（読める下限で止めた倍率）
+	serifu: Rect,
+	serifuScale: number,
+	-- 秘計の知らせの並びの範囲（設計の大きさ。積める件数のすべて）と、並びを縮める倍率（読める下限で止めた倍率）と、
+	-- 知らせ1件の幅（縮める前）
+	hikeiNotice: Rect,
+	hikeiNoticeScale: number,
+	hikeiNoticeWidth: number,
+	-- 全部のボタンと台詞が画面に収まり、ほかの部品と重ならないか
 	fits: boolean,
 }
 
@@ -55,11 +70,15 @@ local BATTLE_STATUS_HEIGHT = 68 -- BattleStatusController の PANEL_HEIGHT
 local MINIMAP_TOP = 84 -- Ui.Minimap の Top
 local MINIMAP_SIZE = 200 -- Ui.Minimap の Size
 local NOTICE_RIGHT = 236 -- HikeiNoticeController の RIGHT（ミニマップの左）
-local NOTICE_WIDTH = 320 -- HikeiNoticeController の WIDTH
-local NOTICE_HEIGHT = (56 + 6) * 4 -- HikeiNoticeController の (HEIGHT + GAP) × MAX_NOTICES
-local SERIFU_BOTTOM = 148 -- SerifuController の BOTTOM
-local SERIFU_WIDTH = 440 -- SerifuController の WIDTH
-local SERIFU_HEIGHT = 96 -- SerifuController の HEIGHT
+local NOTICE_WIDTH = 320 -- HikeiNoticeController の WIDTH（知らせ1件の幅の上限）
+local NOTICE_ITEM_HEIGHT = 56 + 6 -- HikeiNoticeController の HEIGHT + GAP（知らせ1件。積む数は HikeiNoticeMax）
+local NOTICE_TEXT_MIN = 14 -- HikeiNoticeController の知らせの一番小さい文字（Detail の Ui.TextSize.Small）
+local SERIFU_BOTTOM = 148 -- SerifuController の BOTTOM（既定の位置の、画面の下端から枠の下端まで）
+local SERIFU_WIDTH = 360 -- SerifuController の TOUCH_WIDTH（タッチの配置での枠の幅）
+local SERIFU_HEIGHT = 108 -- SerifuController の TOUCH_HEIGHT（タッチの配置での枠の高さ）
+local SERIFU_TEXT_MIN = 13 -- SerifuController の TEXT_SIZE_MIN（長い台詞を縮めて収めるときの一番小さい文字）
+-- 台詞を読める下限の倍率で置けないときに、戦闘の画面の倍率へ近づける段階の数
+local SERIFU_SHRINK_STEPS = 8
 
 -- 標準のサムスティック（PlayerModule の DynamicThumbstick）を出す範囲。横画面では、左から幅の 4 割、上から高さの 3 分の 1 より下
 local THUMBSTICK_WIDTH = 0.4
@@ -107,6 +126,16 @@ function TouchLayout.scaleOf(width: number, height: number, params: Config.Touch
 	return math.min(1, width / p.DesignWidth, height / p.DesignHeight)
 end
 
+-- 戦闘の画面を倍率 scale で縮めるときの、戦闘中の台詞の枠の倍率（一番小さい文字が読める下限を下回らない倍率）
+function TouchLayout.serifuScaleOf(scale: number): number
+	return SmallScreen.withReadableFloor(scale, SERIFU_TEXT_MIN)
+end
+
+-- 戦闘の画面を倍率 scale で縮めるときの、秘計の知らせの並びの倍率（一番小さい文字が読める下限を下回らない倍率）
+function TouchLayout.hikeiNoticeScaleOf(scale: number): number
+	return SmallScreen.withReadableFloor(scale, NOTICE_TEXT_MIN)
+end
+
 -- 一辺の大きさを決めた標準のジャンプボタンの範囲（実際の画面のピクセル）
 local function jumpFor(width: number, height: number, small: boolean): Rect
 	local size = if small then JUMP_SMALL_SIZE else JUMP_LARGE_SIZE
@@ -132,10 +161,52 @@ function TouchLayout.gekihasuOf(params: Config.TouchControlsSection?): Rect
 	return rect(p.Margin, BATTLE_STATUS_TOP, GEKIHASU_WIDTH, GEKIHASU_HEIGHT)
 end
 
--- タッチの配置での、ほかの戦闘の画面の部品の範囲（設計の大きさ）。width と height は設計の大きさ。
--- 台詞と秘計の知らせは出ていないときも、出たときの範囲（知らせは積める件数のすべて）を返す。
--- HUD の秘計の枚と操作の案内はタッチの配置では隠すので含めない
-function TouchLayout.screensOf(width: number, height: number, params: Config.TouchControlsSection?): { [string]: Rect }
+-- タッチの配置での秘計の枚の範囲（設計の大きさ）。左上の撃破数の下に、枚の順に横に並べる
+local function hikeiOf(p: Config.TouchControlsSection): { Rect }
+	local gekihasu = TouchLayout.gekihasuOf(p)
+	local result: { Rect } = {}
+	for slot = 1, Hikei.MOCHIKOMI_MAX do
+		table.insert(
+			result,
+			rect(
+				p.Margin + (slot - 1) * (p.HikeiWidth + p.Gap),
+				bottomOf(gekihasu) + p.Gap,
+				p.HikeiWidth,
+				p.HikeiHeight
+			)
+		)
+	end
+	return result
+end
+
+-- タッチの配置での秘計の知らせの並びの範囲（設計の大きさ）。width と height は設計の大きさ、scale は戦闘の画面を
+-- 縮める倍率。ミニマップの左（右上の角を固定）から下へ HikeiNoticeMax 件を積む。読める下限で止めた倍率で縮めるので
+-- 設計の大きさではほかの部品より大きく、左の秘計の枚に Gap より近づく幅なら、近づかない幅まで狭める
+function TouchLayout.hikeiNoticeOf(
+	width: number,
+	_height: number,
+	params: Config.TouchControlsSection?,
+	scale: number?
+): Rect
+	local p = params or Config.TouchControls
+	local s = scale or 1
+	-- 読める下限で止めた倍率の、ほかの部品の倍率に対する比
+	local ratio = TouchLayout.hikeiNoticeScaleOf(s) / s
+	local right = width - NOTICE_RIGHT
+	local hikei = hikeiOf(p)
+	local left = math.max(right - NOTICE_WIDTH * ratio, rightOf(hikei[#hikei]) + p.Gap)
+	return rect(left, MINIMAP_TOP, right - left, NOTICE_ITEM_HEIGHT * p.HikeiNoticeMax * ratio)
+end
+
+-- タッチの配置での、ほかの戦闘の画面の部品の範囲（設計の大きさ）。width と height は設計の大きさ、
+-- scale は戦闘の画面を縮める倍率（省くと 1）。秘計の知らせは出ていないときも、出たときの範囲（積める件数のすべて）を返す。
+-- 台詞はボタンを置いてから置くので含めない（compute の serifu）。HUD の秘計の枚と操作の案内はタッチの配置では隠すので含めない
+function TouchLayout.screensOf(
+	width: number,
+	height: number,
+	params: Config.TouchControlsSection?,
+	scale: number?
+): { [string]: Rect }
 	return {
 		Status = rect(SCREEN_MARGIN, height - SCREEN_MARGIN - STATUS_HEIGHT, STATUS_WIDTH, STATUS_HEIGHT),
 		Gekihasu = TouchLayout.gekihasuOf(params),
@@ -146,14 +217,57 @@ function TouchLayout.screensOf(width: number, height: number, params: Config.Tou
 			BATTLE_STATUS_HEIGHT
 		),
 		Minimap = rect(width - SCREEN_MARGIN - MINIMAP_SIZE, MINIMAP_TOP, MINIMAP_SIZE, MINIMAP_SIZE),
-		HikeiNotice = rect(width - NOTICE_RIGHT - NOTICE_WIDTH, MINIMAP_TOP, NOTICE_WIDTH, NOTICE_HEIGHT),
-		Serifu = rect(SCREEN_MARGIN, height - SERIFU_BOTTOM - SERIFU_HEIGHT, SERIFU_WIDTH, SERIFU_HEIGHT),
+		HikeiNotice = TouchLayout.hikeiNoticeOf(width, height, params, scale),
 	}
 end
 
 -- 標準のサムスティックを出す範囲（設計の大きさ）
 function TouchLayout.thumbstickOf(width: number, height: number): Rect
 	return rect(0, height * THUMBSTICK_TOP, width * THUMBSTICK_WIDTH, height * (1 - THUMBSTICK_TOP))
+end
+
+-- 横の範囲が x から x + w で高さ h の四角を、上端 minY から下端 maxY の間に、obstacles と gap 以上あけて置けるときの上端のうち、
+-- preferred に一番近いもの。置けなければ nil
+local function verticalSlot(
+	obstacles: { Rect },
+	x: number,
+	w: number,
+	h: number,
+	preferred: number,
+	minY: number,
+	maxY: number,
+	gap: number
+): number?
+	-- 横の範囲に掛かる部品が塞ぐ縦の範囲（間隔を含める）
+	local blocked: { { number } } = {}
+	for _, obstacle in obstacles do
+		if obstacle.x < x + w + gap and x < rightOf(obstacle) + gap then
+			table.insert(blocked, { obstacle.y - gap, bottomOf(obstacle) + gap })
+		end
+	end
+	table.sort(blocked, function(a, b)
+		return a[1] < b[1]
+	end)
+	local best: number? = nil
+	-- 空いている縦の範囲 [from, to] に置けるなら、preferred に一番近い上端を候補にする
+	local function consider(from: number, to: number)
+		if to - from < h then
+			return
+		end
+		local y = math.clamp(preferred, from, to - h)
+		if best == nil or math.abs(y - preferred) < math.abs(best - preferred) then
+			best = y
+		end
+	end
+	local cursor = minY
+	for _, range in blocked do
+		if range[1] > cursor then
+			consider(cursor, math.min(range[1], maxY))
+		end
+		cursor = math.max(cursor, range[2])
+	end
+	consider(cursor, maxY)
+	return best
 end
 
 -- 実際の画面の大きさ（realWidth x realHeight）から、タッチの配置を決める。params を省くと Config.luau の TouchControls 節を使う
@@ -167,12 +281,13 @@ function TouchLayout.compute(realWidth: number, realHeight: number, params: Conf
 
 	-- ほかの戦闘の画面の部品。上の段を通常攻撃の上に置くときは、上の段の横の範囲にある部品の下に入れる
 	local screens: { Rect } = {}
-	for _, screen in TouchLayout.screensOf(width, height, p) do
+	for _, screen in TouchLayout.screensOf(width, height, p, scale) do
 		table.insert(screens, screen)
 	end
 	-- 避ける範囲。ジャンプボタンは左上から画面の右下の角まで
+	local jumpArea = rect(jump.x, jump.y, width - jump.x, height - jump.y)
 	local obstacles: { Rect } = table.clone(screens)
-	table.insert(obstacles, rect(jump.x, jump.y, width - jump.x, height - jump.y))
+	table.insert(obstacles, jumpArea)
 	table.insert(obstacles, TouchLayout.thumbstickOf(width, height))
 
 	local function fits(r: Rect): boolean
@@ -224,15 +339,7 @@ function TouchLayout.compute(realWidth: number, realHeight: number, params: Conf
 		guard, ougi = upperRow(rowRight, attack.y - gap)
 	end
 
-	local gekihasu = TouchLayout.gekihasuOf(p)
-	local hikei: { Rect } = {}
-	for slot = 1, Hikei.MOCHIKOMI_MAX do
-		table.insert(
-			hikei,
-			rect(p.Margin + (slot - 1) * (p.HikeiWidth + gap), bottomOf(gekihasu) + gap, p.HikeiWidth, p.HikeiHeight)
-		)
-	end
-
+	local hikei = hikeiOf(p)
 	local placed = { attack, charge, guard, ougi }
 	for _, r in hikei do
 		table.insert(placed, r)
@@ -249,6 +356,37 @@ function TouchLayout.compute(realWidth: number, realHeight: number, params: Conf
 		end
 	end
 
+	-- 台詞。既定の位置は左下の HUD の上。ボタン・ジャンプボタン・ほかの部品と重ならない高さのうち、既定の位置に一番近い高さに置く。
+	-- 読める下限で止めた倍率ではどこにも置けない画面（スマホより正方形に近い、小さい画面）では、置けるまで倍率を
+	-- 戦闘の画面の倍率へ近づける
+	local serifuObstacles: { Rect } = table.clone(screens)
+	table.insert(serifuObstacles, jumpArea)
+	for _, r in placed do
+		table.insert(serifuObstacles, r)
+	end
+	local readable = TouchLayout.serifuScaleOf(scale)
+	local serifu: Rect? = nil
+	local serifuScale = scale
+	for step = 0, SERIFU_SHRINK_STEPS do
+		local candidate = readable + (scale - readable) * step / SERIFU_SHRINK_STEPS
+		local serifuWidth = SERIFU_WIDTH * candidate / scale
+		local serifuHeight = SERIFU_HEIGHT * candidate / scale
+		local preferred = height - SERIFU_BOTTOM - serifuHeight
+		local y = verticalSlot(serifuObstacles, SCREEN_MARGIN, serifuWidth, serifuHeight, preferred, 0, height, gap)
+		if y and SCREEN_MARGIN + serifuWidth <= width then
+			serifu = rect(SCREEN_MARGIN, y, serifuWidth, serifuHeight)
+			serifuScale = candidate
+			break
+		end
+	end
+	if not serifu then
+		ok = false
+	end
+	local serifuRect = serifu
+		or rect(SCREEN_MARGIN, height - SERIFU_BOTTOM - SERIFU_HEIGHT, SERIFU_WIDTH, SERIFU_HEIGHT)
+
+	local noticeScale = TouchLayout.hikeiNoticeScaleOf(scale)
+	local notice = TouchLayout.hikeiNoticeOf(width, height, p, scale)
 	return {
 		scale = scale,
 		width = width,
@@ -259,6 +397,11 @@ function TouchLayout.compute(realWidth: number, realHeight: number, params: Conf
 		guard = guard,
 		ougi = ougi,
 		hikei = hikei,
+		serifu = serifuRect,
+		serifuScale = serifuScale,
+		hikeiNotice = notice,
+		hikeiNoticeScale = noticeScale,
+		hikeiNoticeWidth = notice.width * scale / noticeScale,
 		fits = ok,
 	}
 end

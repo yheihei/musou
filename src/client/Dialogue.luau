@@ -5,17 +5,22 @@
 --
 -- - 話者はキャラクター ID。名前はキャラクターの定義表から引き、無ければ渡した文字列をそのまま名前にする
 -- - 顔は顔グラフィックの登録表（KaoGraphic）から引く。登録の無い話者は顔の枠を出さず、台詞を左へ広げる
--- - 長い台詞は折り返し、枠に収まらなければ文字を小さくする
+-- - 長い台詞は折り返し、枠に収まらなければ文字を小さくする（TEXT_SIZE_MIN まで）
 -- - say を続けて呼ぶと、前の台詞を打ち切って新しい台詞を出す
+-- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、窓を安全な範囲の下に幅いっぱいで置き、高さと顔を詰める
+--   （Config.luau の SmallScreen 節の DialogueHeight と DialogueFaceSize。ReplicatedStorage.Shared.SmallScreen の dialogueOf）。
+--   文字は縮めずに使い、台詞は大きい画面と同じく TEXT_SIZE_MIN（読める下限の 12 より大きい）までしか小さくしない
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TextService = game:GetService("TextService")
 
 local Characters = require(ReplicatedStorage.Shared.Characters)
+local Config = require(ReplicatedStorage.Shared.Config)
 local KaoGraphic = require(ReplicatedStorage.Shared.KaoGraphic)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
 local Serifu = require(ReplicatedStorage.Shared.Serifu)
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local Ui = require(script.Parent.Ui)
 
 local Dialogue = {}
@@ -32,6 +37,9 @@ local TEXT_SIZE_MIN = 14
 
 type Gui = {
 	screen: ScreenGui,
+	window: Frame,
+	-- 窓の大きさの上限
+	constraint: UISizeConstraint,
 	face: ImageLabel,
 	name: TextLabel,
 	text: TextLabel,
@@ -66,6 +74,7 @@ local function build(): Gui
 		TextSize = TEXT_SIZE_MAX,
 		Font = Ui.Font.Body,
 	})
+	local constraint = Ui.create("UISizeConstraint", { MaxSize = Vector2.new(WINDOW_MAX_WIDTH, WINDOW_HEIGHT) })
 	local window = Ui.create("Frame", {
 		Name = "Window",
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -77,14 +86,21 @@ local function build(): Gui
 	}, {
 		Ui.create("UICorner", { CornerRadius = UDim.new(0, 10) }),
 		Ui.create("UIStroke", { Color = Ui.Color.Accent, Thickness = 2 }),
-		Ui.create("UISizeConstraint", { MaxSize = Vector2.new(WINDOW_MAX_WIDTH, WINDOW_HEIGHT) }),
+		constraint,
 		face,
 		name,
 		text,
 	})
 	local screen = Ui.screenGui("Dialogue", Ui.Layer.Dialogue, { window })
 	screen.Enabled = false
-	return { screen = screen, face = face :: ImageLabel, name = name, text = text }
+	return {
+		screen = screen,
+		window = window :: Frame,
+		constraint = constraint :: UISizeConstraint,
+		face = face :: ImageLabel,
+		name = name,
+		text = text,
+	}
 end
 
 local function getGui(): Gui
@@ -94,9 +110,30 @@ local function getGui(): Gui
 	return gui :: Gui
 end
 
--- 顔の有無で、名前と台詞の左端を決める
-local function layout(view: Gui, hasFace: boolean)
-	local left = if hasFace then PADDING * 2 + FACE_SIZE else PADDING * 2
+-- 窓の位置と大きさを画面の大きさに合わせ、窓の高さと顔の一辺を返す。
+-- 小さい画面では安全な範囲の下に幅いっぱいで置き、高さと顔を詰める。大きい画面では画面の下の中央に置く
+local function place(view: Gui): (number, number)
+	if Ui.isSmallScreen() then
+		local size = Ui.safeAreaSize()
+		local rect = SmallScreen.dialogueOf(size.X, size.Y, WINDOW_MAX_WIDTH)
+		view.window.AnchorPoint = Vector2.zero
+		view.window.Position = UDim2.fromOffset(rect.x, rect.y)
+		view.window.Size = UDim2.fromOffset(rect.width, rect.height)
+		view.constraint.MaxSize = Vector2.new(WINDOW_MAX_WIDTH, rect.height)
+		return rect.height, Config.SmallScreen.DialogueFaceSize
+	end
+	view.window.AnchorPoint = Vector2.new(0.5, 1)
+	view.window.Position = UDim2.new(0.5, 0, 1, -24)
+	view.window.Size = UDim2.new(0.8, 0, 0, WINDOW_HEIGHT)
+	view.constraint.MaxSize = Vector2.new(WINDOW_MAX_WIDTH, WINDOW_HEIGHT)
+	return WINDOW_HEIGHT, FACE_SIZE
+end
+
+-- 顔の有無で、名前と台詞の左端を決める。windowHeight は窓の高さ、faceSize は顔の一辺
+local function layout(view: Gui, hasFace: boolean, windowHeight: number, faceSize: number)
+	local left = if hasFace then PADDING * 2 + faceSize else PADDING * 2
+	view.face.Position = UDim2.fromOffset(PADDING, (windowHeight - faceSize) / 2)
+	view.face.Size = UDim2.fromOffset(faceSize, faceSize)
 	view.face.Visible = hasFace
 	view.name.Position = UDim2.fromOffset(left, PADDING)
 	view.name.Size = UDim2.new(1, -(left + PADDING * 2), 0, NAME_HEIGHT)
@@ -132,7 +169,8 @@ function Dialogue.say(speaker: string, hyojo: RemoteSchema.Hyojo, line: string)
 	local image = KaoGraphic.imageOf(speaker, hyojo)
 	view.name.Text = if character then character.displayName else speaker
 	view.face.Image = image or ""
-	layout(view, image ~= nil)
+	local windowHeight, faceSize = place(view)
+	layout(view, image ~= nil, windowHeight, faceSize)
 	view.screen.Enabled = true
 	view.text.Text = line
 	-- 位置と大きさが決まってから文字の大きさを合わせる

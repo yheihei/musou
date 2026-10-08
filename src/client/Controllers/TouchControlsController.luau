@@ -9,7 +9,9 @@
 -- - 出すのは、タッチで遊んでいる人のうち戦闘のフェーズの出撃メンバーだけ（画面上部の戦況と同じ条件）。
 --   キーボードとマウスやゲームパッドに切り替えたら消す。Player の Attribute の TouchControls（窓口の SetTouchControls）で強制できる
 -- - 出している間は Ui.setTouchLayout でタッチの配置にする（戦闘の画面を画面の大きさに合わせて縮め、
---   HUD の秘計の枚と操作の案内を隠し、撃破数を左上へ移す）
+--   HUD の秘計の枚と操作の案内を隠し、撃破数を左上へ移す。台詞と秘計の知らせは配置の位置と倍率に置く）
+-- - タッチで遊んでいるか（フェーズを問わない。TouchControls.isActive）を Ui.setTouchInput で知らせる
+--   （イベントシーンのスキップのボタンなど、戦闘の外の画面が使う）
 -- - ボタンは押した瞬間に送る。通常攻撃とガードは、押した指を離すまで続く（指がボタンの外へずれても続ける）。
 --   ボタンを隠したら、押している指は離したことにする
 -- - ガード中にサムスティックを倒すと緊急回避になる（InputController が Humanoid.MoveDirection から判定する。PC と同じ処理）
@@ -276,8 +278,8 @@ local function place(view: View, rect: TouchLayout.Rect, scale: number)
 	view.button.Size = UDim2.fromOffset(rect.width, rect.height)
 end
 
--- 画面の大きさから配置を決めてボタンを置き、倍率を返す
-local function applyLayout(): number
+-- 画面の大きさから配置を決めてボタンを置き、配置を返す
+local function applyLayout(): TouchLayout.Layout
 	local size = screen.AbsoluteSize
 	local layout = TouchLayout.compute(size.X, size.Y)
 	place(attack, layout.attack, layout.scale)
@@ -291,7 +293,7 @@ local function applyLayout(): number
 		warnedSize = size
 		warn(`TouchControlsController: タッチの操作ボタンが画面（{size.X}x{size.Y}）に収まらない`)
 	end
-	return layout.scale
+	return layout
 end
 
 -- 押している指を全部離したことにする
@@ -308,24 +310,28 @@ local function releaseAll()
 	end
 end
 
--- 出すかを決め直し、出すならボタンを置き直してタッチの配置にする。
+-- 出すかを決め直し、出すならボタンを置き直してタッチの配置にする。タッチで遊んでいるか（フェーズを問わない）も
+-- Ui.setTouchInput で知らせる（イベントシーンのスキップのボタンなど、戦闘の外の画面が使う）。
 -- 渡される PartyState は、続けて届いたときに最新でないことがあるので、最新の写しで決める
 local function refresh()
 	local state = PartyClient.get()
 	local me = PartyClient.me()
+	local mode = TouchControls.modeOf(player:GetAttribute(TouchControls.ATTRIBUTE))
+	local device = deviceOf()
 	local shown = TouchControls.isShown(
-		TouchControls.modeOf(player:GetAttribute(TouchControls.ATTRIBUTE)),
-		deviceOf(),
+		mode,
+		device,
 		if state then state.phase else nil,
 		me == nil or me.waiting,
 		EventSceneController.isPlaying()
 	)
-	local scale = applyLayout()
+	local layout = applyLayout()
 	if not shown then
 		releaseAll()
 	end
 	screen.Enabled = shown
-	Ui.setTouchLayout(shown, scale)
+	Ui.setTouchInput(TouchControls.isActive(mode, device))
+	Ui.setTouchLayout(shown, layout)
 end
 
 -- 奥義のボタンにストックの本数を出し、0 本なら暗くする

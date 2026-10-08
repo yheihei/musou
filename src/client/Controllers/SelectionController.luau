@@ -9,12 +9,16 @@
 -- - タイトル画面（TitleController）を出している間は出さない（後ろのボタンをゲームパッドで選べないように）
 -- - ゲームパッドのときは、画面が開いたら最初のボタンを選ぶ（スティックと十字キーで移動、A で決定）
 -- - 拒否の音は Cancel。ゲームパッドやキーの操作で選んでいるボタンが移ったら Cursor を鳴らす
+-- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、文字とボタンを縮めずに、ロビーの右に高さいっぱいで置く
+--   （左上の非公式の表記と横に並べる。ReplicatedStorage.Shared.SmallScreen の lobbyOf）。見出しを詰め、拒否の理由は
+--   見出しに重ねて出して、その分だけ欄のスクロールを広くする。HUD はロビーでは出さない（HUDController）
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RejectMessage = require(ReplicatedStorage.Shared.RejectMessage)
 local RemoteSchema = require(ReplicatedStorage.Shared.RemoteSchema)
+local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
@@ -37,21 +41,25 @@ local BOTTOM_CLEARANCE = 112
 -- 見出しと、下の拒否の理由の欄の高さ
 local HEADER_HEIGHT = 40
 local MESSAGE_HEIGHT = 40
+-- 小さい画面の見出しの高さ（ReplicatedStorage.Shared.SmallScreen の LOBBY_HEADER_HEIGHT と同じ値）。
+-- 拒否の理由は見出しに重ねるので、下の欄は設けない
+local SMALL_HEADER_HEIGHT = 36
 -- 拒否の理由を出しておく秒数
 local MESSAGE_TIME = 4
 
 type Gui = {
 	screen: ScreenGui,
+	panel: Frame,
+	header: TextLabel,
 	body: ScrollingFrame,
 	footer: Frame,
 	message: TextLabel,
 }
 
 local function buildGui(): Gui
+	-- 位置と大きさは applyLayout が画面の大きさに合わせて決める
 	local body = Ui.create("ScrollingFrame", {
 		Name = "Body",
-		Position = UDim2.fromOffset(0, HEADER_HEIGHT),
-		Size = UDim2.new(1, 0, 1, -(HEADER_HEIGHT + ShutsugekiBar.HEIGHT + MESSAGE_HEIGHT)),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		CanvasSize = UDim2.new(),
@@ -72,51 +80,97 @@ local function buildGui(): Gui
 	local footer = Ui.create("Frame", {
 		Name = "Footer",
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, -MESSAGE_HEIGHT),
 		Size = UDim2.new(1, 0, 0, ShutsugekiBar.HEIGHT),
 		BackgroundTransparency = 1,
 	})
+	-- 小さい画面では見出しに重ねて出すので、文の後ろを塗れるようにし、見出しより上に重ねる
 	local message = Ui.text({
 		Name = "Message",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 12, 1, -6),
-		Size = UDim2.new(1, -24, 0, MESSAGE_HEIGHT - 8),
+		ZIndex = 2,
+		BackgroundColor3 = Ui.Color.Panel,
 		Font = Ui.Font.Bold,
 		TextColor3 = Ui.Color.HealthLow,
 		TextWrapped = true,
 		Text = "",
 	})
+	local header = Ui.text({
+		Name = "Header",
+		Position = UDim2.fromOffset(12, 0),
+		Font = Ui.Font.Heavy,
+		TextSize = Ui.TextSize.Title - 4,
+		Text = "出撃の準備",
+	})
 	local panel = Ui.create("Frame", {
 		Name = "Panel",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -MARGIN, 0, MARGIN),
-		Size = UDim2.new(0, PANEL_WIDTH, 1, -(MARGIN + BOTTOM_CLEARANCE)),
 		BackgroundColor3 = Ui.Color.Panel,
 		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
 	}, {
 		Ui.create("UICorner", { CornerRadius = UDim.new(0, 10) }),
 		Ui.create("UIStroke", { Color = Ui.Color.Accent, Thickness = 1 }),
-		Ui.text({
-			Name = "Header",
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(1, -24, 0, HEADER_HEIGHT),
-			Font = Ui.Font.Heavy,
-			TextSize = Ui.TextSize.Title - 4,
-			Text = "出撃の準備",
-		}),
+		header,
 		body,
 		footer,
 		message,
 	})
 	local screen = Ui.screenGui("Selection", Ui.Layer.Selection, { panel })
 	screen.Enabled = false
-	return { screen = screen, body = body :: ScrollingFrame, footer = footer :: Frame, message = message }
+	return {
+		screen = screen,
+		panel = panel :: Frame,
+		header = header,
+		body = body :: ScrollingFrame,
+		footer = footer :: Frame,
+		message = message,
+	}
+end
+
+-- パネルと、中の見出し・欄・出撃の帯・拒否の理由の位置と大きさを、画面の大きさに合わせる。small は小さい画面か
+local function applyLayout(gui: Gui, small: boolean)
+	local header = if small then SMALL_HEADER_HEIGHT else HEADER_HEIGHT
+	local message = if small then 0 else MESSAGE_HEIGHT
+	if small then
+		-- ロビーの右に高さいっぱいで置く（左上の非公式の表記と並べる）
+		local size = Ui.safeAreaSize()
+		local rect = SmallScreen.lobbyOf(size.X, size.Y).panel
+		gui.panel.AnchorPoint = Vector2.zero
+		gui.panel.Position = UDim2.fromOffset(rect.x, rect.y)
+		gui.panel.Size = UDim2.fromOffset(rect.width, rect.height)
+		-- 拒否の理由は見出しに重ねる。長い文は折り返して下へ伸びる
+		gui.message.AnchorPoint = Vector2.zero
+		gui.message.Position = UDim2.fromOffset(12, 0)
+		gui.message.Size = UDim2.new(1, -24, 0, header)
+		gui.message.AutomaticSize = Enum.AutomaticSize.Y
+	else
+		-- 画面の右側。右下の撃破数の表示を避けて下をあける
+		gui.panel.AnchorPoint = Vector2.new(1, 0)
+		gui.panel.Position = UDim2.new(1, -MARGIN, 0, MARGIN)
+		gui.panel.Size = UDim2.new(0, PANEL_WIDTH, 1, -(MARGIN + BOTTOM_CLEARANCE))
+		gui.message.AnchorPoint = Vector2.new(0, 1)
+		gui.message.Position = UDim2.new(0, 12, 1, -6)
+		gui.message.Size = UDim2.new(1, -24, 0, MESSAGE_HEIGHT - 8)
+		gui.message.AutomaticSize = Enum.AutomaticSize.None
+	end
+	gui.header.Size = UDim2.new(1, -24, 0, header)
+	gui.body.Position = UDim2.fromOffset(0, header)
+	gui.body.Size = UDim2.new(1, 0, 1, -(header + ShutsugekiBar.HEIGHT + message))
+	gui.footer.Position = UDim2.new(0, 0, 1, -message)
+	-- 見出しに重ねた拒否の理由は、出している間だけ後ろを塗って見出しを隠す
+	gui.message.BackgroundTransparency = if small and gui.message.Text ~= "" then 0 else 1
 end
 
 function SelectionController.start()
 	local remotes = ReplicatedStorage:WaitForChild("Remotes")
 	local gui = buildGui()
+	local small = Ui.isSmallScreen()
+	applyLayout(gui, small)
+	Ui.onSafeAreaChanged(function()
+		small = Ui.isSmallScreen()
+		applyLayout(gui, small)
+	end)
+	gui.message:GetPropertyChangedSignal("Text"):Connect(function()
+		gui.message.BackgroundTransparency = if small and gui.message.Text ~= "" then 0 else 1
+	end)
 
 	-- 拒否の理由を出す。続けて届いたら新しい方を出し、古い方の消す予定は取り消す
 	local messageToken = 0
