@@ -133,9 +133,9 @@ local logTokens = false
 local BUTAI_CENTER_TRIES = 8
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
 local STAND_OFF_MARGIN = 0.5
--- 攻撃トークンを持つ下忍が止まる位置の許し（スタッド）。EnemySpacing.TOLERANCE のままだと
--- 止まる位置より最大 0.75 外で止まり、攻撃が届く距離（手前の距離 + STAND_OFF_MARGIN）の外になることがある
-local ATTACK_TOLERANCE = 0.25
+-- Humanoid:MoveTo は、止まった状態から歩かせると目標の手前（スタッド。Studio で測ると 0.7〜0.8）で止まる。
+-- 攻撃トークンを持つ下忍は、この分だけ内側を目指し、攻撃が届く距離の内で止まる
+local ARRIVAL_GAP = 0.8
 -- プレイヤーの中心からこの距離（スタッド）より近くにいるときは、1回の判断で進む距離を STEP に抑え、
 -- 囲みの輪の上を回り込む
 local NEAR_RANGE = 10
@@ -322,20 +322,23 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 
 	-- プレイヤーの手前で止まり、ほかの敵とも重ならない位置へ向かう
 	local standOff = math.min(enemy.radius + Config.Spawner.PlayerGap, enemy.def.AttackRange - STAND_OFF_MARGIN)
-	if not mayAttack then
+	-- 攻撃トークンを持つ下忍は、待っている下忍を避けずに、歩いて止まっても攻撃が届く位置を目指す
+	local attacking = enemy.kind == "Genin" and mayAttack
+	if attacking then
+		standOff = math.min(standOff, enemy.def.AttackRange - STAND_OFF_MARGIN - ARRIVAL_GAP)
+	elseif not mayAttack then
 		standOff += Config.KogekiToken.WaitGap
 	end
 	local position = enemy.root.Position
 	local target = targetRoot.Position
 	local here = { x = position.X, z = position.Z }
 	local center = { x = target.X, z = target.Z }
-	-- 攻撃トークンを持つ下忍は、待っている下忍を避けずに、攻撃が届く距離の内で止まる
-	local attacking = enemy.kind == "Genin" and mayAttack
 	local goal = EnemySpacing.goal(here, enemy.radius, center, standOff, neighborsOf(enemy, attacking), enemy.spin)
-	if EnemySpacing.shouldMove(goal, standOff, if attacking then ATTACK_TOLERANCE else nil) then
+	if EnemySpacing.shouldMove(goal, standOff) then
 		local point = goal.point
 		if attacking then
-			point = clampReach(point, center, enemy.def.AttackRange - STAND_OFF_MARGIN)
+			-- ほかの攻撃する敵とずらしても、目指す位置は手前の距離より外へ出さない
+			point = clampReach(point, center, standOff)
 		end
 		if goal.distance < NEAR_RANGE then
 			point = EnemySpacing.stepToward(here, point, center, standOff, STEP)
