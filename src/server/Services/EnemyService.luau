@@ -407,7 +407,15 @@ local function onEnemyDied(enemy: Enemy)
 	enemies[enemy.model] = nil
 	aliveCount -= 1
 	-- 持っていた攻撃トークンは、次に考えるときに近い下忍へ渡る
+	local owner = KogekiToken.ownerOf(tokens, enemy.model.Name)
 	KogekiToken.forget(tokens, enemy.model.Name)
+	if owner then
+		local holder = Players:GetPlayerByUserId(tonumber(owner) or 0)
+		local count = KogekiToken.count(tokens, owner)
+		logToken(
+			`{if holder then holder.Name else owner}: {enemy.model.Name} が倒れて返した（持っている {count} 体）`
+		)
+	end
 	-- 毒の間に倒れたら、毒の煙を消す
 	enemy.poison = nil
 	removePoisonLook(enemy)
