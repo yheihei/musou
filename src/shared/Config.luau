@@ -238,6 +238,12 @@ export type CameraViewSection = {
 	FallbackAspect: number,
 }
 
+-- 下忍の個体の枠の配分。近いプレイヤーのまとまりにする距離と、まとまりに数える部隊の距離
+export type KotaiHaibunSection = {
+	GroupDistance: number,
+	Reach: number,
+}
+
 -- 実体化圏。プレイヤーの周りで、上忍と首領を個体として出す範囲と、個体の動き
 export type JittaikakenSection = {
 	AppearRadius: number,
@@ -531,6 +537,7 @@ export type Config = {
 	Spawner: SpawnerSection,
 	KogekiToken: KogekiTokenSection,
 	CameraView: CameraViewSection,
+	KotaiHaibun: KotaiHaibunSection,
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
@@ -1663,6 +1670,13 @@ local Config: Config = {
 		FallbackHeight = 2, -- カメラが届いていないときに見る位置の、キャラクターの中心からの高さ（スタッド）
 		FallbackFov = 70, -- カメラが届いていないときの縦の画角（度）
 		FallbackAspect = 1.78, -- カメラが届いていないときの画面の横と縦の比（16:9）
+	},
+
+	-- 下忍の個体の枠の配分。個体として出せる下忍の上限（今は仮の湧き処理の Spawner 節の MaxAlive）を、
+	-- 近いプレイヤーのまとまりごとに人数の比で分ける。計算は KotaiHaibun.luau にある
+	KotaiHaibun = {
+		GroupDistance = 80, -- この距離（スタッド）以内のプレイヤーをたどってつなぎ、1つのまとまりにする
+		Reach = 120, -- 部隊は、この距離（スタッド）以内にいる一番近いプレイヤーのまとまりに数える（実体化圏の出現の半径）
 	},
 
 	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）を個体として出し、全員のプレイヤーから離れたらデータに戻す。

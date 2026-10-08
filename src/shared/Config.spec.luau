@@ -1010,6 +1010,10 @@ local SNAPSHOT = {
 		FallbackFov = 70,
 		FallbackAspect = 1.78,
 	},
+	KotaiHaibun = {
+		GroupDistance = 80,
+		Reach = 120,
+	},
 	Jittaikaken = {
 		AppearRadius = 120,
 		DisappearRadius = 160,

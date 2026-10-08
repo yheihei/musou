@@ -5,6 +5,8 @@
 -- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
 -- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
 -- 部隊は出撃メンバーの視界の外にだけ出す（視界は CameraViewService。どの位置も視界にかかれば、その回は見送る）。
+-- 出せる敵の上限（Config.luau の Spawner 節の MaxAlive）は、近い出撃メンバーのまとまりごとに人数の比で分け（KotaiHaibun）、
+-- 出ている敵が配分より少ないまとまりのうち、足りない数が一番多いまとまりの周りに出す（離れた人にも敵が出るように）。
 -- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
@@ -38,10 +40,12 @@ local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
+local KotaiHaibun = require(ReplicatedStorage.Shared.KotaiHaibun)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
+local ButaiService = require(script.Parent.ButaiService)
 local CameraViewService = require(script.Parent.CameraViewService)
 local DamageService = require(script.Parent.DamageService)
 local KukakuService = require(script.Parent.KukakuService)
@@ -507,17 +511,82 @@ local function logSpawn(message: string)
 	end
 end
 
+-- 区画の中にいる、倒れていない出撃メンバーと、配分で使うその水平位置（id は名前）。
+-- 倒れている間は配分に数えず、その分はほかのまとまりへ回す
+local function membersInBounds(bounds: BasePart): ({ Player }, { KotaiHaibun.Member })
+	local players, points = {}, {}
+	for _, member in StageService.getMembers() do
+		local character = member.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root and humanoid and humanoid.Health > 0 and insideBounds(bounds, root.Position) then
+			table.insert(players, member)
+			table.insert(points, { id = member.Name, x = root.Position.X, z = root.Position.Z })
+		end
+	end
+	return players, points
+end
+
+-- 生きている敵の数を、一番近い出撃メンバーのまとまりごとに数える
+local function aliveByGroup(groups: { KotaiHaibun.Group }, points: { KotaiHaibun.Member }): { number }
+	local counts = table.create(#groups, 0)
+	for _, enemy in enemies do
+		if enemy.humanoid.Health > 0 then
+			local position = enemy.root.Position
+			local index = KotaiHaibun.groupIndexAt(groups, points, position.X, position.Z)
+			if index then
+				counts[index] += 1
+			end
+		end
+	end
+	return counts
+end
+
+-- 次に部隊を出すまとまり（出撃メンバー）と、そのまとまりにあと出せる敵の数。
+-- 出ている敵が配分より少ないまとまりのうち、足りない数が一番多いもの（同じなら先のまとまり）。無ければ nil
+local function planSpawn(): ({ Player }?, number)
+	local bounds = battleBounds()
+	if not bounds then
+		return nil, 0
+	end
+	local players, points = membersInBounds(bounds)
+	if #players == 0 then
+		return nil, 0
+	end
+	local groups = KotaiHaibun.allocate(points, Config.Spawner.MaxAlive)
+	local alive = aliveByGroup(groups, points)
+	local best: number?, bestRoom = nil, 0
+	for index, group in groups do
+		local room = group.quota - alive[index]
+		if room > bestRoom then
+			best, bestRoom = index, room
+		end
+	end
+	if not best then
+		return nil, 0
+	end
+	local chosen = {}
+	for _, name in groups[best].members do
+		for _, player in players do
+			if player.Name == name then
+				table.insert(chosen, player)
+			end
+		end
+	end
+	return chosen, bestRoom
+end
+
 -- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる。
--- 戦闘のフェーズで、区画の中にいるメンバーの周りの、区画の中の位置を選ぶ。
+-- 戦闘のフェーズで、bases（区画の中にいる出撃メンバー）の誰かの周りの、区画の中の位置を選ぶ。
 -- 出撃メンバーの誰かの視界にかかる位置は選ばない（CameraViewService）。選べなければ nil（次の湧きで選び直す）
-local function pickButaiCenter(): Vector2?
+local function pickButaiCenter(bases: { Player }): Vector2?
 	local bounds = battleBounds()
 	if not bounds then
 		return nil
 	end
 	local members = StageService.getMembers()
 	local candidates = {}
-	for _, member in members do
+	for _, member in bases do
 		-- 倒れているメンバーの周りには出さない（視界の判定には倒れたメンバーのカメラも使う）
 		local character = member.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -560,8 +629,9 @@ local function pickButaiCenter(): Vector2?
 	return nil
 end
 
-local function spawnButai(center: Vector2, withJonin: boolean)
-	local count = math.min(Config.Spawner.ButaiSize, Config.Spawner.MaxAlive - aliveCount)
+-- 部隊を出す。数は ButaiSize と、全体の残りと、まとまりにあと出せる数 room の小さい方
+local function spawnButai(center: Vector2, withJonin: boolean, room: number)
+	local count = math.min(Config.Spawner.ButaiSize, Config.Spawner.MaxAlive - aliveCount, room)
 	for i = 1, count do
 		local kind = if withJonin and i == 1 then "Jonin" else "Genin"
 		spawnEnemy(kind, center.X + math.random(-8, 8), center.Y + math.random(-8, 8))
@@ -880,6 +950,43 @@ function EnemyService.start()
 	)
 
 	DebugCommand.register(
+		"DumpKotaiHaibun",
+		"",
+		"出せる敵の上限を出撃メンバーのまとまりに分けた結果（メンバー・配分・出ている敵の数）と、"
+			.. "敵軍の部隊の兵数で分けたときの見込み（実体化圏の下忍の #76 で使う形）を JSON で返す",
+		function()
+			local bounds = battleBounds()
+			if not bounds then
+				return "戦闘のフェーズでない"
+			end
+			local _, points = membersInBounds(bounds)
+			local groups = KotaiHaibun.allocate(points, Config.Spawner.MaxAlive)
+			local alive = aliveByGroup(groups, points)
+			local spawner = {}
+			for index, group in groups do
+				table.insert(spawner, { members = group.members, quota = group.quota, alive = alive[index] })
+			end
+			local butai = {}
+			for _, entry in ButaiService.list() do
+				if entry.gun == ENEMY_GUN and not entry.fukuhei then
+					table.insert(
+						butai,
+						{ id = entry.id, x = entry.position.x, z = entry.position.z, heisu = entry.heisu }
+					)
+				end
+			end
+			local withButai = {}
+			for _, group in KotaiHaibun.allocate(points, Config.Spawner.MaxAlive, butai) do
+				table.insert(
+					withButai,
+					{ members = group.members, quota = group.quota, demand = group.demand, butai = group.butai }
+				)
+			end
+			return HttpService:JSONEncode({ cap = Config.Spawner.MaxAlive, spawner = spawner, withButai = withButai })
+		end
+	)
+
+	DebugCommand.register(
 		"LogSpawn",
 		"<true|false>",
 		"一定間隔の湧きで部隊を出した位置と、出撃メンバーの視界の外に出せず見送ったことを出力に出す（確認用）",
@@ -925,10 +1032,11 @@ function EnemyService.start()
 		while true do
 			task.wait(Config.Spawner.ButaiInterval)
 			if spawning and aliveCount < Config.Spawner.MaxAlive then
-				local center = pickButaiCenter()
+				local bases, room = planSpawn()
+				local center = if bases then pickButaiCenter(bases) else nil
 				if center then
 					butaiCount += 1
-					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0)
+					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0, room)
 				end
 			end
 		end
