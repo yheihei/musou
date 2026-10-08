@@ -10,6 +10,8 @@
 -- - 攻撃した下忍は攻撃トークンを返し（attacked）、Rest 秒は受け取らない。
 --   返した攻撃トークンは Interval 秒たってから次の下忍へ渡る（攻撃の拍子が詰まらないように）
 -- - 持っている下忍は、ほかの下忍の方が近くなっても返さない（近づく途中で入れ替わらないように）
+-- - 受け取ってから MaxHold 秒たっても攻撃しない下忍（のけぞらされ続けた、近づけない）は返し、Rest 秒は受け取らない。
+--   返した攻撃トークンはすぐに次の下忍へ渡る
 -- - 下忍1体が持てる攻撃トークンは1つ。ほかのプレイヤーの分を持つ下忍には渡さない
 
 local Config = require("./Config")
@@ -124,10 +126,14 @@ function KogekiToken.update(
 	end
 
 	local released = {}
-	for id in holders do
+	for id, acquiredAt in holders do
 		local candidate = byId[id]
 		if not candidate or candidate.distance > p.Range then
 			table.insert(released, id)
+		elseif now - acquiredAt > p.MaxHold then
+			-- 攻撃できないまま持ち続けた下忍は、ほかの下忍に回るよう休ませる
+			table.insert(released, id)
+			state.restUntil[id] = now + p.Rest
 		end
 	end
 	table.sort(released)

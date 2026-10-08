@@ -997,6 +997,7 @@ local SNAPSHOT = {
 		Range = 20,
 		Interval = 1.5,
 		Rest = 2,
+		MaxHold = 4,
 		WaitGap = 5,
 	},
 	Jittaikaken = {

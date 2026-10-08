@@ -222,6 +222,7 @@ export type KogekiTokenSection = {
 	Range: number,
 	Interval: number,
 	Rest: number,
+	MaxHold: number,
 	WaitGap: number,
 }
 
@@ -1634,6 +1635,7 @@ local Config: Config = {
 		Range = 20, -- プレイヤーからこの距離（スタッド）より近い下忍だけが受け取る。持っている下忍が離れたら返す
 		Interval = 1.5, -- 攻撃して返された攻撃トークンを、次の下忍へ渡すまでの秒数
 		Rest = 2, -- 攻撃して攻撃トークンを返した下忍が、次に受け取れるまでの秒数
+		MaxHold = 4, -- 受け取ってからこの秒数たっても攻撃しない下忍は返す（のけぞらされ続けた、近づけない）
 		WaitGap = 5, -- 攻撃トークンを持たない下忍が囲んで待つ位置。攻撃する下忍が止まる位置より、この距離（スタッド）だけ外
 	},
 

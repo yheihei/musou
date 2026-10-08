@@ -11,6 +11,7 @@ local PARAMS: KogekiToken.Params = {
 	Range = 20,
 	Interval = 1.5,
 	Rest = 2,
+	MaxHold = 4,
 	WaitGap = 5,
 }
 
@@ -103,6 +104,20 @@ test("休みが明けた下忍は、また受け取れる", function()
 	-- 休みは攻撃してから 2 秒。ほかに候補がいなければ、攻撃トークンは空いたまま
 	expect(KogekiToken.update(state, A, list, 2.9, PARAMS).given).toEqual({})
 	expect(KogekiToken.update(state, A, list, 3, PARAMS).given).toEqual({ "g1" })
+end)
+
+test("MaxHold 秒たっても攻撃しない下忍は返して休み、すぐに次の下忍へ渡る", function()
+	local state = KogekiToken.new()
+	local list = candidates({ { "g1", 4 }, { "g2", 9 } })
+	local params = table.clone(PARAMS)
+	params.PerPlayer = 1
+	KogekiToken.update(state, A, list, 0, params)
+	expect(KogekiToken.update(state, A, list, 4, params).released).toEqual({})
+	local changes = KogekiToken.update(state, A, list, 4.25, params)
+	expect(changes.released).toEqual({ "g1" })
+	expect(changes.given).toEqual({ "g2" })
+	expect(KogekiToken.isResting(state, "g1", 4.25)).toBe(true)
+	expect(KogekiToken.coolingCount(state, A, 4.25)).toBe(0)
 end)
 
 test("倒れた下忍の攻撃トークンは、すぐに次の下忍へ渡る", function()

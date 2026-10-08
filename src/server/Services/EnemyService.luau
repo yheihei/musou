@@ -12,7 +12,8 @@
 -- - 1人のプレイヤーを同時に攻撃できる下忍は、そのプレイヤーの攻撃トークンを持つ下忍だけ（PerPlayer 体まで）
 -- - 攻撃トークンを持たない下忍は、攻撃する下忍より WaitGap だけ外で囲んで待ち、攻撃しない
 -- - 攻撃した下忍は攻撃トークンを返す。倒れた下忍、吹き飛んで倒れている下忍、ほかのプレイヤーを狙った下忍、
---   Range より離れた下忍も返し、近い下忍へ渡る
+--   Range より離れた下忍、MaxHold 秒たっても攻撃しない下忍も返し、近い下忍へ渡る
+-- - 攻撃トークンを持つ下忍は、待っている下忍を避けずに、攻撃が届く距離の内で止まる
 -- - 上忍は攻撃トークンなしで攻撃する
 --
 -- 攻撃を受けた敵の反応（のけぞり・吹き飛び・打ち上げ・ダウン・起き上がり）は Combat/Hanno が動かす。
@@ -190,12 +191,18 @@ local function findNearestTarget(position: Vector3): (Player?, BasePart?)
 	return bestPlayer, bestRoot
 end
 
--- 立ち位置を決めるときの近くの敵（体が重なりうる距離にいる、生きている敵）
-local function neighborsOf(enemy: Enemy): { EnemySpacing.Neighbor }
+-- 攻撃トークンを持たずに待っている下忍か
+local function isWaiting(enemy: Enemy): boolean
+	return enemy.kind == "Genin" and KogekiToken.ownerOf(tokens, enemy.model.Name) == nil
+end
+
+-- 立ち位置を決めるときの近くの敵（体が重なりうる距離にいる、生きている敵）。
+-- attackersOnly なら待っている下忍を除く（攻撃する下忍が、外側で待つ下忍にずらされて攻撃が届かなくならないように）
+local function neighborsOf(enemy: Enemy, attackersOnly: boolean): { EnemySpacing.Neighbor }
 	local list = {}
 	local position = enemy.root.Position
 	for _, other in enemies do
-		if other ~= enemy and other.humanoid.Health > 0 then
+		if other ~= enemy and other.humanoid.Health > 0 and not (attackersOnly and isWaiting(other)) then
 			local p = other.root.Position
 			local reach = enemy.radius + other.radius
 			if math.abs(p.X - position.X) < reach and math.abs(p.Z - position.Z) < reach then
@@ -254,6 +261,16 @@ local function logToken(message: string)
 	end
 end
 
+-- center から point までの水平の距離が maxReach より遠ければ、同じ向きで maxReach の位置へ寄せる
+local function clampReach(point: EnemySpacing.Point, center: EnemySpacing.Point, maxReach: number): EnemySpacing.Point
+	local dx, dz = point.x - center.x, point.z - center.z
+	local reach = math.sqrt(dx * dx + dz * dz)
+	if reach <= maxReach or reach < 1e-6 then
+		return point
+	end
+	return { x = center.x + dx / reach * maxReach, z = center.z + dz / reach * maxReach }
+end
+
 -- 攻撃トークンを、各プレイヤーを狙っている下忍に合わせて返したり渡したりする
 local function updateTokens(candidates: { [Player]: { KogekiToken.Candidate } }, now: number)
 	table.clear(lastCandidates)
@@ -262,11 +279,16 @@ local function updateTokens(candidates: { [Player]: { KogekiToken.Candidate } },
 		local list = candidates[player] or {}
 		lastCandidates[key] = list
 		local changes = KogekiToken.update(tokens, key, list, now)
-		for _, id in changes.released do
-			logToken(`{player.Name}: {id} が返した（持っている {KogekiToken.count(tokens, key)} 体）`)
+		local parts = {}
+		if #changes.released > 0 then
+			table.insert(parts, `{table.concat(changes.released, "、")} が返した`)
 		end
-		for _, id in changes.given do
-			logToken(`{player.Name}: {id} が受け取った（持っている {KogekiToken.count(tokens, key)} 体）`)
+		if #changes.given > 0 then
+			table.insert(parts, `{table.concat(changes.given, "、")} が受け取った`)
+		end
+		if #parts > 0 then
+			local count = KogekiToken.count(tokens, key)
+			logToken(`{player.Name}: {table.concat(parts, "、")}（持っている {count} 体）`)
 		end
 	end
 end
@@ -304,9 +326,14 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	local target = targetRoot.Position
 	local here = { x = position.X, z = position.Z }
 	local center = { x = target.X, z = target.Z }
-	local goal = EnemySpacing.goal(here, enemy.radius, center, standOff, neighborsOf(enemy), enemy.spin)
+	-- 攻撃トークンを持つ下忍は、待っている下忍を避けずに、攻撃が届く距離の内で止まる
+	local attacking = enemy.kind == "Genin" and mayAttack
+	local goal = EnemySpacing.goal(here, enemy.radius, center, standOff, neighborsOf(enemy, attacking), enemy.spin)
 	if EnemySpacing.shouldMove(goal, standOff) then
 		local point = goal.point
+		if attacking then
+			point = clampReach(point, center, enemy.def.AttackRange - STAND_OFF_MARGIN)
+		end
 		if goal.distance < NEAR_RANGE then
 			point = EnemySpacing.stepToward(here, point, center, standOff, STEP)
 		end
