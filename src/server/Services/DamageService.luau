@@ -2,7 +2,8 @@
 -- プレイヤーの被ダメージの窓口。敵・秘計など、プレイヤーにダメージを与える処理はすべて damage を通す。
 -- 無敵・ガード・防御の軽減・反応・奥義ゲージの増加は ReplicatedStorage.Shared.Damage が決める。
 -- ここは体力を減らし、奥義ゲージを足し、のけぞり・ダウン・ガードの硬直を ActionService で始める。
--- 体力が減ったときは被弾の効果音（Hurt）を鳴らす。
+-- 効果音は、体力が減ったときに被弾（Hurt）、ガードで受けたときに Guard、ダウンしたときに Down を、プレイヤーの位置で鳴らす。
+-- 吹き飛びと打ち上げでは、被弾とダウンの音が一緒に鳴る。
 -- のけぞらない状態（秘計の鬼神化）かは、addNoFlinchProvider で登録した関数に聞く。
 
 local Players = game:GetService("Players")
@@ -76,12 +77,18 @@ function DamageService.damage(player: Player, attack: Damage.Attack): Damage.Out
 	if outcome.amount > 0 then
 		humanoid.Health = math.max(humanoid.Health - outcome.amount, 0)
 		SoundPlayer.playAt("Hurt", root)
+	elseif outcome.result == "Guard" then
+		SoundPlayer.playAt("Guard", root)
 	end
 	if outcome.gauge > 0 then
 		PlayerService.addOugiGauge(player, outcome.gauge)
 	end
+	-- 体力が尽きて倒れたときは、反応を始めず、ダウンの音も鳴らさない
 	if outcome.action and humanoid.Health > 0 then
 		ActionService.interrupt(player, outcome.action)
+		if outcome.action == "Down" then
+			SoundPlayer.playAt("Down", root)
+		end
 	end
 	return outcome
 end

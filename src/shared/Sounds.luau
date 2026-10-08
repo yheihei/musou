@@ -1,16 +1,21 @@
 --!strict
--- 効果音の登録表。場面の名前から、Roblox のアセット ID と配布元と使用条件を引く。
+-- 効果音の登録表と、拠点の制圧で鳴らす場面の判断。場面の名前から、Roblox のアセット ID と配布元と使用条件を引く。
 -- 鳴らすのは SoundPlayer.luau、音量は Config.luau の Sound 節にある。Roblox の API は使わない。
 --
 -- - M1 は仮の効果音。M2 で開発者が選び直す（#138）。差し替えはこの表の ID を直すだけで済む
+-- - ガード以降の場面（#138 で足した）も仮の効果音。Creator Store の名前・説明・タグから選んだ。まだ誰も聞いていない
 -- - 素材は、Roblox が Pro Sound Effects と契約して Creator Store で配布しているものだけを使う
 -- - 名前（name）は Creator Store の名前のまま書く（同じ名前で ID の違う素材があるので、ID で見分ける）
+-- - 拠点の制圧の音は kyotenSceneFor が、拠点の軍の変化と自分の軍から決める
+
+local Gun = require("./Gun")
 
 export type Definition = {
 	id: number,
 	-- Creator Store の素材の名前
 	name: string,
-	-- 長さ（秒）。読み込んだ Sound の TimeLength の値
+	-- 長さ（秒）。読み込んだ Sound の TimeLength の値。Studio で測っていない素材は、
+	-- Creator Store の素材の詳細の説明にある Duration の値。鳴らし終えた Sound を消す時刻に使う
 	duration: number,
 	-- 配布元
 	source: string,
@@ -49,12 +54,40 @@ local definitions: { [string]: Definition } = {
 	Confirm = proSoundEffects(9126035527, "Switch Tones Single Percussive Hits Hard Att (SFX)", 0.36),
 	-- 画面の取り消し
 	Cancel = proSoundEffects(9119976843, "Temple Blocks Impact Single Soft Strikes 11 (SFX)", 0.74),
+	-- プレイヤーがガードで攻撃を受けたとき（盾を剣で打つ金属音）
+	Guard = proSoundEffects(9119072660, "Shield Clang As Hit Metal Sword Hubcap 1 (SFX)", 0.8),
+	-- プレイヤーが緊急回避を出したとき（短い風切り）
+	KinkyuKaihi = proSoundEffects(9120704940, "Whooshes Fast Wipes Quick Airy Slices 1 (SFX)", 0.5),
+	-- プレイヤーがダウンしたとき（土の上に倒れる音）
+	Down = proSoundEffects(9113469796, "Body Fall Dirt 4 (SFX)", 2.7),
+	-- 自分の軍が拠点を制圧したとき（法螺貝）
+	Seiatsu = proSoundEffects(9113890073, "Conch Shell Long Notes Steady Blows 10 (SFX)", 2.9),
+	-- 自分の軍の拠点が陥落したとき（太鼓の一打）
+	Kanraku = proSoundEffects(9125514393, "Drum Tom Tom Single Hits Bent Drum Head Stri (SFX)", 2.9),
+	-- 秘計の発動の知らせ（銅鑼のような金属音の風切り）
+	HikeiHatsudo = proSoundEffects(9114631053, "Gong Whoosh 2 (SFX)", 3.6),
+	-- 画面のカーソル移動。ゲームパッドやキーの操作で、選んでいる部品が移ったとき（スイッチを押す音）
+	Cursor = proSoundEffects(9119717523, "Switch Click On Or Off Toggle Button 2 (SFX)", 0.4),
 }
 
 Sounds.definitions = definitions
 
 function Sounds.get(name: string): Definition?
 	return definitions[name]
+end
+
+-- 拠点の軍が before から after に変わったときに、mine の軍の人の画面で鳴らす効果音の名前。
+-- mine の軍が制圧したら Seiatsu、mine の軍の拠点が陥落したら Kanraku。
+-- 軍が変わっていないときと、どちらかが軍の値でないとき（拠点を作って最初に軍が届いたときなど）は nil
+function Sounds.kyotenSceneFor(before: unknown, after: unknown, mine: Gun.Gun): string?
+	if not Gun.isGun(before) or not Gun.isGun(after) or before == after then
+		return nil
+	elseif after == mine then
+		return "Seiatsu"
+	elseif before == mine then
+		return "Kanraku"
+	end
+	return nil
 end
 
 -- 登録した効果音の名前を名前の順に返す

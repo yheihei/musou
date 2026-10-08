@@ -10,6 +10,9 @@
 -- - 士気のゲージは中央の側を根元にして外へ伸ばし、値が変わったら長さを Tween で変える
 -- - 残り時間は、出している間は毎フレーム数え直す
 -- - 残り時間はしきい値（Config.luau の BattleStatus 節）以下で黄色、さらに下で赤にする。兵力0は赤で出す
+-- - 拠点の軍が変わったら（ReplicatedStorage.Kyoten の拠点ごとの Attribute の Gun）、戦況を出している間だけ、
+--   自分の軍（味方軍）が制圧したときは Seiatsu、自分の軍の拠点が陥落したときは Kanraku の効果音を本人に鳴らす
+--   （判断は ReplicatedStorage.Shared.Sounds の kyotenSceneFor）。出撃で拠点を作ったときと、途中で読み込んだときは鳴らさない
 -- - テストプレイでの確認用に、文は PlayerGui.BattleStatus.Panel の Remaining と Heiryoku、
 --   ゲージは Mikatagun と Tekigun の Gauge.Fill（Size の X の Scale が長さの割合）で読める
 
@@ -21,6 +24,8 @@ local BattleStatus = require(ReplicatedStorage.Shared.BattleStatus)
 local Colors = require(ReplicatedStorage.Shared.Colors)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local Saishutsugeki = require(ReplicatedStorage.Shared.Saishutsugeki)
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+local Sounds = require(ReplicatedStorage.Shared.Sounds)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local PartyClient = require(script.Parent.Parent.PartyClient)
 local Ui = require(script.Parent.Parent.Ui)
@@ -30,6 +35,10 @@ local BattleStatusController = {}
 
 -- 軍全体の士気を複製する Configuration の名前（ShikiService.STATE）
 local SHIKI_STATE = "Shiki"
+-- 拠点ごとの Configuration を置くフォルダの名前（KyotenService.FOLDER）
+local KYOTEN_FOLDER = "Kyoten"
+-- プレイヤーの軍。出撃メンバーはいつも味方軍
+local PLAYER_GUN: Gun.Gun = "Mikatagun"
 -- 画面の上端（Roblox のトップバーの下）からの余白と、枠の大きさ（ピクセル）
 local TOP = 8
 local PANEL_WIDTH = 560
@@ -227,7 +236,22 @@ function BattleStatusController.start()
 			refreshRemaining()
 		end
 	end)
-	-- 士気の Configuration はサーバーが起動したときに作る。届くまで待つ間も、ほかの画面の起動を止めない
+	-- 拠点の軍が変わったら、制圧か陥落の効果音を鳴らす。拠点ごとに最後に見た軍を覚えておき、比べる。
+	-- 最初に見た軍（出撃で拠点を作ったときと、途中で読み込んだとき）は覚えるだけで鳴らさない。
+	-- 拠点の Configuration は決着とロビーへの戻りで消えるので、つないだ接続も一緒に切れる
+	local function watchKyoten(kyoten: Instance)
+		local known = kyoten:GetAttribute("Gun")
+		kyoten:GetAttributeChangedSignal("Gun"):Connect(function()
+			local gun = kyoten:GetAttribute("Gun")
+			local scene = Sounds.kyotenSceneFor(known, gun, PLAYER_GUN)
+			known = gun
+			if scene and gui.screen.Enabled then
+				SoundPlayer.playUi(scene)
+			end
+		end)
+	end
+
+	-- 士気と拠点の Configuration はサーバーが起動したときに作る。届くまで待つ間も、ほかの画面の起動を止めない
 	task.spawn(function()
 		local shikiState = ReplicatedStorage:WaitForChild(SHIKI_STATE)
 		for _, gun in Gun.list do
@@ -235,6 +259,13 @@ function BattleStatusController.start()
 				refreshShiki(shikiState, gun, true)
 			end)
 			refreshShiki(shikiState, gun, false)
+		end
+	end)
+	task.spawn(function()
+		local kyotenFolder = ReplicatedStorage:WaitForChild(KYOTEN_FOLDER)
+		kyotenFolder.ChildAdded:Connect(watchKyoten)
+		for _, kyoten in kyotenFolder:GetChildren() do
+			watchKyoten(kyoten)
 		end
 	end)
 	refreshHeiryoku()

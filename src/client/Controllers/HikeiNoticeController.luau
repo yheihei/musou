@@ -8,6 +8,7 @@
 --   （ミニマップの下に積むと、低い画面で右下の HUD と重なるため）
 -- - 出しておけるのは MAX_NOTICES 件まで。超えたら古いものから消す
 -- - 入力を受け取らない表示だけなので、出している間も操作はそのまま
+-- - 発動の知らせ（どちらの軍の秘計でも）には、秘計の発動の効果音（HikeiHatsudo）を添える。ほかの知らせは鳴らさない
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
@@ -15,6 +16,7 @@ local TweenService = game:GetService("TweenService")
 local Colors = require(ReplicatedStorage.Shared.Colors)
 local Config = require(ReplicatedStorage.Shared.Config)
 local HikeiNotice = require(ReplicatedStorage.Shared.HikeiNotice)
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local Ui = require(script.Parent.Parent.Ui)
 
 local HikeiNoticeController = {}
@@ -131,7 +133,11 @@ function HikeiNoticeController.start()
 			warn("HikeiNoticeController: 秘計の知らせの形が正しくない")
 			return
 		end
-		show(notice :: HikeiNotice.Notice)
+		local received = notice :: HikeiNotice.Notice
+		show(received)
+		if received.kind == "Hatsudo" then
+			SoundPlayer.playUi("HikeiHatsudo")
+		end
 	end)
 end
 

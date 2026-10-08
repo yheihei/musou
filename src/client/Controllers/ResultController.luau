@@ -11,7 +11,7 @@
 -- - 押したら両方のボタンを止めて二重に送らない。PENDING_TIME 秒たってもリザルトのままなら（受け付けられなかったら）戻す
 -- - ゲームパッドのときは、画面が開いたら最初のボタンを選ぶ（スティックで左右に移動、A で決定）。
 --   押したら選択を外し、ロビーに戻ったときに出撃前の画面が最初のボタンを選べるようにする
--- - 押した音は Confirm
+-- - 押した音は Confirm。ゲームパッドやキーの操作で選んでいるボタンが移ったら Cursor を鳴らす
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
@@ -452,6 +452,9 @@ function ResultController.start()
 		if kind == "Gamepad" and gui.screen.Enabled and isLeader and not pending and not GuiService.SelectedObject then
 			selectFirstButton()
 		end
+	end)
+	Ui.onSelectionMoved(gui.screen, function()
+		SoundPlayer.playUi("Cursor")
 	end)
 	paintButtons()
 	refresh()

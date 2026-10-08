@@ -343,6 +343,16 @@ function CombatService.start()
 		end
 	)
 	DebugCommand.register(
+		"LogSound",
+		"<true|false>",
+		"鳴らした効果音（名前・鳴らした側・時刻・場所）を、サーバーとクライアントのコンソールに [Sound] の行で出すかを切り替える（確認用）",
+		function(value)
+			local on = value == true or value == "true"
+			SoundPlayer.setLogging(on)
+			return `鳴らした効果音の表示を{if on then "オン" else "オフ"}にした`
+		end
+	)
+	DebugCommand.register(
 		"ShowHitbox",
 		"<true|false> [残す秒数]",
 		"攻撃判定の形のデバッグ表示を切り替える",

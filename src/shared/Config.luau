@@ -1773,7 +1773,7 @@ local Config: Config = {
 
 	-- 効果音。素材は Sounds.luau の登録表にあり、SoundPlayer.luau が鳴らす
 	Sound = {
-		-- 効果音ごとの音量（Sound.Volume）。登録表の名前ごとに置く
+		-- 効果音ごとの音量（Sound.Volume）。登録表の名前ごとに置く。Guard 以降は音を聞いて合わせる前の仮の値
 		Volume = {
 			Swing = 0.5,
 			Hit = 0.6,
@@ -1782,6 +1782,13 @@ local Config: Config = {
 			Hurt = 0.7,
 			Confirm = 0.5,
 			Cancel = 0.5,
+			Guard = 0.6,
+			KinkyuKaihi = 0.5,
+			Down = 0.7, -- 被弾（Hurt）と同じ大きさ
+			Seiatsu = 0.6,
+			Kanraku = 0.6,
+			HikeiHatsudo = 0.6,
+			Cursor = 0.4, -- 続けて何度も鳴るので、決定と取り消し（0.5）より下げる
 		},
 		RollOffMinDistance = 10, -- 戦闘の効果音が小さくなり始める距離（スタッド）
 		RollOffMaxDistance = 150, -- 戦闘の効果音が聞こえなくなる距離（スタッド）

@@ -7,7 +7,7 @@
 --
 -- - タイトル画面（TitleController）を出している間は出さない（後ろのボタンをゲームパッドで選べないように）
 -- - ゲームパッドのときは、画面が開いたら最初のボタンを選ぶ（スティックと十字キーで移動、A で決定）
--- - 拒否の音は Cancel
+-- - 拒否の音は Cancel。ゲームパッドやキーの操作で選んでいるボタンが移ったら Cursor を鳴らす
 
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -220,6 +220,9 @@ function SelectionController.start()
 		if kind == "Gamepad" and gui.screen.Enabled and not GuiService.SelectedObject then
 			selectFirstButton()
 		end
+	end)
+	Ui.onSelectionMoved(gui.screen, function()
+		SoundPlayer.playUi("Cursor")
 	end)
 	refresh()
 end

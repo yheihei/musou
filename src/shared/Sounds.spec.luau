@@ -1,5 +1,6 @@
 --!strict
 local Config = require("./Config")
+local Gun = require("./Gun")
 local Sounds = require("./Sounds")
 local testkit = require("@testkit")
 
@@ -8,9 +9,39 @@ local test, expect = testkit.test, testkit.expect
 test(
 	"攻撃の空振りと命中、チャージ攻撃、奥義、被弾、画面の決定と取り消しの効果音がある",
 	function()
-		expect(Sounds.names()).toEqual({ "Cancel", "ChargeKogeki", "Confirm", "Hit", "Hurt", "Ougi", "Swing" })
+		for _, name in { "Swing", "Hit", "ChargeKogeki", "Ougi", "Hurt", "Confirm", "Cancel" } do
+			expect(Sounds.get(name) ~= nil).toBe(true)
+		end
 	end
 )
+
+test(
+	"ガード、緊急回避、ダウン、拠点の制圧と陥落、秘計の発動、カーソル移動の効果音がある",
+	function()
+		for _, name in { "Guard", "KinkyuKaihi", "Down", "Seiatsu", "Kanraku", "HikeiHatsudo", "Cursor" } do
+			expect(Sounds.get(name) ~= nil).toBe(true)
+		end
+	end
+)
+
+test("登録表には、決めた場面の効果音だけがある", function()
+	expect(Sounds.names()).toEqual({
+		"Cancel",
+		"ChargeKogeki",
+		"Confirm",
+		"Cursor",
+		"Down",
+		"Guard",
+		"HikeiHatsudo",
+		"Hit",
+		"Hurt",
+		"Kanraku",
+		"KinkyuKaihi",
+		"Ougi",
+		"Seiatsu",
+		"Swing",
+	})
+end)
 
 test("どの効果音もアセット ID・素材の名前・長さ・配布元・使用条件を持つ", function()
 	for _, name in Sounds.names() do
@@ -49,3 +80,38 @@ test(
 		expect(Config.Sound.RollOffMaxDistance > Config.Sound.RollOffMinDistance).toBe(true)
 	end
 )
+
+test("自分の軍が拠点を制圧したら Seiatsu、自分の軍の拠点が陥落したら Kanraku", function()
+	expect(Sounds.kyotenSceneFor("Tekigun", "Mikatagun", "Mikatagun")).toBe("Seiatsu")
+	expect(Sounds.kyotenSceneFor("Mikatagun", "Tekigun", "Mikatagun")).toBe("Kanraku")
+	-- 自分の軍が敵軍でも、自分の側から見て決める
+	expect(Sounds.kyotenSceneFor("Mikatagun", "Tekigun", "Tekigun")).toBe("Seiatsu")
+	expect(Sounds.kyotenSceneFor("Tekigun", "Mikatagun", "Tekigun")).toBe("Kanraku")
+end)
+
+test("拠点の軍が変わっていなければ鳴らさない", function()
+	expect(Sounds.kyotenSceneFor("Mikatagun", "Mikatagun", "Mikatagun")).toBe(nil)
+	expect(Sounds.kyotenSceneFor("Tekigun", "Tekigun", "Mikatagun")).toBe(nil)
+end)
+
+test("前か後の軍が届いていないか、軍の値でなければ鳴らさない", function()
+	-- 出撃で拠点を作って、最初に軍が届いたとき
+	expect(Sounds.kyotenSceneFor(nil, "Mikatagun", "Mikatagun")).toBe(nil)
+	expect(Sounds.kyotenSceneFor(nil, "Tekigun", "Mikatagun")).toBe(nil)
+	expect(Sounds.kyotenSceneFor("Tekigun", nil, "Mikatagun")).toBe(nil)
+	expect(Sounds.kyotenSceneFor("Tekigun", "Butai", "Mikatagun")).toBe(nil)
+	expect(Sounds.kyotenSceneFor(1, "Mikatagun", "Mikatagun")).toBe(nil)
+end)
+
+test("拠点の制圧で決めた効果音は、どれも登録表にある", function()
+	for _, mine in Gun.list do
+		for _, before in Gun.list do
+			for _, after in Gun.list do
+				local scene = Sounds.kyotenSceneFor(before, after, mine)
+				if scene then
+					expect(Sounds.get(scene) ~= nil).toBe(true)
+				end
+			end
+		end
+	end
+end)

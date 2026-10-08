@@ -1,8 +1,10 @@
 --!strict
 -- 画面の共通部品。Instance の生成、書体と文字の大きさ、画面の配色、ボタン、
--- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ScreenGui の重なり順をまとめる。
+-- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ゲームパッドやキーの操作で選んでいる部品の移動、
+-- ScreenGui の重なり順をまとめる。
 -- 軍・クラン・キャラクターの色は ReplicatedStorage.Shared.Colors に置く。
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
@@ -238,6 +240,21 @@ function Ui.waitForSelectable(notBefore: number?)
 	if rest > 0 then
 		task.wait(rest)
 	end
+end
+
+-- screen の中で、ゲームパッドやキーの操作で選んでいる部品（GuiService.SelectedObject）が別の部品へ移ったときに呼ぶ。
+-- 何も選んでいない状態から選んだとき（画面を開いて最初のボタンを選んだとき）、選択を外したとき、
+-- ほかの画面の部品との間で移ったときは呼ばない
+function Ui.onSelectionMoved(screen: ScreenGui, callback: () -> ()): RBXScriptConnection
+	local previous: GuiObject? = GuiService.SelectedObject
+	return GuiService:GetPropertyChangedSignal("SelectedObject"):Connect(function()
+		local from = previous
+		local to = GuiService.SelectedObject
+		previous = to
+		if from and to and from ~= to and from:IsDescendantOf(screen) and to:IsDescendantOf(screen) then
+			callback()
+		end
+	end)
 end
 
 export type Labels = {

@@ -12,7 +12,7 @@
 -- - ガードは押している間続き、離すと終わる。攻撃の最中に押したガードはキャンセル受付から始まる。
 --   ほかの行動が終わったときにまだ押していれば、ガードに戻る
 -- - 緊急回避はガードの最中だけ出せ、入れた方向へサーバーの拘束で動かす。続けて出すほど後隙が伸びる
---   （計算は ReplicatedStorage.Shared.KinkyuKaihi）
+--   （計算は ReplicatedStorage.Shared.KinkyuKaihi）。出したときにプレイヤーの位置で効果音（KinkyuKaihi）を鳴らす
 -- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする。
 --   受けておいた先行入力も捨て、ガードを押したままでもガードに戻さない（始まっていた行動は最後まで進める）
 -- - 秘計の枚の番号は、onHikei で登録した関数（HikeiService）に渡す。行動の状態遷移には入れない
@@ -25,6 +25,7 @@ local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
+local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PartyService = require(script.Parent.PartyService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -170,7 +171,8 @@ local function chainOf(player: Player): KinkyuKaihi.Chain
 	return kaihiChains[player] or KinkyuKaihi.newChain()
 end
 
--- 緊急回避を始める。動いている間に入れた方向へ前進量だけ動かし、Attribute の ActionStep に続けた回数を書く
+-- 緊急回避を始める。動いている間に入れた方向へ前進量だけ動かし、効果音を鳴らす。
+-- Attribute の ActionStep に続けた回数を書く
 local function beginKinkyuKaihi(player: Player, t: number, timeline: ActionState.Timeline): number
 	local chain = KinkyuKaihi.record(chainOf(player), t)
 	kaihiChains[player] = chain
@@ -179,6 +181,9 @@ local function beginKinkyuKaihi(player: Player, t: number, timeline: ActionState
 	local direction = kaihiDirections[player]
 	if root and direction then
 		Push.move(root, direction, timeline.Advance, timeline.Active)
+	end
+	if root then
+		SoundPlayer.playAt("KinkyuKaihi", root)
 	end
 	return chain.count
 end
