@@ -6,7 +6,9 @@
 -- 湧かせる敵は敵軍で、部隊のデータ（ButaiService）には属さない（実体化圏での出し入れは #76 で置き換える）。
 -- 部隊は出撃メンバーの視界の外にだけ出す（視界は CameraViewService。どの位置も視界にかかれば、その回は見送る）。
 -- 出せる敵の上限（Config.luau の Spawner 節の MaxAlive）は、近い出撃メンバーのまとまりごとに人数の比で分け（KotaiHaibun）、
--- 出ている敵が配分より少ないまとまりのうち、足りない数が一番多いまとまりの周りに出す（離れた人にも敵が出るように）。
+-- 出ている敵が配分より少ないまとまりの周りに、足りない数の多いまとまりから順に出す（離れた人にも敵が出るように）。
+-- 出す位置は、そのまとまりのメンバーが一番近い位置に限る（ほかのまとまりの近くに出して、そちらに数えないように）。
+-- あるまとまりの周りで位置が選べなければ、次のまとまりで探す。
 -- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
 -- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
 -- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤーを知らせる。
@@ -542,47 +544,60 @@ local function aliveByGroup(groups: { KotaiHaibun.Group }, points: { KotaiHaibun
 	return counts
 end
 
--- 次に部隊を出すまとまり（出撃メンバー）と、そのまとまりにあと出せる敵の数。
--- 出ている敵が配分より少ないまとまりのうち、足りない数が一番多いもの（同じなら先のまとまり）。無ければ nil
-local function planSpawn(): ({ Player }?, number)
+-- 部隊を出してよいまとまり。出ている敵が配分より少ないまとまりを、足りない数（room）の多い順に並べる（同じなら先のまとまり）
+type SpawnPlan = {
+	-- まとまりの番号（groups の添字）
+	index: number,
+	-- まとまりの出撃メンバー（区画の中にいて、倒れていない人）
+	players: { Player },
+	-- まとまりにあと出せる敵の数
+	room: number,
+}
+
+-- 部隊を出してよいまとまりの一覧と、配分の結果とメンバーの位置（位置がどのまとまりに近いかを引くのに使う）
+local function planSpawns(): ({ SpawnPlan }, { KotaiHaibun.Group }, { KotaiHaibun.Member })
 	local bounds = battleBounds()
 	if not bounds then
-		return nil, 0
+		return {}, {}, {}
 	end
 	local players, points = membersInBounds(bounds)
 	if #players == 0 then
-		return nil, 0
+		return {}, {}, points
 	end
 	local groups = KotaiHaibun.allocate(points, Config.Spawner.MaxAlive)
 	local alive = aliveByGroup(groups, points)
-	local best: number?, bestRoom = nil, 0
+	local plans: { SpawnPlan } = {}
 	for index, group in groups do
 		local room = group.quota - alive[index]
-		if room > bestRoom then
-			best, bestRoom = index, room
-		end
-	end
-	if not best then
-		return nil, 0
-	end
-	local chosen = {}
-	for _, name in groups[best].members do
-		for _, player in players do
-			if player.Name == name then
-				table.insert(chosen, player)
+		if room > 0 then
+			local chosen = {}
+			for _, name in group.members do
+				for _, player in players do
+					if player.Name == name then
+						table.insert(chosen, player)
+					end
+				end
 			end
+			table.insert(plans, { index = index, players = chosen, room = room })
 		end
 	end
-	return chosen, bestRoom
+	table.sort(plans, function(a, b)
+		if a.room ~= b.room then
+			return a.room > b.room
+		end
+		return a.index < b.index
+	end)
+	return plans, groups, points
 end
 
 -- 部隊を出す水平位置。Vector2 の X と Y にワールドの X と Z を入れる。高さは spawnEnemy が地面に合わせる。
 -- 戦闘のフェーズで、bases（区画の中にいる出撃メンバー）の誰かの周りの、区画の中の位置を選ぶ。
--- 出撃メンバーの誰かの視界にかかる位置は選ばない（CameraViewService）。選べなければ nil（次の湧きで選び直す）
-local function pickButaiCenter(bases: { Player }): Vector2?
+-- 出撃メンバーの誰かの視界にかかる位置と、accepts が false を返す位置（ほかのまとまりの方が近い位置）は選ばない。
+-- 選べなければ nil。2つ目の値は、視界にかかって選ばなかった位置の数
+local function pickButaiCenter(bases: { Player }, accepts: (x: number, z: number) -> boolean): (Vector2?, number)
 	local bounds = battleBounds()
 	if not bounds then
-		return nil
+		return nil, 0
 	end
 	local members = StageService.getMembers()
 	local candidates = {}
@@ -596,7 +611,7 @@ local function pickButaiCenter(bases: { Player }): Vector2?
 		end
 	end
 	if #candidates == 0 then
-		return nil
+		return nil, 0
 	end
 
 	local base = candidates[math.random(1, #candidates)]
@@ -607,7 +622,8 @@ local function pickButaiCenter(bases: { Player }): Vector2?
 			+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
 		local center = base + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
 		-- 視界の判定は、部隊が立つ地面の高さ（体の中ほど）で行う
-		local groundY = if insideBounds(bounds, center) then Ground.heightAt(center.X, center.Z) else nil
+		local inside = insideBounds(bounds, center) and accepts(center.X, center.Z)
+		local groundY = if inside then Ground.heightAt(center.X, center.Z) else nil
 		if groundY then
 			local body = Vector3.new(center.X, groundY + BODY_CENTER_HEIGHT, center.Z)
 			if not CameraViewService.seenByAny(members, body) then
@@ -618,15 +634,12 @@ local function pickButaiCenter(bases: { Player }): Vector2?
 						center.Z
 					)
 				)
-				return Vector2.new(center.X, center.Z)
+				return Vector2.new(center.X, center.Z), seen
 			end
 			seen += 1
 		end
 	end
-	if seen > 0 then
-		logSpawn(`視界の外に出せる位置が無く、見送った（{seen} か所が視界にかかった）`)
-	end
-	return nil
+	return nil, seen
 end
 
 -- 部隊を出す。数は ButaiSize と、全体の残りと、まとまりにあと出せる数 room の小さい方
@@ -1032,11 +1045,26 @@ function EnemyService.start()
 		while true do
 			task.wait(Config.Spawner.ButaiInterval)
 			if spawning and aliveCount < Config.Spawner.MaxAlive then
-				local bases, room = planSpawn()
-				local center = if bases then pickButaiCenter(bases) else nil
-				if center then
-					butaiCount += 1
-					spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0, room)
+				-- 足りない数の多いまとまりから順に、そのまとまりの周りで視界の外の位置を探す。
+				-- 選べなければ次のまとまりへ（1つのまとまりで選べないことが、ほかのまとまりの湧きを止めないように）
+				local plans, groups, points = planSpawns()
+				local seen = 0
+				for _, plan in plans do
+					local center, seenHere = pickButaiCenter(plan.players, function(x, z)
+						return KotaiHaibun.groupIndexAt(groups, points, x, z) == plan.index
+					end)
+					seen += seenHere
+					if center then
+						butaiCount += 1
+						spawnButai(center, butaiCount % Config.Spawner.JoninEvery == 0, plan.room)
+						seen = 0
+						break
+					end
+				end
+				if seen > 0 then
+					logSpawn(
+						`視界の外に出せる位置が無く、見送った（{seen} か所が視界にかかった）`
+					)
 				end
 			end
 		end
