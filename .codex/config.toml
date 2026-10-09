@@ -1,0 +1,8 @@
+[mcp_servers.roblox-studio]
+command = "/Users/yhei/.claude/mcp-shims/studio_mcp_shim.py"
+
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+CLAUDE_CODE_EFFORT_LEVEL = "max"
