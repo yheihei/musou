@@ -1006,7 +1006,6 @@ local SNAPSHOT = {
 	},
 	KotaiHaibun = {
 		GroupDistance = 80,
-		Reach = 120,
 	},
 	GeninKotai = {
 		MaxKotai = 40,

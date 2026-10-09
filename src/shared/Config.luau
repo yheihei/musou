@@ -244,10 +244,9 @@ export type CameraViewSection = {
 	FallbackAspect: number,
 }
 
--- 下忍の個体の枠の配分。近いプレイヤーのまとまりにする距離と、まとまりに数える部隊の距離
+-- 下忍の個体の枠の配分。近いプレイヤーのまとまりにする距離
 export type KotaiHaibunSection = {
 	GroupDistance: number,
-	Reach: number,
 }
 
 -- 実体化圏。プレイヤーの周りで、上忍と首領を個体として出す範囲と、個体の動き
@@ -1677,7 +1676,6 @@ local Config: Config = {
 	-- 近いプレイヤーのまとまりごとに人数の比で分ける。計算は KotaiHaibun.luau にある
 	KotaiHaibun = {
 		GroupDistance = 80, -- この距離（スタッド）以内のプレイヤーをたどってつなぎ、1つのまとまりにする
-		Reach = 120, -- 部隊は、この距離（スタッド）以内にいる一番近いプレイヤーのまとまりに数える（実体化圏の出現の半径）
 	},
 
 	-- 実体化圏の下忍の個体。出撃メンバーの近くに入った敵軍の部隊から、下忍を個体として出し、離れたら部隊に戻す。

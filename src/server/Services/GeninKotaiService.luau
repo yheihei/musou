@@ -20,12 +20,14 @@
 --   部隊の位置の周り（Spread の円の中、区画の中、地面の上）に出す。1回の判断で出すのは MaxPerTick 体まで
 -- - 出し入れする位置は、出撃メンバーの視界の外に限る（CameraViewService。#81）。ただし、出撃メンバー全員から
 --   PopDistance より遠い位置なら、視界の中でも出し入れする（実体化圏の縁の遠くで、目立たないため）。
+--   倒れたメンバーも、体が残っている間はカメラが戦場を映しているので、視界にも遠さの判定にも入れる。
 --   出せる位置が無ければ、次の判断まで見送る（視界の中の出し入れの保留）
 -- - 体の色は、出撃したステージの敵軍のクランの色
 -- - 戦闘のフェーズが終わったら、個体の表を空にする（体は EnemyService が片付ける）
 --
 -- 窓口
--- - SetSpawning で出し入れを止める・再開する。止めても出ている個体は残る（ClearEnemies で部隊へ戻す）
+-- - SetSpawning で出し入れを止める・再開する。止めても出ている個体は残る（ClearEnemies で部隊へ戻す）。
+--   止めている間も、兵数より多い個体を戻すことと、いなくなった部隊の個体を消すことは続ける
 -- - LogSpawn で、出した・戻した・見送ったことを出力に出す
 -- - DumpGeninKotai で部隊ごとの兵数・個体の数・目標、DumpKotaiHaibun でまとまりごとの配分を出す
 
@@ -111,14 +113,15 @@ local function membersInBounds(bounds: BasePart): { KotaiHaibun.Member }
 	return points
 end
 
--- 部隊の個体の表から、消えた・倒れた個体を外して、生きている個体の数を返す
+-- 部隊の個体の表から、消えた個体と、倒れたことを知らせ終えた個体を外して、残っている個体の数を返す。
+-- 体力が 0 になってから倒れたことを知らせる（兵数を1減らす）までの個体は数に入れる（個体の数と兵数をずらさないため）
 local function prune(butaiId: string): number
 	local list = kotai[butaiId]
 	if not list then
 		return 0
 	end
 	for index = #list, 1, -1 do
-		if not EnemyService.isAlive(list[index]) then
+		if not EnemyService.isPresent(list[index]) then
 			table.remove(list, index)
 		end
 	end
@@ -142,10 +145,23 @@ function GeninKotaiService.countOf(butaiId: string): number
 	return prune(butaiId)
 end
 
--- 出し入れしてよい位置か。出撃メンバー全員から PopDistance より遠いか、出撃メンバーの誰の視界にもかからない
-local function popSafe(position: Vector3, points: { KotaiHaibun.Member }): boolean
+-- 戦場を見ている出撃メンバーの体の水平位置。倒れていても、体が残っている間はカメラが戦場を映しているので入れる
+local function watchersOf(): { KotaiHaibun.Member }
+	local points = {}
+	for _, member in StageService.getMembers() do
+		local character = member.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root then
+			table.insert(points, { id = member.Name, x = root.Position.X, z = root.Position.Z })
+		end
+	end
+	return points
+end
+
+-- 出し入れしてよい位置か。戦場を見ているメンバー（watchers）全員から PopDistance より遠いか、誰の視界にもかからない
+local function popSafe(position: Vector3, watchers: { KotaiHaibun.Member }): boolean
 	local near = false
-	for _, point in points do
+	for _, point in watchers do
 		local dx, dz = point.x - position.X, point.z - position.Z
 		if dx * dx + dz * dz <= Config.GeninKotai.PopDistance * Config.GeninKotai.PopDistance then
 			near = true
@@ -155,7 +171,7 @@ local function popSafe(position: Vector3, points: { KotaiHaibun.Member }): boole
 	if not near then
 		return true
 	end
-	-- 視界は倒れているメンバーのカメラも含めて見る（体が残っている間はカメラが戦場を映している）
+	-- 視界は倒れているメンバーのカメラも含めて見る
 	return not CameraViewService.seenByAny(StageService.getMembers(), position, Config.GeninKotai.ViewMargin)
 end
 
@@ -168,12 +184,13 @@ local function nearestDistance(position: Vector3, points: { KotaiHaibun.Member }
 	return best
 end
 
--- 部隊の個体を count 体まで部隊へ戻す。出撃メンバーから遠い個体から戻す。
--- force なら視界によらず戻す（兵数が個体の数より少なくなったとき）。戻した数と、視界にかかって残した数を返す
+-- 部隊の個体を count 体まで部隊へ戻す。戦場を見ているメンバー（watchers）から遠い個体から戻す。
+-- force なら視界によらず戻す（兵数が個体の数より少なくなったとき、部隊がいなくなったとき）。
+-- 戻した数と、視界にかかって残した数を返す
 local function dematerialize(
 	butaiId: string,
 	count: number,
-	points: { KotaiHaibun.Member },
+	watchers: { KotaiHaibun.Member },
 	force: boolean
 ): (number, number)
 	local list = kotai[butaiId]
@@ -184,7 +201,7 @@ local function dematerialize(
 	for _, model in list do
 		local position = EnemyService.positionOf(model)
 		if position then
-			table.insert(order, { model = model, position = position, distance = nearestDistance(position, points) })
+			table.insert(order, { model = model, position = position, distance = nearestDistance(position, watchers) })
 		end
 	end
 	table.sort(order, function(a, b)
@@ -195,7 +212,7 @@ local function dematerialize(
 		if removed >= count then
 			break
 		end
-		if force or popSafe(entry.position, points) then
+		if force or popSafe(entry.position, watchers) then
 			if EnemyService.remove(entry.model) then
 				removed += 1
 			end
@@ -212,7 +229,7 @@ local function materialize(
 	butaiId: string,
 	center: { x: number, z: number },
 	count: number,
-	points: { KotaiHaibun.Member },
+	watchers: { KotaiHaibun.Member },
 	bounds: BasePart,
 	color: Color3?
 ): (number, number)
@@ -226,7 +243,7 @@ local function materialize(
 		local x, z = center.x + math.cos(angle) * reach, center.z + math.sin(angle) * reach
 		local groundY = if insideBounds(bounds, Vector3.new(x, 0, z)) then Ground.heightAt(x, z) else nil
 		if groundY then
-			if popSafe(Vector3.new(x, groundY + BODY_CENTER_HEIGHT, z), points) then
+			if popSafe(Vector3.new(x, groundY + BODY_CENTER_HEIGHT, z), watchers) then
 				local model = EnemyService.spawnKotai(butaiId, x, z, color)
 				if model then
 					local list = kotai[butaiId]
@@ -251,42 +268,47 @@ local function tick()
 	if not bounds then
 		return
 	end
+	local watchers = watchersOf()
 	-- いなくなった部隊の個体は消す
 	for id in table.clone(kotai) do
 		if prune(id) > 0 and not ButaiService.get(id) then
-			dematerialize(id, math.huge, {}, true)
+			dematerialize(id, math.huge, watchers, true)
 			log(`部隊 {id} がいなくなったので、個体を消した`)
 		end
 	end
-	if not enabled then
-		return
-	end
-	local points = membersInBounds(bounds)
-
-	local states: { GeninKotai.ButaiState } = {}
-	local positions: { [string]: { x: number, z: number } } = {}
+	-- 交戦などで兵数が個体の数より少なくなったら、多い分をすぐに部隊へ戻す（出し入れを止めている間も行う）
+	local butaiList = {}
 	for _, butai in ButaiService.list() do
 		if butai.gun == GUN and not butai.fukuhei then
+			table.insert(butaiList, butai)
 			local present = prune(butai.id)
-			-- 交戦などで兵数が個体の数より少なくなったら、多い分をすぐに部隊へ戻す
 			if present > butai.heisu then
-				local removed = dematerialize(butai.id, present - butai.heisu, points, true)
+				local removed = dematerialize(butai.id, present - butai.heisu, watchers, true)
 				log(
 					`部隊 {butai.id} の兵数 {butai.heisu} が個体の数より少ないので、{removed} 体を部隊へ戻した`
 				)
-				present = prune(butai.id)
 			end
-			positions[butai.id] = { x = butai.position.x, z = butai.position.z }
-			table.insert(states, {
-				id = butai.id,
-				x = butai.position.x,
-				z = butai.position.z,
-				heisu = butai.heisu,
-				present = present,
-			})
 		end
 	end
+	if not enabled then
+		lastPlan = nil
+		return
+	end
 
+	-- 個体の数は、区画の中にいる倒れていないメンバーとの距離で決める
+	local points = membersInBounds(bounds)
+	local states: { GeninKotai.ButaiState } = {}
+	local positions: { [string]: { x: number, z: number } } = {}
+	for _, butai in butaiList do
+		positions[butai.id] = { x = butai.position.x, z = butai.position.z }
+		table.insert(states, {
+			id = butai.id,
+			x = butai.position.x,
+			z = butai.position.z,
+			heisu = butai.heisu,
+			present = prune(butai.id),
+		})
+	end
 	local plan = GeninKotai.plan(states, points, Config.GeninKotai.MaxKotai)
 	lastPlan = plan
 
@@ -295,7 +317,7 @@ local function tick()
 		local present = prune(state.id)
 		local target = plan.targets[state.id] or 0
 		if present > target then
-			local removed, kept = dematerialize(state.id, present - target, points, false)
+			local removed, kept = dematerialize(state.id, present - target, watchers, false)
 			if removed > 0 then
 				log(`部隊 {state.id} の個体を {removed} 体部隊へ戻した（目標 {target}）`)
 			end
@@ -325,13 +347,13 @@ local function tick()
 		if budget <= 0 then
 			break
 		end
-		local spawned, seen =
-			materialize(need.id, positions[need.id], math.min(need.missing, budget), points, bounds, color)
+		local want = math.min(need.missing, budget)
+		local spawned, seen = materialize(need.id, positions[need.id], want, watchers, bounds, color)
 		budget -= spawned
 		if spawned > 0 then
 			log(`部隊 {need.id} から個体を {spawned} 体出した（出している数 {prune(need.id)}）`)
 		end
-		if spawned < math.min(need.missing, budget + spawned) and seen > 0 then
+		if spawned < want and seen > 0 then
 			log(`部隊 {need.id} の周りは視界の中なので、{seen} か所で出すのを見送った`)
 		end
 	end
@@ -397,7 +419,9 @@ local function registerDebugCommands()
 		function()
 			local plan = lastPlan
 			if not plan then
-				return "まだ出し入れを決めていない（戦闘のフェーズでない）"
+				return if enabled
+					then "まだ出し入れを決めていない（戦闘のフェーズでない）"
+					else "出し入れを止めている（SetSpawning false）"
 			end
 			local groups = {}
 			for _, group in plan.groups do
@@ -413,7 +437,12 @@ local function registerDebugCommands()
 					kotai = present,
 				})
 			end
-			return HttpService:JSONEncode({ cap = Config.GeninKotai.MaxKotai, total = totalCount(), groups = groups })
+			return HttpService:JSONEncode({
+				enabled = enabled,
+				cap = Config.GeninKotai.MaxKotai,
+				total = totalCount(),
+				groups = groups,
+			})
 		end
 	)
 end

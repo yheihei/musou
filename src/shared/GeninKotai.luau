@@ -65,9 +65,14 @@ function GeninKotai.plan(butai: { ButaiState }, members: { KotaiHaibun.Member },
 		end
 	end
 
-	-- 出す対象の部隊は、距離によらず一番近いメンバーのまとまりに数える（対象かは上で実体化圏の半径で決めた）
-	local groups =
-		KotaiHaibun.allocate(members, cap, eligible, { GroupDistance = haibun.GroupDistance, Reach = math.huge })
+	-- 出す対象の部隊は、一番近いメンバーのまとまりに数える。対象の部隊は誰かから消滅の半径の内にいるので、
+	-- 数える距離にその半径を渡す
+	local groups = KotaiHaibun.allocate(
+		members,
+		cap,
+		eligible,
+		{ GroupDistance = haibun.GroupDistance, Reach = jittaikaken.DisappearRadius }
+	)
 	for _, group in groups do
 		local weights = {}
 		for _, id in group.butai do

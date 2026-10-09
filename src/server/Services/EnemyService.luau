@@ -36,6 +36,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Appearance = require(ReplicatedStorage.Shared.Appearance)
 local Characters = require(ReplicatedStorage.Shared.Characters)
+local Colors = require(ReplicatedStorage.Shared.Colors)
 local Config = require(ReplicatedStorage.Shared.Config)
 local EnemySpacing = require(ReplicatedStorage.Shared.EnemySpacing)
 local Ground = require(ReplicatedStorage.Shared.Ground)
@@ -562,6 +563,12 @@ function EnemyService.isAlive(model: Model): boolean
 	return enemy ~= nil and enemy.humanoid.Health > 0
 end
 
+-- まだ敵の表にいるか。倒れた敵は、倒れたことを知らせる（kotaiDefeated）ときに表から外れる。
+-- 体力が 0 になってから倒れたことを知らせるまでの間も true（部隊の個体の数と兵数をずらさないため）
+function EnemyService.isPresent(model: Model): boolean
+	return enemies[model] ~= nil
+end
+
 -- 生きている敵の位置。いなければ nil
 function EnemyService.positionOf(model: Model): Vector3?
 	local enemy = enemies[model]
@@ -672,6 +679,10 @@ function EnemyService.start()
 		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ。色によらない）
 		local size = templateFor(kind):GetExtentsSize()
 		radii[kind] = math.max(size.X, size.Z) / 2
+	end
+	-- 部隊の下忍の個体のクランの色の体を先に作る（体を作る処理は待つことがあり、出し入れの判断の途中で待たないように）
+	for _, color in Colors.Clan do
+		templateFor("Genin", color)
 	end
 
 	DebugCommand.register(

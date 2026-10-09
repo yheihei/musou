@@ -121,15 +121,18 @@ test("兵数の合計が上限より少なければ、合計は兵数の合計",
 	expect(quotasOf(groups)).toEqual({ 3, 4, 0, 0 })
 end)
 
-test("どのプレイヤーからも Reach より遠い部隊と、兵数 0 の部隊は数えない", function()
-	local butai = {
-		{ id = "far", x = 150, z = 150, heisu = 100 },
-		{ id = "empty", x = 0, z = 10, heisu = 0 },
-	}
-	local groups = KotaiHaibun.allocate({ { id = "A", x = 0, z = 0 } }, 40, butai, PARAMS)
-	expect(groups[1].quota).toBe(0)
-	expect(groups[1].butai).toEqual({})
-end)
+test(
+	"Reach を渡すと、どのプレイヤーからも Reach より遠い部隊と、兵数 0 の部隊は数えない",
+	function()
+		local butai = {
+			{ id = "far", x = 150, z = 150, heisu = 100 },
+			{ id = "empty", x = 0, z = 10, heisu = 0 },
+		}
+		local groups = KotaiHaibun.allocate({ { id = "A", x = 0, z = 0 } }, 40, butai, PARAMS)
+		expect(groups[1].quota).toBe(0)
+		expect(groups[1].butai).toEqual({})
+	end
+)
 
 test("部隊は一番近いプレイヤーのまとまりに数える", function()
 	local members = { { id = "A", x = 0, z = 0 }, { id = "B", x = 200, z = 0 } }
@@ -156,13 +159,6 @@ test(
 
 test("プレイヤーがいなければ、まとまりは無い", function()
 	expect(#KotaiHaibun.allocate({}, 40, nil, PARAMS)).toBe(0)
-end)
-
-test("位置から一番近いプレイヤーのまとまりを引く", function()
-	local groups = KotaiHaibun.allocate(SCATTERED, 40, nil, PARAMS)
-	expect(KotaiHaibun.groupIndexAt(groups, SCATTERED, 290, 20)).toBe(2)
-	expect(KotaiHaibun.groupIndexAt(groups, SCATTERED, 10, 280)).toBe(3)
-	expect(KotaiHaibun.groupIndexAt({}, {}, 0, 0)).toBe(nil)
 end)
 
 test("どんな位置と兵数でも、合計は上限以下で、各まとまりは兵数を超えない", function()
@@ -203,5 +199,4 @@ test("Config のまとまりの距離は、実体化圏の出現の半径より�
 	local p = Config.KotaiHaibun
 	expect(p.GroupDistance > 0).toBe(true)
 	expect(p.GroupDistance < Config.Jittaikaken.AppearRadius).toBe(true)
-	expect(p.Reach > 0).toBe(true)
 end)

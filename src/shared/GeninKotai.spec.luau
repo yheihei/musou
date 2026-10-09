@@ -14,7 +14,7 @@ local PARAMS: GeninKotai.Params = {
 		HomeRadius = 6,
 		CorpseLifetime = 3,
 	},
-	haibun = { GroupDistance = 80, Reach = 120 },
+	haibun = { GroupDistance = 80 },
 }
 
 local ONE = { { id = "A", x = 0, z = 0 } }

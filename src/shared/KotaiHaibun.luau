@@ -5,15 +5,16 @@
 --
 -- - GroupDistance 以内のプレイヤーをたどってつなぎ、1つのまとまりにする（A と B、B と C が近ければ A・B・C で1つ）
 -- - 上限は、まとまりの人数の比で分ける（離れた4人なら 1/4 ずつ、4人が1か所なら全部を1つのまとまりに）
--- - 部隊を渡すと、まとまりが使う数は近くの部隊の兵数を超えない。部隊は、Reach 以内にいる一番近いプレイヤーの
---   まとまりに数える。どのプレイヤーからも Reach より遠い部隊は数えない
+-- - 部隊を渡すと、まとまりが使う数は近くの部隊の兵数を超えない。部隊は一番近いプレイヤーのまとまりに数える。
+--   Reach を渡すと、どのプレイヤーからも Reach より遠い部隊は数えない（実体化圏の下忍は、消滅の半径を渡す）
 -- - 兵数が足りずに使い切らなかった分は、ほかのまとまりへ人数の比で回す（近くに部隊のいないプレイヤーの分も回す）
 -- - 端数は、切り捨てた残りの大きい順に1つずつ足す（同じなら先のまとまり）。合計は上限と兵数の合計の小さい方
 -- - 部隊を渡さないときは、兵数の制限なしとして分ける
 
 local Config = require("./Config")
 
-export type Params = Config.KotaiHaibunSection
+-- GroupDistance はまとまりにする距離。Reach は部隊を数える距離で、省くと距離によらず数える
+export type Params = { GroupDistance: number, Reach: number? }
 
 -- プレイヤー。id はプレイヤーを見分ける文字列（名前など）
 export type Member = { id: string, x: number, z: number }
@@ -166,7 +167,7 @@ end
 
 -- 上限 cap を、プレイヤーのまとまりごとに分ける。butai を渡すと、近くの部隊の兵数を超えない
 function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiInput }?, params: Params?): { Group }
-	local p = params or Config.KotaiHaibun
+	local p: Params = params or { GroupDistance = Config.KotaiHaibun.GroupDistance }
 	local groups = KotaiHaibun.group(members, p.GroupDistance)
 	local groupIndexOf: { [string]: number } = {}
 	for index, group in groups do
@@ -192,7 +193,7 @@ function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiIn
 						best, bestDistance = member, d
 					end
 				end
-				if best and bestDistance <= p.Reach then
+				if best and (p.Reach == nil or bestDistance <= p.Reach) then
 					local index = groupIndexOf[best.id]
 					demands[index] += entry.heisu
 					table.insert(butaiOf[index], entry.id)
@@ -223,26 +224,6 @@ function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiIn
 		})
 	end
 	return result
-end
-
--- 位置 (x, z) に一番近いプレイヤーのまとまりの番号（groups の添字）。まとまりが無ければ nil
-function KotaiHaibun.groupIndexAt(groups: { Group }, members: { Member }, x: number, z: number): number?
-	local indexOf: { [string]: number } = {}
-	for index, group in groups do
-		for _, id in group.members do
-			indexOf[id] = index
-		end
-	end
-	local best: number? = nil
-	local bestDistance = math.huge
-	for _, member in members do
-		local index = indexOf[member.id]
-		local d = distance(x, z, member.x, member.z)
-		if index and d < bestDistance then
-			best, bestDistance = index, d
-		end
-	end
-	return best
 end
 
 return KotaiHaibun
