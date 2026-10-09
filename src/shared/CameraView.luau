@@ -5,7 +5,8 @@
 --
 -- - 視界は、カメラの位置から向きの方向へ広がる四角錐。縦の画角 fovY（度）と、画面の横と縦の比 aspect で決める
 -- - 点の周りの半径 margin の球が視界に少しでもかかれば、見えているとみなす（部隊の広がりと体の大きさの分）
--- - 地形や建物で隠れることと、遠くて見えないことは考えない（見えている側に倒す）
+-- - カメラから far より遠い点は見えないとみなす（離れた仲間のカメラが、こちらの周りを丸ごと見ていることにしないため）
+-- - 地形や建物で隠れることは考えない（見えている側に倒す）
 
 local Config = require("./Config")
 
@@ -24,11 +25,14 @@ export type View = {
 
 local CameraView = {}
 
--- 受け付ける縦の画角（度）と、画面の横と縦の比の範囲。Roblox のカメラの画角は 1〜120 度
+-- 受け付ける縦の画角（度）と、画面の横と縦の比の範囲。ゲームはカメラの画角を変えない（既定の 70 度）ので、
+-- 広すぎる画角で周りを丸ごと見ていると送られないよう狭める。比の上限は 32:9 の画面まで
 CameraView.MIN_FOV = 1
-CameraView.MAX_FOV = 120
+CameraView.MAX_FOV = 90
 CameraView.MIN_ASPECT = 0.2
-CameraView.MAX_ASPECT = 5
+CameraView.MAX_ASPECT = 3.6
+-- 向きの長さの許し。カメラの LookVector は長さ 1 なので、それから外れた値は受け付けない
+CameraView.LOOK_TOLERANCE = 0.01
 
 local UP = vector.create(0, 1, 0)
 local RIGHT = vector.create(1, 0, 0)
@@ -50,7 +54,8 @@ function CameraView.validate(position: unknown, look: unknown, fovY: unknown, as
 	if not isFiniteVector(p) or not isFiniteVector(l) then
 		return nil
 	end
-	if vector.magnitude(l) < 1e-3 then
+	local length = vector.magnitude(l)
+	if not (math.abs(length - 1) <= CameraView.LOOK_TOLERANCE) then
 		return nil
 	end
 	-- 比べられない値（NaN）は範囲の比べ方で外れる
@@ -76,9 +81,12 @@ function CameraView.fromFacing(position: vector, facing: vector, params: Params?
 	}
 end
 
--- point の周りの半径 margin の球が、視界に少しでもかかるか
-function CameraView.sees(view: View, point: vector, margin: number): boolean
+-- point の周りの半径 margin の球が、視界に少しでもかかるか。far を渡すと、カメラから far より遠い球は見えない
+function CameraView.sees(view: View, point: vector, margin: number, far: number?): boolean
 	local offset = point - view.position
+	if far and vector.magnitude(offset) - margin > far then
+		return false
+	end
 	local forward = view.look
 	local depth = vector.dot(offset, forward)
 	-- カメラの後ろに球が丸ごと出ていれば見えない
@@ -99,10 +107,10 @@ function CameraView.sees(view: View, point: vector, margin: number): boolean
 	return outsideX <= margin and outsideY <= margin
 end
 
--- 視界のどれかに point の周りの半径 margin の球がかかるか
-function CameraView.seenByAny(views: { View }, point: vector, margin: number): boolean
+-- 視界のどれかに point の周りの半径 margin の球がかかるか（far は sees と同じ）
+function CameraView.seenByAny(views: { View }, point: vector, margin: number, far: number?): boolean
 	for _, view in views do
-		if CameraView.sees(view, point, margin) then
+		if CameraView.sees(view, point, margin, far) then
 			return true
 		end
 	end

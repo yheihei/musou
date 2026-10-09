@@ -5,7 +5,9 @@
 -- - 届いた値は CameraView.validate で確かめ、キャラクターから MaxDistance より遠いカメラと、Interval より短い間隔で
 --   届いた分は捨てる（不正な値ではエラーを出さず、何もしない）
 -- - 最後に届いてから Stale 秒を過ぎたカメラと、まだ届いていない人は、キャラクターの頭の高さから体の向きを見ているとみなす
--- - キャラクターがいない人（倒れて再出撃を待つ人など）は、何も見ていないとみなす
+-- - 倒れた人も、体が残っている間はカメラが戦場を映しているので、同じように扱う
+-- - キャラクターがいない人（体が片付いて再出撃を待つ人など）は、何も見ていないとみなす
+-- - カメラから FarDistance より遠い位置は、見えないとみなす
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -27,10 +29,10 @@ local reports: { [Player]: Report } = {}
 -- 不正な値を捨てた回数（確認用）
 local rejected: { [Player]: number } = {}
 
+-- キャラクターの体の HumanoidRootPart。倒れていても体が残っていれば返す
 local function rootOf(player: Player): BasePart?
 	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not character or not humanoid or humanoid.Health <= 0 then
+	if not character then
 		return nil
 	end
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -75,7 +77,7 @@ function CameraViewService.seenByAny(players: { Player }, point: Vector3, margin
 			table.insert(views, view)
 		end
 	end
-	return CameraView.seenByAny(views, point, margin or Config.CameraView.Margin)
+	return CameraView.seenByAny(views, point, margin or Config.CameraView.Margin, Config.CameraView.FarDistance)
 end
 
 local function round(value: number): number
@@ -114,25 +116,41 @@ local function registerDebugCommands()
 
 	DebugCommand.register(
 		"CheckCameraView",
-		"<プレイヤー名> <x> <z> [半径]",
-		"地点 (x, z)（高さはプレイヤーの足元）の周りの半径（既定は Config の Margin）が、プレイヤーの視界にかかるかを返す",
-		function(name, x, z, radius)
+		"<プレイヤー名> [距離] [半径]",
+		"プレイヤーの周り（既定は 80 スタッド）の8方向（視界の向きから見た前・右前・右・右後ろ・後ろ・左後ろ・左・左前）の地点が、"
+			.. "半径（既定は Config の Margin）を含めて視界にかかるかを返す。高さはプレイヤーの足元",
+		function(name, distanceValue, radius)
 			local player = DebugCommand.findPlayer(name)
 			local root = rootOf(player)
-			if not root then
+			local view, source = CameraViewService.viewOf(player)
+			if not root or not view then
 				return `{player.Name} のキャラクターがいない`
 			end
-			local point = Vector3.new(DebugCommand.toNumber(x, "x"), root.Position.Y, DebugCommand.toNumber(z, "z"))
+			local distance = if distanceValue ~= nil then DebugCommand.toNumber(distanceValue, "距離") else 80
 			local margin = if radius ~= nil then DebugCommand.toNumber(radius, "半径") else Config.CameraView.Margin
-			local seen = CameraViewService.seenByAny({ player }, point, margin)
-			local _, source = CameraViewService.viewOf(player)
+			-- 視界の向きを水平にしたものを前とする。真上か真下を向いていれば北を前とする
+			local flat = Vector3.new(view.look.x, 0, view.look.z)
+			local front = if flat.Magnitude > 1e-6 then flat.Unit else Vector3.new(0, 0, -1)
+			local names = { "前", "右前", "右", "右後ろ", "後ろ", "左後ろ", "左", "左前" }
+			local seen, unseen = {}, {}
+			for index, label in names do
+				-- 前から時計回りに 45 度ずつ回す（上から見て右回り）
+				local angle = math.rad((index - 1) * 45)
+				local direction = CFrame.Angles(0, -angle, 0):VectorToWorldSpace(front)
+				local point = root.Position + direction * distance
+				if CameraViewService.seenByAny({ player }, point, margin) then
+					table.insert(seen, label)
+				else
+					table.insert(unseen, label)
+				end
+			end
 			return string.format(
-				"(%.0f, %.0f) の半径 %.0f は %s の視界に%s（視界の出どころ %s）",
-				point.X,
-				point.Z,
+				"距離 %.0f・半径 %.0f で %s の視界にかかる向き %s、かからない向き %s（視界の出どころ %s）",
+				distance,
 				margin,
 				player.Name,
-				if seen then "かかる" else "かからない",
+				if #seen > 0 then table.concat(seen, "・") else "なし",
+				if #unseen > 0 then table.concat(unseen, "・") else "なし",
 				tostring(source)
 			)
 		end

@@ -231,6 +231,7 @@ export type CameraViewSection = {
 	Interval: number,
 	Stale: number,
 	Margin: number,
+	FarDistance: number,
 	MaxDistance: number,
 	FallbackHeight: number,
 	FallbackFov: number,
@@ -1656,7 +1657,8 @@ local Config: Config = {
 	CameraView = {
 		Interval = 0.5, -- クライアントがカメラを送る間隔（秒）。サーバーはこれより短い間隔で届いた分を捨てる
 		Stale = 3, -- 最後に届いてからこの秒数を過ぎたカメラは使わず、キャラクターの向きで代える
-		Margin = 12, -- 下忍の部隊を出す位置の周りのこの半径（スタッド）が視界に少しでもかかれば、見えているとみなす
+		Margin = 14, -- 下忍の部隊を出す位置の周りのこの半径（スタッド）が視界に少しでもかかれば、見えているとみなす（部隊の広がり ±8 と体の大きさ）
+		FarDistance = 250, -- カメラからこの距離（スタッド）より遠い位置は、見えないとみなす
 		MaxDistance = 200, -- キャラクターからこの距離（スタッド）より遠いカメラは受け付けない
 		FallbackHeight = 2, -- カメラが届いていないときに見る位置の、キャラクターの中心からの高さ（スタッド）
 		FallbackFov = 70, -- カメラが届いていないときの縦の画角（度）

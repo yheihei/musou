@@ -135,6 +135,8 @@ local logTokens = false
 local BUTAI_CENTER_TRIES = 16
 -- 部隊を出した位置と、視界の外に出せず見送ったことを出力に出すか。窓口の LogSpawn で切り替える
 local logSpawns = false
+-- 部隊を出す位置が視界にかかるかを確かめる高さ。地面から下忍の体の中ほどまで（スタッド）
+local BODY_CENTER_HEIGHT = 3
 -- 攻撃が届く距離より、この距離（スタッド）だけ手前で止まる
 local STAND_OFF_MARGIN = 0.5
 -- Humanoid:MoveTo は、止まった状態から歩かせると目標の手前（スタッド。Studio で測ると 0.7〜0.8）で止まる。
@@ -516,8 +518,11 @@ local function pickButaiCenter(): Vector2?
 	local members = StageService.getMembers()
 	local candidates = {}
 	for _, member in members do
-		local root = member.Character and member.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if root and insideBounds(bounds, root.Position) then
+		-- 倒れているメンバーの周りには出さない（視界の判定には倒れたメンバーのカメラも使う）
+		local character = member.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root and humanoid and humanoid.Health > 0 and insideBounds(bounds, root.Position) then
 			table.insert(candidates, root.Position)
 		end
 	end
@@ -532,8 +537,11 @@ local function pickButaiCenter(): Vector2?
 		local distance = Config.Spawner.MinDistance
 			+ math.random() * (Config.Spawner.MaxDistance - Config.Spawner.MinDistance)
 		local center = base + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
-		if insideBounds(bounds, center) then
-			if not CameraViewService.seenByAny(members, center) then
+		-- 視界の判定は、部隊が立つ地面の高さ（体の中ほど）で行う
+		local groundY = if insideBounds(bounds, center) then Ground.heightAt(center.X, center.Z) else nil
+		if groundY then
+			local body = Vector3.new(center.X, groundY + BODY_CENTER_HEIGHT, center.Z)
+			if not CameraViewService.seenByAny(members, body) then
 				logSpawn(
 					string.format(
 						"部隊を (%.0f, %.0f) に出した（出撃メンバーの視界の外）",

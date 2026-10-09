@@ -9,7 +9,8 @@ local test, expect = testkit.test, testkit.expect
 local PARAMS: CameraView.Params = {
 	Interval = 0.5,
 	Stale = 3,
-	Margin = 12,
+	Margin = 14,
+	FarDistance = 250,
 	MaxDistance = 200,
 	FallbackHeight = 2,
 	FallbackFov = 70,
@@ -24,8 +25,8 @@ local NORTH: CameraView.View = {
 	aspect = 16 / 9,
 }
 
-test("正しい値は視界にし、向きを長さ 1 にする", function()
-	local view = CameraView.validate(vector.create(1, 2, 3), vector.create(0, 0, -5), 70, 1.6)
+test("正しい値は視界にし、向きを長さ 1 にそろえる", function()
+	local view = CameraView.validate(vector.create(1, 2, 3), vector.create(0, 0, -1.005), 70, 1.6)
 	expect(view ~= nil).toBe(true)
 	if view then
 		expect(vector.magnitude(view.look)).toBeNear(1)
@@ -45,18 +46,24 @@ test("型が違う値・有限でない値・長さ 0 の向きは受け付け�
 	expect(CameraView.validate(vector.create(math.huge, 0, 0), l, 70, 1.6)).toBe(nil)
 	expect(CameraView.validate(p, vector.create(0, 0, 0), 70, 1.6)).toBe(nil)
 	expect(CameraView.validate(p, vector.create(0, -math.huge, 0), 70, 1.6)).toBe(nil)
+	-- カメラの向きは長さ 1。大きすぎる値（長さが無限大になる）や短すぎる値は受け付けない
+	expect(CameraView.validate(p, vector.create(3e19, 0, 0), 70, 1.6)).toBe(nil)
+	expect(CameraView.validate(p, vector.create(0, 0, -5), 70, 1.6)).toBe(nil)
+	expect(CameraView.validate(p, vector.create(0, 0, -0.5), 70, 1.6)).toBe(nil)
 end)
 
 test("画角と比は範囲の外と NaN を受け付けない", function()
 	local p, l = vector.create(0, 0, 0), vector.create(0, 0, -1)
 	expect(CameraView.validate(p, l, 0.5, 1.6)).toBe(nil)
-	expect(CameraView.validate(p, l, 121, 1.6)).toBe(nil)
+	-- 広すぎる画角と横長すぎる画面で、周りを丸ごと見ていると送れないようにする
+	expect(CameraView.validate(p, l, 91, 1.6)).toBe(nil)
+	expect(CameraView.validate(p, l, 120, 1.6)).toBe(nil)
 	expect(CameraView.validate(p, l, 0 / 0, 1.6)).toBe(nil)
 	expect(CameraView.validate(p, l, 70, 0.1)).toBe(nil)
-	expect(CameraView.validate(p, l, 70, 6)).toBe(nil)
+	expect(CameraView.validate(p, l, 70, 3.7)).toBe(nil)
 	expect(CameraView.validate(p, l, 70, 0 / 0)).toBe(nil)
 	expect(CameraView.validate(p, l, 1, 0.2) ~= nil).toBe(true)
-	expect(CameraView.validate(p, l, 120, 5) ~= nil).toBe(true)
+	expect(CameraView.validate(p, l, 90, 3.6) ~= nil).toBe(true)
 end)
 
 test("正面の点は見え、後ろの点は見えない", function()
@@ -110,6 +117,15 @@ test("報告が無いときは、頭の高さから体の向きの水平を見�
 	expect(up.look.z).toBeNear(-1)
 end)
 
+test("far より遠い点は、正面でも見えない", function()
+	expect(CameraView.sees(NORTH, vector.create(0, 0, -240), 0, 250)).toBe(true)
+	expect(CameraView.sees(NORTH, vector.create(0, 0, -260), 0, 250)).toBe(false)
+	-- 球の縁が far の内に入れば見える
+	expect(CameraView.sees(NORTH, vector.create(0, 0, -260), 14, 250)).toBe(true)
+	-- far を渡さなければ、遠さは考えない
+	expect(CameraView.sees(NORTH, vector.create(0, 0, -1000), 0)).toBe(true)
+end)
+
 test("どれかの視界に入れば見えている", function()
 	local south: CameraView.View = {
 		position = vector.create(0, 0, 0),
@@ -120,6 +136,7 @@ test("どれかの視界に入れば見えている", function()
 	expect(CameraView.seenByAny({ NORTH, south }, vector.create(0, 0, 50), 0)).toBe(true)
 	expect(CameraView.seenByAny({ NORTH }, vector.create(0, 0, 50), 0)).toBe(false)
 	expect(CameraView.seenByAny({}, vector.create(0, 0, 50), 0)).toBe(false)
+	expect(CameraView.seenByAny({ NORTH, south }, vector.create(0, 0, 300), 0, 250)).toBe(false)
 end)
 
 test("Config の値は受け付ける範囲に収まる", function()
@@ -129,4 +146,6 @@ test("Config の値は受け付ける範囲に収まる", function()
 	-- 報告が古くなる前に、次の報告が届く
 	expect(p.Interval < p.Stale).toBe(true)
 	expect(p.Margin >= 0).toBe(true)
+	-- 仮の湧き処理の部隊を出す一番遠い位置は、見えないとみなす距離より近い（遠すぎて見えない位置にばかり出さない）
+	expect(Config.Spawner.MaxDistance < p.FarDistance).toBe(true)
 end)
