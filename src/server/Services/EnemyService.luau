@@ -1,20 +1,34 @@
 --!strict
--- 敵の下忍（と窓口で出した上忍）の体・動き・被ダメージ。体はサーバーの Humanoid のモデル（#15 の案A。描き方は #15 で決める）。
--- 体を出すのは、実体化圏の下忍の個体（GeninKotaiService が部隊から出す。spawnKotai）と、窓口で出した敵（SpawnEnemy・SpawnEnemies）。
--- 戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）敵を片付ける。
+-- 両軍の下忍の個体と、窓口で出した敵（下忍と上忍）の体・動き・被ダメージ。体はサーバーの Humanoid のモデル
+-- （#15 の案A。描き方は #15 で決める）。
+-- 体を出すのは、実体化圏の下忍の個体（GeninKotaiService が両軍の部隊から出す。spawnKotai）と、
+-- 窓口で出した敵（SpawnEnemy・SpawnEnemies）。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）体を片付ける。
 -- ここは Humanoid に依存する部分（体の生成と消去、歩き、攻撃を受けた反応、倒れる）だけを持ち、部隊から何人出すか・
 -- 兵数の数え方は GeninKotaiService と ReplicatedStorage.Shared.GeninKotai が持つ。描き方が変わったら、ここを差し替える。
--- プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。
--- 敵は近づいて攻撃するだけで、体ではプレイヤーにもほかの敵にもぶつからない（CollisionGroups の Enemy）。
--- 重ならないよう、プレイヤーの手前で止まり、ほかの敵とも離れて囲む（立ち位置の計算は EnemySpacing）。
--- 狙う相手（Config.luau の EnemyAI 節の AggroRange 以内のプレイヤー）がいない部隊の下忍の個体は、部隊の位置
--- （setHomeProvider で登録した関数で引く）の周りの自分の位置へ戻り、部隊について歩く。窓口で出した敵はその場にとどまる。
--- プレイヤーが倒した敵は、撃破数を足し、gekiha で種類・軍・倒れた位置・倒したプレイヤー・部隊 ID を知らせる。
--- 部隊の下忍の個体が倒れたら（倒した人によらず）、kotaiDefeated で知らせる（GeninKotaiService が部隊の兵数を1減らす）。
--- 個体を消す（remove。部隊へ戻す）ときは、倒れたことにしない（撃破数・兵数・知らせは動かない）。
+--
+-- 軍
+-- - 体ごとに軍を持つ。部隊の下忍の個体は部隊の軍、窓口で出した敵は敵軍
+-- - 攻撃判定の対象（getTargets）は軍で絞る。プレイヤーの攻撃と味方軍の上忍・首領の型は敵軍の体にだけ、
+--   秘計（大火計・爆破罠）は使った軍の相手の軍の体にだけ当たる
+-- - 体はプレイヤーにもほかの体にもぶつからない（CollisionGroups の、敵軍は Enemy、味方軍は Mikatagun）。
+--   体で押したり上に乗ったりしない
+--
+-- 動き
+-- - 敵軍の体は、近くのプレイヤー（Config.luau の EnemyAI 節の AggroRange 以内）へ近づいて攻撃するだけである。
+--   プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。重ならないよう、プレイヤーの手前で止まり、
+--   ほかの体とも離れて囲む（立ち位置の計算は EnemySpacing）
+-- - 味方軍の下忍の個体は、プレイヤーを狙わず、攻撃もしない（攻撃トークンの候補にも入らない）。ほかの下忍とも戦わない
+--   （交戦中の下忍同士の姿は #89）
+-- - 狙う相手がいない部隊の下忍の個体（味方軍はいつも）は、部隊の位置（setHomeProvider で登録した関数で引く）の周りの
+--   自分の位置へ戻り、部隊について歩く。窓口で出した敵はその場にとどまる
+--
+-- 倒れたとき
+-- - プレイヤーが倒した体は、撃破数を足し、gekiha で種類・軍（倒れた体の軍）・倒れた位置・倒したプレイヤー・部隊 ID を知らせる
+-- - 部隊の下忍の個体が倒れたら（倒した人によらず）、kotaiDefeated で知らせる（GeninKotaiService が部隊の兵数を1減らす）
+-- - 個体を消す（remove。部隊へ戻す）ときは、倒れたことにしない（撃破数・兵数・知らせは動かない）
 --
 -- 攻撃トークン（計算は KogekiToken、数値は Config.luau の KogekiToken 節）
--- - 1人のプレイヤーを同時に攻撃できる下忍は、そのプレイヤーの攻撃トークンを持つ下忍だけ（PerPlayer 体まで）
+-- - 1人のプレイヤーを同時に攻撃できる敵軍の下忍は、そのプレイヤーの攻撃トークンを持つ下忍だけ（PerPlayer 体まで）
 -- - 攻撃トークンを持たない下忍は、攻撃する下忍より WaitGap だけ外で囲んで待ち、攻撃しない
 -- - 攻撃した下忍は攻撃トークンを返す。倒れた下忍、吹き飛んで倒れている下忍、ほかのプレイヤーを狙った下忍、
 --   Range より離れた下忍、MaxHold 秒たっても攻撃しない下忍も返し、近い下忍へ渡る
@@ -44,6 +58,7 @@ local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
+local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local DamageService = require(script.Parent.DamageService)
 local PlayerService = require(script.Parent.PlayerService)
@@ -66,6 +81,10 @@ local ENEMY_COLORS: { [string]: Color3 } = {
 type Enemy = {
 	-- 種類（Genin・Jonin）
 	kind: string,
+	-- 軍。部隊の下忍の個体は部隊の軍、窓口で出した敵は敵軍
+	gun: Gun.Gun,
+	-- 体の色（部隊の下忍の個体はクランの色。確認用）
+	color: Color3,
 	model: Model,
 	humanoid: Humanoid,
 	root: BasePart,
@@ -112,22 +131,21 @@ type Target = {
 
 local EnemyService = {}
 
--- 湧かせる敵の軍
-local ENEMY_GUN: Gun.Gun = "Tekigun"
-EnemyService.GUN = ENEMY_GUN
+-- プレイヤー（味方軍）を狙って攻撃する体の軍。窓口で出した敵もこの軍にする
+local AITE_GUN: Gun.Gun = "Tekigun"
 
 local gekihaEvent = Instance.new("BindableEvent")
--- プレイヤーが敵を倒したときに、種類（Genin・Jonin）・軍・倒れた位置（Vector3）・倒したプレイヤー・部隊 ID
+-- プレイヤーが体を倒したときに、種類（Genin・Jonin）・倒れた体の軍・倒れた位置（Vector3）・倒したプレイヤー・部隊 ID
 -- （部隊の下忍の個体なら。窓口で出した敵は nil）で発火する。救援数と、窓口で出した下忍の拠点の耐久（KyotenService）が受ける
 EnemyService.gekiha = gekihaEvent.Event
 
 local kotaiDefeatedEvent = Instance.new("BindableEvent")
--- 部隊の下忍の個体が倒れたときに、モデル・部隊 ID・倒れた位置（Vector3）・とどめを刺したプレイヤー（いなければ nil）・
+-- 部隊の下忍の個体が倒れたときに、モデル・部隊 ID・軍・倒れた位置（Vector3）・とどめを刺したプレイヤー（いなければ nil）・
 -- 兵数の減少を拠点の耐久に数えないか（silent）で発火する。倒した人によらず発火する（GeninKotaiService が兵数を1減らす）
 EnemyService.kotaiDefeated = kotaiDefeatedEvent.Event
 
 local enemiesFolder: Folder
--- 種類と色ごとの体のひな形。色を渡さなければ ENEMY_COLORS の色
+-- 種類・軍・色ごとの体のひな形。色を渡さなければ ENEMY_COLORS の色
 local templates: { [string]: Model } = {}
 local radii: { [string]: number } = {}
 -- 部隊 ID から部隊の位置を引く関数（GeninKotaiService が登録する）
@@ -136,7 +154,8 @@ local enemies: { [Model]: Enemy } = {}
 local aliveCount = 0
 -- 敵に振る番号。モデルの名前を種類と番号（Genin1、Jonin2…）にする
 local nextNumber = 1
--- 敵が近づいて攻撃するか。窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
+-- 体が動くか（敵軍の体はプレイヤーに近づいて攻撃し、部隊の下忍の個体は部隊について歩く）。
+-- 窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
 local aiEnabled = true
 -- 攻撃トークン。下忍はモデルの名前、プレイヤーは UserId の文字列で引く
 local tokens = KogekiToken.new()
@@ -190,15 +209,16 @@ local function buildTemplate(kind: string, def: EnemyDef, color: Color3): Model
 	return model
 end
 
--- 種類と色の体のひな形。初めて使う色なら作って覚える
-local function templateFor(kind: string, color: Color3?): Model
+-- 種類・軍・色の体のひな形。初めて使う組み合わせなら作って覚える
+local function templateFor(kind: string, gun: Gun.Gun, color: Color3?): Model
 	local paint = color or ENEMY_COLORS[kind]
-	local key = `{kind}/{paint:ToHex()}`
+	local key = `{kind}/{gun}/{paint:ToHex()}`
 	local template = templates[key]
 	if not template then
 		template = buildTemplate(kind, ENEMY_DEFS[kind], paint)
-		-- 敵は体ではプレイヤーにもほかの敵にもぶつからない。複製した敵もこのグループになる
-		CollisionGroups.apply(template, CollisionGroups.ENEMY)
+		-- 体はプレイヤーにもほかの体にもぶつからない。軍のグループにするのは、秘計の落石の岩が相手の軍の体だけを止めるため。
+		-- 複製した体もこのグループになる
+		CollisionGroups.apply(template, CollisionGroups.kotaiGroupOf(gun))
 		templates[key] = template
 	end
 	return template
@@ -220,13 +240,14 @@ local function findNearestTarget(position: Vector3): (Player?, BasePart?)
 	return bestPlayer, bestRoot
 end
 
--- 攻撃トークンを持たずに待っている下忍か
+-- 攻撃トークンを持たずに待っている下忍か（味方軍の下忍の個体は攻撃トークンを持たないので、いつも true）
 local function isWaiting(enemy: Enemy): boolean
 	return enemy.kind == "Genin" and KogekiToken.ownerOf(tokens, enemy.model.Name) == nil
 end
 
--- 立ち位置を決めるときの近くの敵（体が重なりうる距離にいる、生きている敵）。
--- attackersOnly なら待っている下忍を除く（攻撃する下忍が、外側で待つ下忍にずらされて攻撃が届かなくならないように）
+-- 立ち位置を決めるときの近くの体（体が重なりうる距離にいる、生きている体。軍によらない）。
+-- attackersOnly なら待っている下忍を除く（攻撃する下忍が、外側で待つ下忍や味方軍の下忍の個体にずらされて
+-- 攻撃が届かなくならないように）
 local function neighborsOf(enemy: Enemy, attackersOnly: boolean): { EnemySpacing.Neighbor }
 	local list = {}
 	local position = enemy.root.Position
@@ -339,7 +360,8 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 		return
 	end
 	if not aim then
-		-- 部隊の下忍の個体は、部隊の位置の周りの自分の位置へ戻る（部隊について歩く）。窓口で出した敵はその場にとどまる
+		-- 狙う相手がいない（味方軍の下忍の個体はいつも）部隊の下忍の個体は、部隊の位置の周りの自分の位置へ戻る
+		-- （部隊について歩く）。窓口で出した敵はその場にとどまる
 		local home = if enemy.butai and homeProvider then homeProvider(enemy.butai) else nil
 		if home then
 			local goal = home + enemy.offset
@@ -405,13 +427,14 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	end
 end
 
--- 考える間隔ごとに、敵ごとに狙うプレイヤーを決め、攻撃トークンを渡してから動かす
+-- 考える間隔ごとに、敵軍の体ごとに狙うプレイヤーを決め、攻撃トークンを渡してから動かす。
+-- 味方軍の下忍の個体はプレイヤーを狙わず、攻撃トークンの候補にも入らない（部隊について歩く）
 local function think(now: number)
 	local aims: { [Enemy]: Target } = {}
 	local candidates: { [Player]: { KogekiToken.Candidate } } = {}
 	if aiEnabled then
 		for _, enemy in enemies do
-			if enemy.humanoid.Health > 0 then
+			if enemy.gun == AITE_GUN and enemy.humanoid.Health > 0 then
 				local player, root = findNearestTarget(enemy.root.Position)
 				if player and root then
 					aims[enemy] = { player = player, root = root }
@@ -462,11 +485,11 @@ local function onEnemyDied(enemy: Enemy)
 	local position = enemy.root.Position
 	if living then
 		PlayerService.addGekihasu(living)
-		gekihaEvent:Fire(enemy.kind, ENEMY_GUN, position, living, enemy.butai)
+		gekihaEvent:Fire(enemy.kind, enemy.gun, position, living, enemy.butai)
 	end
 	-- 部隊の下忍の個体は、倒した人によらず知らせる（兵数を1減らす）
 	if enemy.butai then
-		kotaiDefeatedEvent:Fire(enemy.model, enemy.butai, position, living, enemy.lastHitSilent)
+		kotaiDefeatedEvent:Fire(enemy.model, enemy.butai, enemy.gun, position, living, enemy.lastHitSilent)
 	end
 
 	task.delay(Config.EnemyAI.CorpseLifetime, function()
@@ -474,11 +497,12 @@ local function onEnemyDied(enemy: Enemy)
 	end)
 end
 
--- (x, z) の地面の上に敵を1体出す。地面が無ければ出さずに nil を返す。
+-- (x, z) の地面の上に、軍 gun の体を1体出す。地面が無ければ出さずに nil を返す。
 -- butai を渡すと部隊の下忍の個体にする（戦う相手がいなければ部隊の位置の周りへ戻る）。color は体の色
-local function spawnEnemy(kind: string, x: number, z: number, butai: string?, color: Color3?): Model?
+local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, butai: string?, color: Color3?): Model?
 	local def = ENEMY_DEFS[kind]
-	local model = templateFor(kind, color):Clone()
+	local paint = color or ENEMY_COLORS[kind]
+	local model = templateFor(kind, gun, paint):Clone()
 	model.Name = `{kind}{nextNumber}`
 	nextNumber += 1
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
@@ -495,6 +519,8 @@ local function spawnEnemy(kind: string, x: number, z: number, butai: string?, co
 	local reaction = Config.EnemyReaction
 	local enemy: Enemy = {
 		kind = kind,
+		gun = gun,
+		color = paint,
 		model = model,
 		humanoid = humanoid,
 		root = root,
@@ -542,9 +568,9 @@ local function removeEnemy(enemy: Enemy)
 	enemy.model:Destroy()
 end
 
--- 部隊の下忍の個体を1体、(x, z) の地面の上に出す。color は体の色（クランの色）。地面が無ければ出さずに nil
-function EnemyService.spawnKotai(butaiId: string, x: number, z: number, color: Color3?): Model?
-	return spawnEnemy("Genin", x, z, butaiId, color)
+-- 軍 gun の部隊の下忍の個体を1体、(x, z) の地面の上に出す。color は体の色（クランの色）。地面が無ければ出さずに nil
+function EnemyService.spawnKotai(butaiId: string, gun: Gun.Gun, x: number, z: number, color: Color3?): Model?
+	return spawnEnemy("Genin", gun, x, z, butaiId, color)
 end
 
 -- 生きている敵を消す（部隊の下忍の個体を部隊へ戻す）。倒れたことにしない。消したら true
@@ -636,11 +662,11 @@ function EnemyService.poison(model: Model, attacker: Player?): boolean
 	return true
 end
 
--- 攻撃判定の対象にする、生きている敵の位置と半径
-function EnemyService.getTargets(): { HitShape.Target<Model> }
+-- 攻撃判定の対象にする、軍 gun の生きている体の位置と半径。当てる側が、相手の軍を渡す
+function EnemyService.getTargets(gun: Gun.Gun): { HitShape.Target<Model> }
 	local targets = {}
 	for model, enemy in enemies do
-		if enemy.humanoid.Health > 0 then
+		if enemy.gun == gun and enemy.humanoid.Health > 0 then
 			table.insert(targets, { ref = model, position = enemy.root.Position, radius = enemy.radius })
 		end
 	end
@@ -676,24 +702,27 @@ function EnemyService.start()
 	end)
 
 	for kind in ENEMY_DEFS do
-		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ。色によらない）
-		local size = templateFor(kind):GetExtentsSize()
+		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ。軍と色によらない）
+		local size = templateFor(kind, AITE_GUN):GetExtentsSize()
 		radii[kind] = math.max(size.X, size.Z) / 2
 	end
-	-- 部隊の下忍の個体のクランの色の体を先に作る（体を作る処理は待つことがあり、出し入れの判断の途中で待たないように）
-	for _, color in Colors.Clan do
-		templateFor("Genin", color)
+	-- 部隊の下忍の個体の体（ステージごとの両軍のクランの色）を先に作る
+	-- （体を作る処理は待つことがあり、出し入れの判断の途中で待たないように）
+	for _, stage in Stages.definitions do
+		for _, gun in Gun.list do
+			templateFor("Genin", gun, Colors.Clan[Stages.clanOf(stage, gun)])
+		end
 	end
 
 	DebugCommand.register(
 		"SpawnEnemy",
 		"<Genin|Jonin> <x> <z>",
-		"地面の高さに合わせて敵を1体出す",
+		"地面の高さに合わせて敵（敵軍。部隊に属さない）を1体出す",
 		function(kind, x, z)
 			if type(kind) ~= "string" or not ENEMY_DEFS[kind] then
 				error("種類は Genin か Jonin で指定する", 0)
 			end
-			local model = spawnEnemy(kind, DebugCommand.toNumber(x, "x"), DebugCommand.toNumber(z, "z"))
+			local model = spawnEnemy(kind, AITE_GUN, DebugCommand.toNumber(x, "x"), DebugCommand.toNumber(z, "z"))
 			if not model then
 				return "地面が見つからず出せなかった"
 			end
@@ -711,8 +740,9 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DumpEnemies",
 		"",
-		"生きている敵（名前・種類・部隊の下忍の個体なら部隊 ID・体力・受けた攻撃の数・最初に受けてからの秒数・反応の状態・"
-			.. "毒の残り秒数・攻撃トークンを持っている相手のプレイヤー・位置）を JSON で返す",
+		"生きている体（両軍の下忍の個体と窓口で出した敵。名前・種類・軍・体の色の RGB・部隊の下忍の個体なら部隊 ID・体力・"
+			.. "受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・攻撃トークンを持っている相手のプレイヤー・位置）を"
+			.. " JSON で返す",
 		function()
 			local list = {}
 			local now = os.clock()
@@ -723,9 +753,12 @@ function EnemyService.start()
 					local firstHitAt = enemy.firstHitAt
 					local owner = KogekiToken.ownerOf(tokens, model.Name)
 					local holder = if owner then Players:GetPlayerByUserId(tonumber(owner) or 0) else nil
+					local color = enemy.color
 					table.insert(list, {
 						name = model.Name,
 						kind = enemy.kind,
+						gun = enemy.gun,
+						color = { math.round(color.R * 255), math.round(color.G * 255), math.round(color.B * 255) },
 						butai = enemy.butai,
 						health = math.round(enemy.humanoid.Health * 10) / 10,
 						hits = enemy.hits,
@@ -746,7 +779,8 @@ function EnemyService.start()
 	DebugCommand.register(
 		"SetEnemyAI",
 		"<true|false>",
-		"敵が近づいて攻撃するかを切り替える。止めてもその場で攻撃の反応（吹き飛び・ダウン）と毒は進む（確認用）",
+		"体（両軍の下忍の個体と窓口で出した敵）が動くか（敵軍の体はプレイヤーに近づいて攻撃するか、部隊の下忍の個体は"
+			.. "部隊について歩くか）を切り替える。止めてもその場で攻撃の反応（吹き飛び・ダウン）と毒は進む（確認用）",
 		function(value)
 			aiEnabled = value == true or value == "true"
 			if not aiEnabled then
@@ -762,7 +796,7 @@ function EnemyService.start()
 	DebugCommand.register(
 		"ClearEnemies",
 		"",
-		"生きている敵を片付ける。部隊の下忍の個体は部隊へ戻し（兵数は変わらない）、窓口で出した敵は倒す（撃破数には数えない）。"
+		"生きている体を片付ける。両軍の部隊の下忍の個体は部隊へ戻し（兵数は変わらない）、窓口で出した敵は倒す（撃破数には数えない）。"
 			.. "出し入れを続けていると個体はまた出るので、先に SetSpawning false を打つ",
 		function()
 			local returned, defeated = 0, 0
@@ -785,7 +819,8 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DefeatEnemies",
 		"<プレイヤー名> [半径]",
-		"プレイヤーの周り（既定は半径 30 スタッド）の生きている敵を倒し、そのプレイヤーの撃破に数える（確認用）",
+		"プレイヤーの周り（既定は半径 30 スタッド）の生きている敵軍の体を倒し、そのプレイヤーの撃破に数える。"
+			.. "味方軍の下忍の個体は倒さない（確認用）",
 		function(name, radius)
 			local player = DebugCommand.findPlayer(name)
 			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -795,7 +830,11 @@ function EnemyService.start()
 			local range = if radius ~= nil then DebugCommand.toNumber(radius, "半径") else 30
 			local count = 0
 			for _, enemy in enemies do
-				if enemy.humanoid.Health > 0 and (enemy.root.Position - root.Position).Magnitude <= range then
+				if
+					enemy.gun == AITE_GUN
+					and enemy.humanoid.Health > 0
+					and (enemy.root.Position - root.Position).Magnitude <= range
+				then
 					enemy.lastHitBy = player
 					enemy.humanoid.Health = 0
 					count += 1
@@ -808,7 +847,8 @@ function EnemyService.start()
 	DebugCommand.register(
 		"DefeatEnemy",
 		"<敵の名前>",
-		"敵を名前（DumpEnemies の name）で1体倒す。撃破数には数えない。部隊の下忍の個体なら兵数を1減らす（確認用）",
+		"体を名前（DumpEnemies の name）で1体倒す。味方軍の下忍の個体も倒せる。撃破数には数えない。"
+			.. "部隊の下忍の個体なら兵数を1減らす（確認用）",
 		function(enemyName)
 			for model, enemy in enemies do
 				if model.Name == enemyName and enemy.humanoid.Health > 0 then
@@ -824,7 +864,7 @@ function EnemyService.start()
 	DebugCommand.register(
 		"SpawnEnemies",
 		"<プレイヤー名> <数> [距離]",
-		"プレイヤーの周りの円（既定は半径 20 スタッド）に、下忍を等しい間隔で出す（確認用）",
+		"プレイヤーの周りの円（既定は半径 20 スタッド）に、敵軍の下忍（部隊に属さない）を等しい間隔で出す（確認用）",
 		function(name, countValue, distanceValue)
 			local player = DebugCommand.findPlayer(name)
 			local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -838,6 +878,7 @@ function EnemyService.start()
 				local angle = (index - 1) / count * math.pi * 2
 				local model = spawnEnemy(
 					"Genin",
+					AITE_GUN,
 					root.Position.X + math.cos(angle) * distance,
 					root.Position.Z + math.sin(angle) * distance
 				)

@@ -13,8 +13,9 @@
 --   割合は、個体として出ていない分（兵数 − 個体の数。GeninKotaiService.countOf）に掛ける。個体は下のダメージで1体ずつ倒し、
 --   倒れた個体が兵数を1ずつ減らす（同じ下忍を二重に数えない）
 -- - プレイヤー（敵軍が使ったとき）は、被ダメージの窓口でガードできない吹き飛びの攻撃を受ける
--- - 敵の下忍の個体と窓口で出した敵（味方軍が使ったとき）は、威力のダメージを受ける。発動者がプレイヤーなら、とどめを発動者の撃破に数える
---   （発動者がプレイヤーでなければ、誰の撃破にもしない）
+-- - 相手の軍の下忍の体（下忍の個体。味方軍が使ったときは窓口で出した敵も）は、威力のダメージを受ける
+--   （EnemyService.getTargets に相手の軍を渡して引く。敵軍が使えば味方軍の下忍の個体にも当たる）。
+--   発動者がプレイヤーなら、とどめを発動者の撃破に数える（発動者がプレイヤーでなければ、誰の撃破にもしない）
 -- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す
 -- - 同じ軍は対象にしない（味方を巻き込まない）
 -- - 地域の中に、炎の仮の見た目を FireTime 秒だけ出す
@@ -165,13 +166,11 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 		end
 	end
 
-	if opponent == EnemyService.GUN then
-		local amount = Stats.damage(1, power, 0)
-		for _, target in EnemyService.getTargets() do
-			local position: Vector3 = target.position
-			if insideOf(chiiki, position.X, position.Z) then
-				EnemyService.damage(target.ref, amount, player, nil)
-			end
+	local amount = Stats.damage(1, power, 0)
+	for _, target in EnemyService.getTargets(opponent) do
+		local position: Vector3 = target.position
+		if insideOf(chiiki, position.X, position.Z) then
+			EnemyService.damage(target.ref, amount, player, nil)
 		end
 	end
 

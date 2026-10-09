@@ -88,6 +88,14 @@ test("M1 の伊賀第1ステージは敵軍が風魔、味方軍の首領がハ�
 	expect(iga1.shuryo.mikatagun).toBe("Hayate")
 end)
 
+test("軍のクランは、味方軍がストーリーのクラン、敵軍が敵軍のクラン", function()
+	for _, id in { "Iga1", "Test" } do
+		local stage = Stages.get(id) :: Stages.Stage
+		expect(Stages.clanOf(stage, "Mikatagun")).toBe("Iga")
+		expect(Stages.clanOf(stage, "Tekigun")).toBe("Fuma")
+	end
+end)
+
 test("最初のステージと次のステージを引ける", function()
 	local first = Stages.firstOf("Iga")
 	expect(first and first.id).toBe("Iga1")

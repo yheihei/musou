@@ -1,5 +1,5 @@
 --!strict
--- 実体化圏の下忍の個体の数の計画。敵軍の部隊ごとに、個体として出しておく下忍の数（目標）を決める。
+-- 実体化圏の下忍の個体の数の計画。両軍の部隊ごとに、個体として出しておく下忍の数（目標）を決める。
 -- 出す・消すの判定は Jittaikaken、上限のまとまりごとの配分は KotaiHaibun、数値は Config.luau の
 -- GeninKotai・Jittaikaken・KotaiHaibun 節にある。Roblox の API は使わない。位置は水平の (x, z)。
 --
@@ -11,10 +11,16 @@
 -- 目標の決め方
 -- - 部隊が出撃メンバーの誰かから AppearRadius 以内に入ったら出す対象にし、全員から DisappearRadius より離れるまで
 --   対象に残す（今の個体が1体以上いれば出ているとみなす。縁を行き来しても出入りを繰り返さない）
--- - 出す対象の部隊を一番近いメンバーのまとまりに数え、上限（MaxKotai）をまとまりごとに人数の比で分ける。
+-- - 出す対象の部隊を一番近いメンバーのまとまりに数え、上限（両軍のときは軍に回した上限）をまとまりごとに人数の比で分ける。
 --   まとまりの配分は、その部隊の兵数の合計を超えない（余った分はほかのまとまりへ回す）
 -- - まとまりの配分を、まとまりの中の部隊へ兵数の比で分ける。部隊の目標は兵数を超えない
 -- - 目標の合計は上限を超えない。出す対象でない部隊の目標は 0
+--
+-- 両軍の上限の分け方（planBoth）
+-- - 味方軍の目標を先に、味方軍の上限（MikataMaxKotai。全体の上限を超えない）までで決める
+-- - 敵軍の目標は、全体の上限から味方軍の目標の合計を引いた残りで決める。近くに味方軍の部隊がいなければ、
+--   敵軍は全体の上限まで使う
+-- - 決め方（出す対象・まとまりごとの配分・兵数の比）は両軍で同じ。両軍の目標の合計は全体の上限を超えない
 
 local Config = require("./Config")
 local Jittaikaken = require("./Jittaikaken")
@@ -37,9 +43,21 @@ export type Plan = {
 	groups: { KotaiHaibun.Group },
 }
 
+-- 両軍の計画。targets と distances は両軍の部隊をまとめたもの
+export type BothPlan = {
+	targets: { [string]: number },
+	distances: { [string]: number },
+	-- 軍ごとの計画（まとまりの配分は窓口の確認用）
+	mikatagun: Plan,
+	tekigun: Plan,
+	-- 軍ごとに回した上限。味方軍は味方軍の上限（全体の上限を超えない）、敵軍は全体の上限 − 味方軍の目標の合計
+	mikatagunCap: number,
+	tekigunCap: number,
+}
+
 local GeninKotai = {}
 
--- 部隊ごとの、個体として出しておく数を決める。cap はサーバー全体の上限
+-- 部隊ごとの、個体として出しておく数を決める。cap は出せる個体の上限（両軍を分けるときは planBoth が軍ごとに回した上限）
 function GeninKotai.plan(butai: { ButaiState }, members: { KotaiHaibun.Member }, cap: number, params: Params?): Plan
 	local jittaikaken = if params and params.jittaikaken then params.jittaikaken else Config.Jittaikaken
 	local haibun = if params and params.haibun then params.haibun else Config.KotaiHaibun
@@ -84,6 +102,50 @@ function GeninKotai.plan(butai: { ButaiState }, members: { KotaiHaibun.Member },
 		end
 	end
 	return { targets = targets, distances = distances, groups = groups }
+end
+
+local function sum(targets: { [string]: number }): number
+	local total = 0
+	for _, count in targets do
+		total += count
+	end
+	return total
+end
+
+-- 両軍の部隊ごとの、個体として出しておく数を決める。cap はサーバー全体の上限、mikataCap は味方軍の上限。
+-- 味方軍の目標を先に mikataCap までで決め、敵軍の目標は残り（cap − 味方軍の目標の合計）で決める
+function GeninKotai.planBoth(
+	mikatagun: { ButaiState },
+	tekigun: { ButaiState },
+	members: { KotaiHaibun.Member },
+	cap: number,
+	mikataCap: number,
+	params: Params?
+): BothPlan
+	local whole = math.max(math.floor(cap), 0)
+	local mikatagunCap = math.clamp(math.floor(mikataCap), 0, whole)
+	local mikatagunPlan = GeninKotai.plan(mikatagun, members, mikatagunCap, params)
+	local tekigunCap = math.max(whole - sum(mikatagunPlan.targets), 0)
+	local tekigunPlan = GeninKotai.plan(tekigun, members, tekigunCap, params)
+
+	local targets: { [string]: number } = {}
+	local distances: { [string]: number } = {}
+	for _, gunPlan in { mikatagunPlan, tekigunPlan } do
+		for id, target in gunPlan.targets do
+			targets[id] = target
+		end
+		for id, distance in gunPlan.distances do
+			distances[id] = distance
+		end
+	end
+	return {
+		targets = targets,
+		distances = distances,
+		mikatagun = mikatagunPlan,
+		tekigun = tekigunPlan,
+		mikatagunCap = mikatagunCap,
+		tekigunCap = tekigunCap,
+	}
 end
 
 return GeninKotai

@@ -1,5 +1,5 @@
 --!strict
--- 攻撃を受けた NPC の個体の反応。敵の下忍の個体と窓口で出した敵（EnemyService）と、上忍・首領の個体（JoninKotaiService）が共有する。
+-- 攻撃を受けた NPC の個体の反応。両軍の下忍の個体と窓口で出した敵（EnemyService）と、上忍・首領の個体（JoninKotaiService）が共有する。
 -- 数値は Config.luau の EnemyReaction 節、吹き飛びと打ち上げの軌道は ReplicatedStorage.Shared.Trajectory にある。
 --
 -- - のけぞりの攻撃を地上で受けると、Flinch 秒だけ動かず攻撃もしない。秒数には個体ごとの倍率（flinchScale）を掛け、

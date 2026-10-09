@@ -7,8 +7,8 @@
 -- - 時間はキャラクターの攻撃の速さで伸び縮みさせる（ActionState.scale）
 -- - 判定はタイムラインの Hits の時刻に出し、それまでに行動が変わっていたら出さない
 -- - 前進量は、発生から持続の終わりまでにサーバーの拘束で前へ動かす
--- - 攻撃を当てる相手は、敵の下忍の個体と窓口で出した敵（EnemyService）と、敵軍の上忍・首領の個体（JoninKotaiService）。
---   味方軍の上忍・首領の個体とほかのプレイヤーには当てない
+-- - 攻撃を当てる相手は、敵軍の下忍の個体と窓口で出した敵（EnemyService）と、敵軍の上忍・首領の個体（JoninKotaiService）。
+--   味方軍の下忍・上忍・首領の個体とほかのプレイヤーには当てない（どちらも getTargets に敵軍を渡して引く）
 -- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。下忍の個体はまだ防御を持たない。
 --   上忍と首領は被ダメージの受け口（JoninService.damage）が防御で軽減し、倒したら撃破数に数える
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
@@ -64,7 +64,7 @@ type Style = {
 
 local CombatService = {}
 
--- プレイヤー（味方軍）の攻撃を当てる、上忍と首領の個体の軍
+-- プレイヤー（味方軍）の攻撃を当てる体の軍（下忍の個体と窓口で出した敵、上忍と首領の個体）
 local AITE_GUN: Gun.Gun = "Tekigun"
 
 local combos: { [Player]: Combo.State } = {}
@@ -157,7 +157,7 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 	style.draw(shape, origin)
 	local attack = PlayerService.getStats(player).Attack
 	local position: Vector3 = origin.position
-	local targets = EnemyService.getTargets()
+	local targets = EnemyService.getTargets(AITE_GUN)
 	for _, target in JoninKotaiService.getTargets(AITE_GUN) do
 		table.insert(targets, target)
 	end

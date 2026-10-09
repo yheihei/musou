@@ -16,7 +16,8 @@
 --   兵数の減少の知らせは遅れて届くことがあり、制圧した軍の拠点の耐久に数えると、その場で取り返してしまうため
 -- - 割合を越えずに制圧されたとき（窓口の SetKyotenGun など）は、爆発せずに罠を外す
 -- - 爆発は、拠点の範囲の中の相手の上忍・首領（被ダメージの受け口 JoninService.damage。個体は吹き飛ぶ）・
---   プレイヤー（ガードできない吹き飛びの攻撃）・敵の下忍の個体と窓口で出した敵（ダメージと吹き飛び）にダメージを与え、
+--   プレイヤー（ガードできない吹き飛びの攻撃）・相手の軍の下忍の体（下忍の個体。味方軍が仕掛けた罠なら窓口で出した敵も。
+--   ダメージと吹き飛び。EnemyService.getTargets に相手の軍を渡して引く）にダメージを与え、
 --   相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。同じ軍は無傷
 -- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す。倒した上忍・首領は受け口が、下忍の個体と窓口で出した敵はとどめとして、
 --   発動者の撃破に数える
@@ -234,9 +235,9 @@ local function explode(kyotenId: string, trap: Trap)
 		end
 	end
 
-	if opponent == EnemyService.GUN and center then
+	if center then
 		local amount = Stats.damage(1, power, 0)
-		for _, target in EnemyService.getTargets() do
+		for _, target in EnemyService.getTargets(opponent) do
 			local position: Vector3 = target.position
 			if KyotenService.contains(kyotenId, { x = position.X, z = position.Z }) then
 				EnemyService.damage(target.ref, amount, attacker, {

@@ -224,10 +224,6 @@ function Haichi.mochikomiOf(stageId: string): { [string]: { string } }
 	return result
 end
 
-local function clanOf(stage: Stages.Stage, gun: Gun.Gun): Characters.ClanId
-	return if gun == "Mikatagun" then stage.clan else stage.tekigun
-end
-
 local function checkShikenMejirushi(haichi: Haichi, mejirushi: ShikenMejirushi, problems: { string })
 	local halfX, halfZ = mejirushi.kukakuSizeX / 2, mejirushi.kukakuSizeZ / 2
 	local function inside(x: number, z: number, sizeX: number, sizeZ: number): boolean
@@ -446,7 +442,7 @@ function Haichi.validate(haichi: Haichi, stage: Stages.Stage): { string }
 				if character.playable then
 					table.insert(problems, `部隊 {butai.id} の上忍 {jonin} は操作キャラクター`)
 				end
-				if character.clan ~= clanOf(stage, butai.gun) then
+				if character.clan ~= Stages.clanOf(stage, butai.gun) then
 					table.insert(
 						problems,
 						`部隊 {butai.id} の上忍 {jonin} のクランが {butai.gun} のクランと違う`

@@ -131,10 +131,211 @@ test("どんな位置と兵数でも、目標の合計は上限以下で、各�
 	end
 end)
 
+test("味方軍の目標は味方軍の上限で止まり、敵軍は全体の上限の残りを使う", function()
+	local plan = GeninKotai.planBoth(
+		{ { id = "m1", x = 0, z = 50, heisu = 40, present = 0 } },
+		{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(plan.targets.m1).toBe(10)
+	expect(plan.targets.t1).toBe(30)
+	expect(plan.mikatagunCap).toBe(10)
+	expect(plan.tekigunCap).toBe(30)
+	expect(plan.mikatagun.targets.m1).toBe(10)
+	expect(plan.tekigun.targets.t1).toBe(30)
+	expect(plan.distances.m1).toBeNear(50)
+	expect(plan.distances.t1).toBeNear(50)
+end)
+
+test("近くに味方軍の部隊がいなければ、敵軍が全体の上限まで使う", function()
+	local far = GeninKotai.planBoth(
+		{ { id = "m1", x = 0, z = 300, heisu = 40, present = 0 } },
+		{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(far.targets.m1).toBe(0)
+	expect(far.targets.t1).toBe(40)
+	expect(far.tekigunCap).toBe(40)
+	local none = GeninKotai.planBoth(
+		{},
+		{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(none.targets.t1).toBe(40)
+end)
+
+test("味方軍の部隊の兵数が味方軍の上限より少なければ、残りを敵軍へ回す", function()
+	local plan = GeninKotai.planBoth(
+		{ { id = "m1", x = 0, z = 50, heisu = 4, present = 0 } },
+		{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(plan.targets.m1).toBe(4)
+	expect(plan.targets.t1).toBe(36)
+end)
+
+test("両軍とも、部隊の目標は兵数を超えない", function()
+	local plan = GeninKotai.planBoth(
+		{ { id = "m1", x = 0, z = 50, heisu = 3, present = 0 } },
+		{ { id = "t1", x = 0, z = -50, heisu = 12, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(plan.targets.m1).toBe(3)
+	expect(plan.targets.t1).toBe(12)
+end)
+
+test(
+	"味方軍の上限が全体の上限より大きくても、両軍の目標の合計は全体の上限を超えない",
+	function()
+		local plan = GeninKotai.planBoth(
+			{ { id = "m1", x = 0, z = 50, heisu = 60, present = 0 } },
+			{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+			ONE,
+			40,
+			50,
+			PARAMS
+		)
+		expect(plan.mikatagunCap).toBe(40)
+		expect(plan.targets.m1).toBe(40)
+		expect(plan.targets.t1).toBe(0)
+		local zero = GeninKotai.planBoth(
+			{ { id = "m1", x = 0, z = 50, heisu = 60, present = 0 } },
+			{ { id = "t1", x = 0, z = -50, heisu = 60, present = 0 } },
+			ONE,
+			40,
+			0,
+			PARAMS
+		)
+		expect(zero.targets.m1).toBe(0)
+		expect(zero.targets.t1).toBe(40)
+	end
+)
+
+test("離れた2人には、両軍とも軍に回した上限を人数の比で分ける", function()
+	local members = { { id = "A", x = 0, z = 0 }, { id = "B", x = 500, z = 0 } }
+	local plan = GeninKotai.planBoth({
+		{ id = "m1", x = 30, z = 0, heisu = 50, present = 0 },
+		{ id = "m2", x = 530, z = 0, heisu = 50, present = 0 },
+	}, {
+		{ id = "t1", x = -30, z = 0, heisu = 50, present = 0 },
+		{ id = "t2", x = 470, z = 0, heisu = 50, present = 0 },
+	}, members, 40, 10, PARAMS)
+	expect(plan.targets.m1).toBe(5)
+	expect(plan.targets.m2).toBe(5)
+	expect(plan.targets.t1).toBe(15)
+	expect(plan.targets.t2).toBe(15)
+end)
+
+test("出ている味方軍の部隊は、消滅の半径より離れるまで残す", function()
+	local plan = GeninKotai.planBoth(
+		{ { id = "m1", x = 150, z = 0, heisu = 30, present = 6 } },
+		{ { id = "t1", x = -50, z = 0, heisu = 60, present = 0 } },
+		ONE,
+		40,
+		10,
+		PARAMS
+	)
+	expect(plan.targets.m1).toBe(10)
+	expect(plan.targets.t1).toBe(30)
+end)
+
+-- 種を固定した乱数（線形合同法）で、出撃メンバーと両軍の部隊と上限を作る
+local function randomCases(
+	seed: number,
+	count: number,
+	each: (
+		members: { { id: string, x: number, z: number } },
+		mikatagun: { GeninKotai.ButaiState },
+		tekigun: { GeninKotai.ButaiState },
+		cap: number,
+		mikataCap: number
+	) -> ()
+)
+	local value = seed
+	local function nextNumber(max: number): number
+		value = (value * 1103515245 + 12345) % 2147483648
+		return value / 2147483648 * max
+	end
+	local function randomButai(prefix: string): { GeninKotai.ButaiState }
+		local butai = {}
+		for index = 1, math.floor(nextNumber(6)) do
+			table.insert(butai, {
+				id = `{prefix}{index}`,
+				x = nextNumber(600),
+				z = nextNumber(600),
+				heisu = math.floor(nextNumber(40)),
+				present = math.floor(nextNumber(5)),
+			})
+		end
+		return butai
+	end
+	for _ = 1, count do
+		local members = {}
+		for index = 1, 1 + math.floor(nextNumber(4)) do
+			table.insert(members, { id = `P{index}`, x = nextNumber(600), z = nextNumber(600) })
+		end
+		local mikatagun = randomButai("m")
+		local tekigun = randomButai("t")
+		each(members, mikatagun, tekigun, math.floor(nextNumber(60)), math.floor(nextNumber(20)))
+	end
+end
+
+test(
+	"どんな位置と兵数でも、両軍の目標の合計は全体の上限以下、味方軍は味方軍の上限以下",
+	function()
+		randomCases(82, 200, function(members, mikatagun, tekigun, cap, mikataCap)
+			local plan = GeninKotai.planBoth(mikatagun, tekigun, members, cap, mikataCap, PARAMS)
+			expect(sum(plan.targets) <= cap).toBe(true)
+			expect(sum(plan.mikatagun.targets) <= mikataCap).toBe(true)
+			expect(plan.tekigunCap).toBe(cap - sum(plan.mikatagun.targets))
+			for _, list in { mikatagun, tekigun } do
+				for _, entry in list do
+					local target = plan.targets[entry.id]
+					expect(target >= 0 and target <= entry.heisu and target == math.floor(target)).toBe(true)
+				end
+			end
+		end)
+	end
+)
+
+test(
+	"味方軍の部隊がいなければ、敵軍の目標は敵軍だけで決めた計画（plan）と同じ",
+	function()
+		randomCases(76, 200, function(members, _mikatagun, tekigun, cap, mikataCap)
+			local both = GeninKotai.planBoth({}, tekigun, members, cap, mikataCap, PARAMS)
+			local alone = GeninKotai.plan(tekigun, members, cap, PARAMS)
+			expect(both.tekigunCap).toBe(cap)
+			expect(both.tekigun.targets).toEqual(alone.targets)
+			expect(both.targets).toEqual(alone.targets)
+		end)
+	end
+)
+
 test("Config の上限は数十体で、出し入れの距離は実体化圏の中", function()
 	local p = Config.GeninKotai
 	expect(p.MaxKotai >= 10 and p.MaxKotai <= 100).toBe(true)
 	expect(p.MaxPerTick >= 1).toBe(true)
 	-- 出現の半径の縁で出すときは、視界の中でも出してよい距離（遠くて目立たない）
 	expect(p.PopDistance < Config.Jittaikaken.AppearRadius).toBe(true)
+end)
+
+test("Config の味方軍の上限は全体の上限の内数で、敵軍の分が残る", function()
+	local p = Config.GeninKotai
+	expect(p.MikataMaxKotai >= 0 and p.MikataMaxKotai == math.floor(p.MikataMaxKotai)).toBe(true)
+	expect(p.MikataMaxKotai < p.MaxKotai).toBe(true)
 end)

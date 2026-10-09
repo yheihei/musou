@@ -1009,6 +1009,7 @@ local SNAPSHOT = {
 	},
 	GeninKotai = {
 		MaxKotai = 40,
+		MikataMaxKotai = 10,
 		Interval = 0.5,
 		MaxPerTick = 8,
 		Spread = 10,

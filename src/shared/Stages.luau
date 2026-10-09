@@ -5,6 +5,7 @@
 -- 試験用ステージ（shiken）はストーリーに属さず、順番を 0 にする。選択画面と進行（開放とクリア）には出さない。
 
 local Characters = require("./Characters")
+local Gun = require("./Gun")
 
 export type ClanId = Characters.ClanId
 
@@ -85,6 +86,11 @@ Stages.definitions = definitions
 
 function Stages.get(id: string): Stage?
 	return definitions[id]
+end
+
+-- ステージの軍のクラン。味方軍はストーリーのクラン、敵軍は敵軍のクラン
+function Stages.clanOf(stage: Stage, gun: Gun.Gun): ClanId
+	return if gun == "Mikatagun" then stage.clan else stage.tekigun
 end
 
 -- クランのストーリーの最初のステージ

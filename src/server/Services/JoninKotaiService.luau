@@ -1,5 +1,5 @@
 --!strict
--- 実体化圏で、上忍と首領（両軍）の個体を出し入れし、敵軍の個体を出撃メンバーと、味方軍の個体を敵の下忍と戦わせる。
+-- 実体化圏で、上忍と首領（両軍）の個体を出し入れし、敵軍の個体を出撃メンバーと、味方軍の個体を敵軍の下忍と戦わせる。
 -- データ（体力・位置・率いる部隊）は JoninService が持ち、ここは Humanoid のモデルを出して、データの位置と体力に合わせる。
 -- 半径と間隔は Config.luau の Jittaikaken 節、出す・消すの判定は ReplicatedStorage.Shared.Jittaikaken にある（下忍の個体は #76）。
 -- 戦い方の判断は ReplicatedStorage.Shared.Kata、型と数値は Config.luau の Kata 節にある。
@@ -24,8 +24,9 @@
 --
 -- 戦い（考える間隔は出し入れと同じ Interval）
 -- - 戦う相手は軍ごとの Aite（狙う相手の候補の一覧と、攻撃の当て方）で決める。敵軍の個体の相手は出撃メンバー。
---   味方軍の個体の相手は敵の下忍（EnemyService の下忍の個体と、窓口で出した下忍と上忍）。
---   味方軍の個体は、プレイヤーと敵軍の上忍・首領の個体を狙わず、型も当てない（上忍同士は部隊の交戦でデータの上で戦う）
+--   味方軍の個体の相手は敵軍の下忍の体（EnemyService の敵軍の下忍の個体と、窓口で出した下忍と上忍）。
+--   味方軍の個体は、プレイヤーと味方軍の下忍の個体と敵軍の上忍・首領の個体を狙わず、型も当てない
+--   （上忍同士は部隊の交戦でデータの上で戦う）
 -- - 下忍の個体は防御を持たないので、味方軍の個体の与ダメージは 型の倍率 × 攻撃 のまま（EnemyService.damage で当てる）。
 --   攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない。味方軍の上忍と首領は秘計を使わない（判断を呼ばない）
 -- - 狙う相手は、最後に攻撃してきた相手（Kata 節の AttackerMemory 秒以内）か、一番近い相手。間合い（Maai）まで近づく。
@@ -279,13 +280,13 @@ local MEMBER_AITE: Aite = {
 -- 味方軍の個体の命中の音を最後に鳴らした時刻（os.clock）
 local lastEnemyHitSoundAt = -math.huge
 
--- 味方軍の個体の相手。敵の下忍の個体と、窓口で出した敵（下忍と上忍）に攻撃を当てる。
--- プレイヤーと上忍・首領の個体は候補に入れない。下忍の個体は防御を持たないので、与ダメージは威力のまま
--- （Stats.damage の防御 0）。攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない
+-- 味方軍の個体の相手。敵軍の下忍の個体と、窓口で出した敵（下忍と上忍）に攻撃を当てる。
+-- プレイヤーと味方軍の下忍の個体と上忍・首領の個体は候補に入れない。下忍の個体は防御を持たないので、与ダメージは威力のまま
+-- （Stats.damage の防御 0）。攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない（倒れた個体は部隊の兵数を1減らす）
 local ENEMY_AITE: Aite = {
 	list = function(): { HitShape.Target<Instance> }
 		local targets: { HitShape.Target<Instance> } = {}
-		for _, target in EnemyService.getTargets() do
+		for _, target in EnemyService.getTargets(Gun.opponentOf("Mikatagun")) do
 			table.insert(targets, { ref = target.ref, position = target.position, radius = target.radius })
 		end
 		return targets
@@ -954,7 +955,7 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"UseKata",
 		"<キャラクター ID> <型 ID> [相手の名前]",
-		"上忍か首領の個体に型を1回出させる。相手の名前（敵軍はプレイヤー名、味方軍は敵の下忍の名前）を渡すと"
+		"上忍か首領の個体に型を1回出させる。相手の名前（敵軍はプレイヤー名、味方軍は敵軍の下忍の名前）を渡すと"
 			.. "その相手へ、省くと一番近い相手へ向けて出す。首領だけの型は首領だけが出せる。SetJoninAI false でも出す（確認用）",
 		function(id, kataId, aiteName)
 			local jonin = if type(id) == "string" then JoninService.get(id) else nil
