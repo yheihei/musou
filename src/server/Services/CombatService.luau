@@ -7,14 +7,14 @@
 -- - 時間はキャラクターの攻撃の速さで伸び縮みさせる（ActionState.scale）
 -- - 判定はタイムラインの Hits の時刻に出し、それまでに行動が変わっていたら出さない
 -- - 前進量は、発生から持続の終わりまでにサーバーの拘束で前へ動かす
--- - 攻撃を当てる相手は、仮の湧き処理の敵（EnemyService）と、敵軍の上忍・首領の個体（JoninKotaiService）。
+-- - 攻撃を当てる相手は、敵の下忍の個体と窓口で出した敵（EnemyService）と、敵軍の上忍・首領の個体（JoninKotaiService）。
 --   味方軍の上忍・首領の個体とほかのプレイヤーには当てない
--- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。仮の湧き処理の敵はまだ防御を持たない。
+-- - 与ダメージは Stats.damage（技の倍率 × 攻撃）。下忍の個体はまだ防御を持たない。
 --   上忍と首領は被ダメージの受け口（JoninService.damage）が防御で軽減し、倒したら撃破数に数える
 -- - 奥義はキャラクター定義の ougi から、registerOugi で登録した中身と Config.luau の Ougi 節の技を引く。
 --   ストックを1本使い、発動中は無敵（Damage.luau が行動から判定する）。奥義の命中では奥義ゲージは溜まらない
 -- - 奥義は刃の火遁、酉花の毒手裏剣、石舟斎の無刀取り、金鬼の金遁。毒手裏剣は、当てた敵を毒にする
---   （仮の湧き処理の敵は EnemyService.poison、上忍と首領は JoninService.poison）
+--   （下忍の個体は EnemyService.poison、上忍と首領は JoninService.poison）
 -- - 効果音は、技を出したときに技の音（通常攻撃とジャンプ攻撃は Swing、チャージ攻撃は ChargeKogeki、
 --   奥義は Ougi）を、当てたときに Hit を鳴らす。命中の音は1人の攻撃につき Config.Sound.HitInterval 秒に1回まで
 
@@ -125,7 +125,7 @@ end
 
 -- 攻撃を1体に当てる。attack は攻撃したプレイヤーの攻撃の能力値
 local function hitOne(player: Player, origin: Vector3, model: Model, attack: number, hit: Config.HitDef, style: Style)
-	-- 吹き飛びと打ち上げの軌道は、仮の湧き処理の敵と上忍・首領の個体が、技の吹き飛ばす強さから決める（Combat/Hanno）
+	-- 吹き飛びと打ち上げの軌道は、下忍の個体と上忍・首領の個体が、技の吹き飛ばす強さから決める（Combat/Hanno）
 	local reaction = { reaction = hit.Reaction, origin = origin, force = hit.Knockback }
 	local joninId = JoninKotaiService.idOf(model)
 	local landed

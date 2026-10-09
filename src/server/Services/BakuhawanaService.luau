@@ -11,12 +11,14 @@
 -- - 耐久が割合を上から下へ越えるとき、耐久を書き換える前に爆発する（KyotenService.addTaikyuListener）。
 --   一度に 0 まで減って制圧されるときも、制圧の前に爆発する
 -- - 爆発で減らした部隊の兵数は、拠点の耐久に数えない（ButaiService.changeHeisu の silent）。
+--   割合は、個体として出ていない分（兵数 − 個体の数。GeninKotaiService.countOf）に掛ける。下忍の個体は爆発のダメージで
+--   1体ずつ倒れて兵数を減らし、これも拠点の耐久に数えない（EnemyService.damage の silent）
 --   兵数の減少の知らせは遅れて届くことがあり、制圧した軍の拠点の耐久に数えると、その場で取り返してしまうため
 -- - 割合を越えずに制圧されたとき（窓口の SetKyotenGun など）は、爆発せずに罠を外す
 -- - 爆発は、拠点の範囲の中の相手の上忍・首領（被ダメージの受け口 JoninService.damage。個体は吹き飛ぶ）・
---   プレイヤー（ガードできない吹き飛びの攻撃）・仮の湧き処理の敵（ダメージと吹き飛び）にダメージを与え、
+--   プレイヤー（ガードできない吹き飛びの攻撃）・敵の下忍の個体と窓口で出した敵（ダメージと吹き飛び）にダメージを与え、
 --   相手の部隊の兵数を割合で減らす（潜んでいる伏兵部隊も含む）。同じ軍は無傷
--- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す。倒した上忍・首領は受け口が、仮の湧き処理の敵はとどめとして、
+-- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す。倒した上忍・首領は受け口が、下忍の個体と窓口で出した敵はとどめとして、
 --   発動者の撃破に数える
 -- - 罠の目印（樽と「爆破罠」の札）は、仕掛けた軍にだけ見せる。プレイヤーは味方軍なので、味方軍が仕掛けた罠だけ置く
 -- - 爆発の仮の見た目（Explosion と広がる火の玉）を拠点の中心に出す
@@ -37,6 +39,7 @@ local Stats = require(ReplicatedStorage.Shared.Stats)
 local ButaiService = require(script.Parent.ButaiService)
 local DamageService = require(script.Parent.DamageService)
 local EnemyService = require(script.Parent.EnemyService)
+local GeninKotaiService = require(script.Parent.GeninKotaiService)
 local HikeiService = require(script.Parent.HikeiService)
 local JoninService = require(script.Parent.JoninService)
 local KyotenService = require(script.Parent.KyotenService)
@@ -209,7 +212,7 @@ local function explode(kyotenId: string, trap: Trap)
 
 	for _, butai in ButaiService.list() do
 		if butai.gun == opponent and KyotenService.contains(kyotenId, butai.position) then
-			local loss = Bakuhawana.heisuLoss(butai.heisu)
+			local loss = Bakuhawana.heisuLoss(butai.heisu - GeninKotaiService.countOf(butai.id))
 			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss, true) then
 				kills += loss
 			end
@@ -240,7 +243,7 @@ local function explode(kyotenId: string, trap: Trap)
 					reaction = "Knockback",
 					origin = center,
 					force = Config.Bakuhawana.Knockback,
-				})
+				}, true)
 			end
 		end
 	end

@@ -980,13 +980,7 @@ local SNAPSHOT = {
 		JoninScale = 0.5,
 		JoninFlinchScale = 0,
 	},
-	Spawner = {
-		MaxAlive = 40,
-		ButaiSize = 8,
-		ButaiInterval = 3,
-		JoninEvery = 5,
-		MinDistance = 60,
-		MaxDistance = 140,
+	EnemyAI = {
 		AggroRange = 80,
 		AITickInterval = 0.25,
 		CorpseLifetime = 2,
@@ -1013,6 +1007,15 @@ local SNAPSHOT = {
 	KotaiHaibun = {
 		GroupDistance = 80,
 		Reach = 120,
+	},
+	GeninKotai = {
+		MaxKotai = 40,
+		Interval = 0.5,
+		MaxPerTick = 8,
+		Spread = 10,
+		PopDistance = 100,
+		ViewMargin = 3,
+		HomeRadius = 4,
 	},
 	Jittaikaken = {
 		AppearRadius = 120,

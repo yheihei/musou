@@ -203,17 +203,23 @@ export type EnemyReactionSection = {
 	JoninFlinchScale: number,
 }
 
-export type SpawnerSection = {
-	MaxAlive: number,
-	ButaiSize: number,
-	ButaiInterval: number,
-	JoninEvery: number,
-	MinDistance: number,
-	MaxDistance: number,
+-- 敵の下忍（実体化圏の下忍の個体と、窓口で出した敵）の動き
+export type EnemyAISection = {
 	AggroRange: number,
 	AITickInterval: number,
 	CorpseLifetime: number,
 	PlayerGap: number,
+}
+
+-- 実体化圏の下忍の個体。サーバー全体の上限と、出し入れの間隔と位置
+export type GeninKotaiSection = {
+	MaxKotai: number,
+	Interval: number,
+	MaxPerTick: number,
+	Spread: number,
+	PopDistance: number,
+	ViewMargin: number,
+	HomeRadius: number,
 }
 
 -- 攻撃トークン。1人のプレイヤーを同時に攻撃できる下忍の数と、渡し方
@@ -534,10 +540,11 @@ export type Config = {
 	Genin: EnemySection,
 	Jonin: EnemySection,
 	EnemyReaction: EnemyReactionSection,
-	Spawner: SpawnerSection,
+	EnemyAI: EnemyAISection,
 	KogekiToken: KogekiTokenSection,
 	CameraView: CameraViewSection,
 	KotaiHaibun: KotaiHaibunSection,
+	GeninKotai: GeninKotaiSection,
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
@@ -1632,17 +1639,11 @@ local Config: Config = {
 		JoninFlinchScale = 0, -- 上忍ののけぞりの秒数に掛ける倍率。0 なら通常攻撃ではのけぞらない
 	},
 
-	-- 暫定の湧き処理。実体化圏での出し入れができたら置き換える
-	Spawner = {
-		MaxAlive = 40,
-		ButaiSize = 8,
-		ButaiInterval = 3,
-		JoninEvery = 5, -- 何部隊ごとに上忍を出すか
-		MinDistance = 60,
-		MaxDistance = 140,
-		AggroRange = 80,
-		AITickInterval = 0.25,
-		CorpseLifetime = 2,
+	-- 敵の下忍（実体化圏の下忍の個体と、窓口で出した敵）の動き。近くのプレイヤーへ近づいて攻撃する
+	EnemyAI = {
+		AggroRange = 80, -- この距離（スタッド）までのプレイヤーを狙う。狙う相手がいなければ、下忍の個体は部隊へ戻る
+		AITickInterval = 0.25, -- 考える間隔（秒）
+		CorpseLifetime = 2, -- 倒れた敵を消すまでの秒数
 		-- 敵がプレイヤーの手前で止まるときの、敵の体の縁からプレイヤーの中心までの距離（スタッド）。
 		-- 敵はプレイヤーと重ならずに周りを囲む（攻撃が届く距離より手前で止まる）
 		PlayerGap = 2,
@@ -1672,15 +1673,27 @@ local Config: Config = {
 		FallbackAspect = 1.78, -- カメラが届いていないときの画面の横と縦の比（16:9）
 	},
 
-	-- 下忍の個体の枠の配分。個体として出せる下忍の上限（今は仮の湧き処理の Spawner 節の MaxAlive）を、
+	-- 下忍の個体の枠の配分。個体として出せる下忍の上限（GeninKotai 節の MaxKotai）を、
 	-- 近いプレイヤーのまとまりごとに人数の比で分ける。計算は KotaiHaibun.luau にある
 	KotaiHaibun = {
 		GroupDistance = 80, -- この距離（スタッド）以内のプレイヤーをたどってつなぎ、1つのまとまりにする
 		Reach = 120, -- 部隊は、この距離（スタッド）以内にいる一番近いプレイヤーのまとまりに数える（実体化圏の出現の半径）
 	},
 
-	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）を個体として出し、全員のプレイヤーから離れたらデータに戻す。
-	-- 出現と消滅の半径に差を付け、縁を行き来しても出入りを繰り返さない。判定は Jittaikaken.luau にある（下忍は #76）
+	-- 実体化圏の下忍の個体。出撃メンバーの近くに入った敵軍の部隊から、下忍を個体として出し、離れたら部隊に戻す。
+	-- 出す・消すの半径は Jittaikaken 節、上限の配分は KotaiHaibun 節、数の計算は GeninKotai.luau にある
+	GeninKotai = {
+		MaxKotai = 40, -- サーバー全体で個体として出す下忍の上限（パーティー全体の数。1人あたりではない）
+		Interval = 0.5, -- 出し入れを決める間隔（秒）
+		MaxPerTick = 8, -- 1回の判断で出す個体の上限（まとめて出して負荷の山を作らないように）
+		Spread = 10, -- 部隊の位置からこの半径（スタッド）の中に個体を出し、戦う相手がいない個体はこの中へ戻る
+		PopDistance = 100, -- 出撃メンバー全員からこの距離（スタッド）より遠い位置なら、視界の中でも出し入れしてよい
+		ViewMargin = 3, -- 個体を出し入れする位置の周りのこの半径（スタッド。体の大きさ）が視界にかかれば、見えているとみなす
+		HomeRadius = 4, -- 戦う相手がいない個体は、部隊の中の自分の位置からこの距離（スタッド）より離れたら歩いて戻る
+	},
+
+	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）と敵軍の部隊の下忍を個体として出し、全員のプレイヤーから離れたら
+	-- データに戻す。出現と消滅の半径に差を付け、縁を行き来しても出入りを繰り返さない。判定は Jittaikaken.luau にある
 	Jittaikaken = {
 		AppearRadius = 120, -- プレイヤーからこの距離（スタッド）まで近づいた上忍と首領を個体で出す
 		DisappearRadius = 160, -- 全員のプレイヤーからこの距離より離れた個体を消す。体力はデータに残る
@@ -1951,7 +1964,7 @@ local Config: Config = {
 	-- 秘計の大火計。発動者から Hikei 節の TargetRange.Daikakei 以内で一番近い大火計地域に火を放ち、
 	-- 地域の中の相手の上忍・首領・プレイヤー・下忍にダメージを与え、部隊の兵数を減らす。計算は Daikakei.luau にある
 	Daikakei = {
-		Power = 120, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
+		Power = 120, -- 上忍・首領・プレイヤー・下忍の個体に与えるダメージの威力（受ける側の防御で軽減する前）
 		HeisuRate = 0.5, -- 地域の中の部隊の兵数を減らす割合（端数は切り上げる）
 		FireTime = 3, -- 地域に炎の仮の見た目を出しておく秒数
 	},
@@ -1960,9 +1973,9 @@ local Config: Config = {
 	-- 拠点の中の相手の上忍・首領・プレイヤー・下忍を吹き飛ばし、部隊の兵数を減らす。計算は Bakuhawana.luau にある
 	Bakuhawana = {
 		Rate = 1 / 3, -- 爆発する耐久の、耐久の上限に対する割合
-		Power = 80, -- 上忍・首領・プレイヤー・仮の湧き処理の敵に与えるダメージの威力（受ける側の防御で軽減する前）
+		Power = 80, -- 上忍・首領・プレイヤー・下忍の個体に与えるダメージの威力（受ける側の防御で軽減する前）
 		HeisuRate = 0.5, -- 拠点の中の相手の部隊の兵数を減らす割合（端数は切り上げる）
-		Knockback = 60, -- 仮の湧き処理の敵を吹き飛ばす強さ（技の Knockback と同じ。EnemyReaction 節で軌道にする）
+		Knockback = 60, -- 下忍の個体を吹き飛ばす強さ（技の Knockback と同じ。EnemyReaction 節で軌道にする）
 	},
 
 	-- 秘計の挑発。発動者から Radius 以内の相手の上忍（首領は除く）を、効果時間の間、発動者のもとへ誘い出す。

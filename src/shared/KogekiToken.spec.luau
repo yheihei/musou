@@ -229,7 +229,7 @@ test(
 	function()
 		local p = Config.KogekiToken
 		-- 待つ下忍はプレイヤーの手前の距離（PlayerGap 以上）から WaitGap だけ外に立つ
-		expect(Config.Spawner.PlayerGap + p.WaitGap > Config.Genin.AttackRange).toBe(true)
+		expect(Config.EnemyAI.PlayerGap + p.WaitGap > Config.Genin.AttackRange).toBe(true)
 		-- 攻撃する下忍の止まる位置（攻撃が届く距離より手前）から WaitGap 外でも、Range の内にいる
 		expect(Config.Genin.AttackRange + p.WaitGap < p.Range).toBe(true)
 		expect(p.PerPlayer >= 1).toBe(true)

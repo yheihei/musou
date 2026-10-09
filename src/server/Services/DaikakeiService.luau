@@ -9,9 +9,11 @@
 -- - 上忍と首領は、威力を防御で軽減したダメージを受ける（被ダメージの受け口 JoninService.damage。反応は無い）。
 --   発動者がプレイヤーなら、倒した上忍と首領は受け口が発動者の撃破数に数える
 -- - 部隊は兵数を減らす（ButaiService.changeHeisu）。潜んでいる伏兵部隊も地域の中にいれば焼く。
---   減った兵数は拠点の耐久にも数える（ButaiService.heisuLost を KyotenService が受ける）
+--   減った兵数は拠点の耐久にも数える（ButaiService.heisuLost を KyotenService が受ける）。
+--   割合は、個体として出ていない分（兵数 − 個体の数。GeninKotaiService.countOf）に掛ける。個体は下のダメージで1体ずつ倒し、
+--   倒れた個体が兵数を1ずつ減らす（同じ下忍を二重に数えない）
 -- - プレイヤー（敵軍が使ったとき）は、被ダメージの窓口でガードできない吹き飛びの攻撃を受ける
--- - 仮の湧き処理の敵（味方軍が使ったとき）は、威力のダメージを受ける。発動者がプレイヤーなら、とどめを発動者の撃破に数える
+-- - 敵の下忍の個体と窓口で出した敵（味方軍が使ったとき）は、威力のダメージを受ける。発動者がプレイヤーなら、とどめを発動者の撃破に数える
 --   （発動者がプレイヤーでなければ、誰の撃破にもしない）
 -- - 発動者がプレイヤーなら、減らした兵数を撃破数に足す
 -- - 同じ軍は対象にしない（味方を巻き込まない）
@@ -31,6 +33,7 @@ local Stats = require(ReplicatedStorage.Shared.Stats)
 local ButaiService = require(script.Parent.ButaiService)
 local DamageService = require(script.Parent.DamageService)
 local EnemyService = require(script.Parent.EnemyService)
+local GeninKotaiService = require(script.Parent.GeninKotaiService)
 local HaichiService = require(script.Parent.HaichiService)
 local HikeiService = require(script.Parent.HikeiService)
 local JoninService = require(script.Parent.JoninService)
@@ -140,7 +143,7 @@ local function activate(context: HikeiService.Context): (boolean, Hikei.UseFailu
 
 	for _, butai in ButaiService.list() do
 		if butai.gun == opponent and insideOf(chiiki, butai.position.x, butai.position.z) then
-			local loss = Daikakei.heisuLoss(butai.heisu)
+			local loss = Daikakei.heisuLoss(butai.heisu - GeninKotaiService.countOf(butai.id))
 			if loss > 0 and ButaiService.changeHeisu(butai.id, -loss) then
 				kills += loss
 			end

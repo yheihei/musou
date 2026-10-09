@@ -78,7 +78,7 @@ test("近いプレイヤーをたどってつなぐ（A と B、B と C が近�
 	expect(#KotaiHaibun.group(members, 60)).toBe(3)
 end)
 
-test("1人なら、上限をそのまま使う（仮の湧き処理の数が変わらない）", function()
+test("1人なら、上限をそのまま使う", function()
 	local groups = KotaiHaibun.allocate({ { id = "A", x = 5, z = 5 } }, 40, nil, PARAMS)
 	expect(quotasOf(groups)).toEqual({ 40 })
 end)
@@ -138,6 +138,21 @@ test("部隊は一番近いプレイヤーのまとまりに数える", function
 	expect(groups[2].butai).toEqual({ "b1" })
 	expect(quotasOf(groups)).toEqual({ 0, 30 })
 end)
+
+test(
+	"整数に分ける: 重みの比で分け、上限に届いた分はほかへ回し、端数は残りの大きい順",
+	function()
+		expect(KotaiHaibun.split({ 1, 1, 1 }, { math.huge, math.huge, math.huge }, 40)).toEqual({ 14, 13, 13 })
+		expect(KotaiHaibun.split({ 30, 10 }, { 30, 10 }, 20)).toEqual({ 15, 5 })
+		expect(KotaiHaibun.split({ 2, 1 }, { 1, 100 }, 10)).toEqual({ 1, 9 })
+		-- 上限の合計が total より小さければ、合計は上限の合計
+		expect(KotaiHaibun.split({ 30, 10 }, { 30, 10 }, 100)).toEqual({ 30, 10 })
+		-- 重みが 0 の要素には分けない
+		expect(KotaiHaibun.split({ 1, 0, 1 }, { 5, 5, 5 }, 10)).toEqual({ 5, 0, 5 })
+		expect(KotaiHaibun.split({}, {}, 10)).toEqual({})
+		expect(KotaiHaibun.split({ 1 }, { 5 }, 0)).toEqual({ 0 })
+	end
+)
 
 test("プレイヤーがいなければ、まとまりは無い", function()
 	expect(#KotaiHaibun.allocate({}, 40, nil, PARAMS)).toBe(0)

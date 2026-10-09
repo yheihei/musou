@@ -7,9 +7,9 @@
 --   決着（StageService.finished）とロビーのフェーズへの戻りで片付ける
 -- - 拠点の範囲は拠点の目印のパーツの中心・向き・大きさで、水平だけを見る
 -- - 耐久を減らすのは、戦闘のフェーズの間に、範囲の中でその拠点の軍の下忍が倒れたとき。
---   部隊の兵数の減少（交戦など。ButaiService.heisuLost）と、仮の湧き処理の下忍の撃破（EnemyService.gekiha）の両方で減らす
--- - 仮の湧き処理の下忍は敵軍で、部隊に属さない。実体化圏の下忍の個体（#76）は撃破で部隊の兵数を減らすので、
---   置き換えたら EnemyService.gekiha の購読を外し、兵数の減少だけで数える
+--   部隊の兵数の減少（交戦や、実体化圏の下忍の個体の撃破など。ButaiService.heisuLost）で減らす
+-- - 実体化圏の下忍の個体は、撃破で部隊の兵数を減らす（GeninKotaiService）ので、撃破（EnemyService.gekiha）では数えない。
+--   部隊に属さない窓口で出した下忍（SpawnEnemy・SpawnEnemies）の撃破だけ、gekiha で数える
 -- - 守備の部隊は、拠点の軍の部隊のうち範囲の中にいるもの。配置の部隊は方針（HoshinService）に沿って拠点を出入りする
 -- - 耐久が 0 になったら相手の軍が制圧する。範囲の中にいた元の軍の部隊は敗走して消え、耐久は制圧直後の値になる。
 --   制圧は拠点の陥落の出来事として、拠点の中心で、制圧した軍が得をする形で士気に知らせる（ShikiService.notify）
@@ -18,7 +18,7 @@
 --   その部隊がいなくなっていたら、拠点の中心に守備の部隊（Shubi<拠点 ID>）を作る。
 --   生きていて範囲の外にいる（迎え撃ちに出ている）間は、戻るまで補充しない
 -- - 守備のいない拠点は、攻める軍（相手の軍の部隊と、敵軍の拠点では出撃したプレイヤー）が範囲の中にいる間、
---   時間に比例して耐久が減る。仮の湧き処理の敵は攻める軍に数えない
+--   時間に比例して耐久が減る。下忍の個体と窓口で出した敵は攻める軍に数えない（部隊のデータで数える）
 -- - 孤立した拠点は守備を補充しない。孤立は HeitansenService が setKoritsuProvider で渡す関数で引く
 -- - 潜んでいる伏兵部隊（Butai.fukuhei）は、守備にも攻める軍にも数えず、制圧のときも敗走させない
 -- - 拠点を作り終えたら loaded で知らせる（HeitansenService が兵站線を求め始める）
@@ -29,7 +29,7 @@
 --   孤立しているか（Koritsu）・孤立しない拠点か（NeverIsolated）をクライアントへ複製する
 -- - 味方軍が制圧したら、範囲の中にいた倒れていない出撃メンバーの制圧数を足す（PlayerService.addSeiatsusu）
 -- - 救援が要る味方軍の拠点（耐久が減り、攻める軍が範囲の中にいる拠点。Hoshin.needsKyuen）の範囲の中で、
---   プレイヤーが敵軍の下忍（仮の湧き処理の敵。EnemyService.gekiha）・上忍・首領（JoninService.defeated）を倒したら、
+--   プレイヤーが敵軍の下忍（下忍の個体と窓口で出した敵。EnemyService.gekiha）・上忍・首領（JoninService.defeated）を倒したら、
 --   倒したプレイヤーの救援数を足す（PlayerService.addKyuensu）
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 耐久を書き換える前（制圧の前）に、addTaikyuListener で登録した関数を呼ぶ（秘計の爆破罠）
@@ -515,11 +515,12 @@ local function onHeisuLost(_id: string, gun: Gun.Gun, loss: number, position: Bu
 	onGeninLost(gun, loss, position.x, position.z)
 end
 
--- 仮の湧き処理の下忍の撃破。部隊に属さないので、兵数の減少とは別に数える（#76 で外す）。
+-- 敵の撃破。救援数を数え、部隊に属さない窓口で出した下忍は拠点の耐久にも数える（部隊の下忍の個体は兵数の減少で数える）。
 -- 救援が要る味方軍の拠点の中で倒した下忍と上忍は、倒したプレイヤーの救援数に数える
-local function onGekiha(kind: string, gun: Gun.Gun, position: Vector3, attacker: Player?)
+local function onGekiha(kind: string, gun: Gun.Gun, position: Vector3, attacker: Player?, butai: string?)
 	creditKyuen(attacker, gun, position.X, position.Z)
-	if kind == "Genin" then
+	-- 部隊の下忍の個体は、兵数の減少（heisuLost）で数えるので、ここでは数えない
+	if kind == "Genin" and butai == nil then
 		onGeninLost(gun, 1, position.X, position.Z)
 	end
 end

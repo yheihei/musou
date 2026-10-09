@@ -9,7 +9,7 @@
 --   まとまりに数える。どのプレイヤーからも Reach より遠い部隊は数えない
 -- - 兵数が足りずに使い切らなかった分は、ほかのまとまりへ人数の比で回す（近くに部隊のいないプレイヤーの分も回す）
 -- - 端数は、切り捨てた残りの大きい順に1つずつ足す（同じなら先のまとまり）。合計は上限と兵数の合計の小さい方
--- - 部隊を渡さないとき（仮の湧き処理）は、兵数の制限なしとして分ける
+-- - 部隊を渡さないときは、兵数の制限なしとして分ける
 
 local Config = require("./Config")
 
@@ -116,6 +116,54 @@ local function waterFill(weights: { number }, limits: { number }, cap: number): 
 	return result
 end
 
+-- 上限 total を、重み weights の比で、各要素の上限 limits を超えない整数に分ける。
+-- 上限に届いた要素の残りはほかの要素へ重みの比で回し、端数は切り捨てた残りの大きい順に1つずつ足す（同じなら先の要素）。
+-- 合計は total（切り捨てた整数）と limits の合計の小さい方。重みが 0 か上限が 0 の要素は 0
+function KotaiHaibun.split(weights: { number }, limits: { number }, total: number): { number }
+	local whole = math.max(math.floor(total), 0)
+	local shares = waterFill(weights, limits, whole)
+	local result: { number } = {}
+	local given = 0
+	local totalLimit = 0
+	for index, share in shares do
+		local floor = math.floor(share + 1e-9)
+		result[index] = floor
+		given += floor
+		if weights[index] > 0 then
+			totalLimit += limits[index]
+		end
+	end
+	local order = {}
+	for index = 1, #weights do
+		table.insert(order, index)
+	end
+	table.sort(order, function(a, b)
+		local ra, rb = shares[a] - result[a], shares[b] - result[b]
+		if math.abs(ra - rb) > 1e-9 then
+			return ra > rb
+		end
+		return a < b
+	end)
+	local leftover = math.min(whole, totalLimit) - given
+	while leftover > 0 do
+		local progressed = false
+		for _, index in order do
+			if leftover <= 0 then
+				break
+			end
+			if weights[index] > 0 and result[index] < limits[index] then
+				result[index] += 1
+				leftover -= 1
+				progressed = true
+			end
+		end
+		if not progressed then
+			break
+		end
+	end
+	return result
+end
+
 -- 上限 cap を、プレイヤーのまとまりごとに分ける。butai を渡すと、近くの部隊の兵数を超えない
 function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiInput }?, params: Params?): { Group }
 	local p = params or Config.KotaiHaibun
@@ -153,52 +201,11 @@ function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiIn
 		end
 	end
 
-	local whole = math.max(math.floor(cap), 0)
 	local weights = {}
-	local totalDemand = 0
 	for index, group in groups do
 		weights[index] = #group
-		totalDemand += demands[index]
 	end
-	local shares = waterFill(weights, demands, whole)
-
-	-- 切り捨ててから、残りの大きい順に1つずつ足す
-	local quotas: { number } = {}
-	local given = 0
-	for index, share in shares do
-		local floor = math.floor(share + 1e-9)
-		quotas[index] = floor
-		given += floor
-	end
-	local target = math.min(whole, totalDemand)
-	local order = {}
-	for index = 1, #groups do
-		table.insert(order, index)
-	end
-	table.sort(order, function(a, b)
-		local ra, rb = shares[a] - quotas[a], shares[b] - quotas[b]
-		if math.abs(ra - rb) > 1e-9 then
-			return ra > rb
-		end
-		return a < b
-	end)
-	local leftover = target - given
-	while leftover > 0 do
-		local progressed = false
-		for _, index in order do
-			if leftover <= 0 then
-				break
-			end
-			if quotas[index] < demands[index] then
-				quotas[index] += 1
-				leftover -= 1
-				progressed = true
-			end
-		end
-		if not progressed then
-			break
-		end
-	end
+	local quotas = KotaiHaibun.split(weights, demands, cap)
 
 	local result: { Group } = {}
 	for index, group in groups do

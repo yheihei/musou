@@ -9,7 +9,7 @@
 -- - 条件は戦闘のフェーズの間だけ受け付ける。受けたら溜めて、task.defer で今の再開の終わりにまとめて判定する。
 --   同じ再開の中で起きた条件（同じ間隔の中で両軍の本陣が落ちたときなど）は同時とみなし、負けを優先する。
 --   先に時間切れなどで決着していれば、finish は受け付けられず、先の勝敗が残る
--- - 決着した後の片付け（部隊・上忍と首領・個体・仮の湧き処理の敵）は、各サービスが StageService.finished・phaseChanged で行う
+-- - 決着した後の片付け（部隊・上忍と首領・個体・下忍の個体）は、各サービスが StageService.finished・phaseChanged で行う
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

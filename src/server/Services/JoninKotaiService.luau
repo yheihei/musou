@@ -24,9 +24,9 @@
 --
 -- 戦い（考える間隔は出し入れと同じ Interval）
 -- - 戦う相手は軍ごとの Aite（狙う相手の候補の一覧と、攻撃の当て方）で決める。敵軍の個体の相手は出撃メンバー。
---   味方軍の個体の相手は敵の下忍で、下忍の個体（#76）ができるまでは仮の湧き処理の敵（EnemyService の下忍と上忍）。
+--   味方軍の個体の相手は敵の下忍（EnemyService の下忍の個体と、窓口で出した下忍と上忍）。
 --   味方軍の個体は、プレイヤーと敵軍の上忍・首領の個体を狙わず、型も当てない（上忍同士は部隊の交戦でデータの上で戦う）
--- - 仮の湧き処理の敵は防御を持たないので、味方軍の個体の与ダメージは 型の倍率 × 攻撃 のまま（EnemyService.damage で当てる）。
+-- - 下忍の個体は防御を持たないので、味方軍の個体の与ダメージは 型の倍率 × 攻撃 のまま（EnemyService.damage で当てる）。
 --   攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない。味方軍の上忍と首領は秘計を使わない（判断を呼ばない）
 -- - 狙う相手は、最後に攻撃してきた相手（Kata 節の AttackerMemory 秒以内）か、一番近い相手。間合い（Maai）まで近づく。
 --   上忍は戻る位置から ChaseRadius の円の中、首領は本陣の範囲の中を追いかけ、外へは出ない（縁へ寄せる）。
@@ -158,7 +158,7 @@ local JoninKotaiService = {}
 -- 個体を置く workspace のフォルダの名前
 JoninKotaiService.FOLDER = "JoninKotai"
 
--- 毒の間に出す緑の煙の名前と色（仮の湧き処理の敵と同じ見た目）
+-- 毒の間に出す緑の煙の名前と色（下忍の個体と同じ見た目）
 local POISON_NAME = "Doku"
 local POISON_COLOR = Color3.fromRGB(110, 210, 70)
 local POISON_SECONDARY_COLOR = Color3.fromRGB(40, 110, 30)
@@ -279,8 +279,8 @@ local MEMBER_AITE: Aite = {
 -- 味方軍の個体の命中の音を最後に鳴らした時刻（os.clock）
 local lastEnemyHitSoundAt = -math.huge
 
--- 味方軍の個体の相手。敵の下忍の個体（#76）ができるまでは、仮の湧き処理の敵（下忍と上忍）に攻撃を当てる。
--- プレイヤーと上忍・首領の個体は候補に入れない。仮の湧き処理の敵は防御を持たないので、与ダメージは威力のまま
+-- 味方軍の個体の相手。敵の下忍の個体と、窓口で出した敵（下忍と上忍）に攻撃を当てる。
+-- プレイヤーと上忍・首領の個体は候補に入れない。下忍の個体は防御を持たないので、与ダメージは威力のまま
 -- （Stats.damage の防御 0）。攻撃したプレイヤーを渡さないので、倒しても誰の撃破数にも数えない
 local ENEMY_AITE: Aite = {
 	list = function(): { HitShape.Target<Instance> }
@@ -954,7 +954,7 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"UseKata",
 		"<キャラクター ID> <型 ID> [相手の名前]",
-		"上忍か首領の個体に型を1回出させる。相手の名前（敵軍はプレイヤー名、味方軍は仮の湧き処理の敵の名前）を渡すと"
+		"上忍か首領の個体に型を1回出させる。相手の名前（敵軍はプレイヤー名、味方軍は敵の下忍の名前）を渡すと"
 			.. "その相手へ、省くと一番近い相手へ向けて出す。首領だけの型は首領だけが出せる。SetJoninAI false でも出す（確認用）",
 		function(id, kataId, aiteName)
 			local jonin = if type(id) == "string" then JoninService.get(id) else nil

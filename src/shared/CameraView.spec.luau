@@ -146,6 +146,6 @@ test("Config の値は受け付ける範囲に収まる", function()
 	-- 報告が古くなる前に、次の報告が届く
 	expect(p.Interval < p.Stale).toBe(true)
 	expect(p.Margin >= 0).toBe(true)
-	-- 仮の湧き処理の部隊を出す一番遠い位置は、見えないとみなす距離より近い（遠すぎて見えない位置にばかり出さない）
-	expect(Config.Spawner.MaxDistance < p.FarDistance).toBe(true)
+	-- 下忍の個体を視界の中でも出し入れしてよい距離は、見えないとみなす距離より近い（視界の判定が効く距離が残る）
+	expect(Config.GeninKotai.PopDistance < p.FarDistance).toBe(true)
 end)
