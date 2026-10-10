@@ -1315,6 +1315,12 @@ local SNAPSHOT = {
 		BattleTime = 4,
 		BattleQueueMax = 3,
 	},
+	SenkyoSerifu = {
+		CheckInterval = 1,
+		SekkinRange = 80,
+		HanbunRate = 0.5,
+		OshiMargin = 5,
+	},
 	Sound = {
 		Volume = {
 			Swing = 0.5,

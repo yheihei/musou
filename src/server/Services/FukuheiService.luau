@@ -11,7 +11,7 @@
 --   相手の部隊か、相手がプレイヤーの軍ならプレイヤーが来たかを確かめ、来たら奇襲する
 -- - 奇襲すると姿を現し（ButaiService.reveal）、相手の部隊の士気を KishuShiki だけずっと下げてから、すぐ交戦を始める
 --   （ButaiService.startKosen）。相手がほかの部隊と交戦中なら、近ければ相手が空いたときに交戦を始める
--- - 奇襲した伏兵部隊は効果を終え、普通の部隊として残る。方針は持たないので、その場にとどまる
+-- - 奇襲した伏兵部隊は効果を終え、普通の部隊として残る。方針は持たないので、その場にとどまる。奇襲したことは kishu で知らせる
 -- - 奇襲せずに潜んでいられる時間が過ぎるか、ステージが終わったら、伏兵部隊は消える（兵数の減少には数えない）
 -- - 潜んでいる間は、味方軍の伏兵部隊なら足元に仮の見た目（草むらと「伏兵」の札）を置く。高さは地面に合わせる。
 --   敵軍の伏兵部隊はプレイヤーに見つからないよう見た目を出さない。奇襲したら見た目を片付ける
@@ -31,6 +31,11 @@ local StageService = require(script.Parent.StageService)
 local FukuheiService = {}
 
 local HIKEI_ID = "Fukuhei"
+
+local kishuEvent = Instance.new("BindableEvent")
+-- 伏兵部隊が奇襲したときに、伏兵を使った人の ID（プレイヤーは UserId の文字列、上忍と首領はその ID）・その軍・
+-- 伏兵部隊の ID・奇襲した相手の部隊の ID（プレイヤーを奇襲したなら nil）で発火する（戦況の台詞が受ける）
+FukuheiService.kishu = kishuEvent.Event
 
 -- 草むらの玉の直径と色、札の高さ（スタッド）
 local BUSH_DIAMETER = 3.5
@@ -176,6 +181,7 @@ local function kishu(entry: Entry, target: string?)
 		ButaiService.startKosen(entry.butai, target)
 	end
 	HikeiService.finishEffect(entry.effect, "Ended")
+	kishuEvent:Fire(entry.effect.user, entry.effect.gun, entry.butai, target)
 end
 
 -- 生きている出撃メンバーの位置

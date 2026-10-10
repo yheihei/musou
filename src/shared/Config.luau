@@ -493,6 +493,13 @@ export type SerifuSection = {
 	BattleQueueMax: number,
 }
 
+export type SenkyoSerifuSection = {
+	CheckInterval: number,
+	SekkinRange: number,
+	HanbunRate: number,
+	OshiMargin: number,
+}
+
 export type SoundSection = {
 	Volume: { [string]: number },
 	RollOffMinDistance: number,
@@ -588,6 +595,7 @@ export type Config = {
 	HikeiHandan: HikeiHandanSection,
 	Jukurendo: JukurendoSection,
 	Serifu: SerifuSection,
+	SenkyoSerifu: SenkyoSerifuSection,
 	Sound: SoundSection,
 	Bgm: BgmSection,
 	BattleStatus: BattleStatusSection,
@@ -2115,6 +2123,14 @@ local Config: Config = {
 		HoldPerChar = 0.03, -- 長い台詞ほど長く見せるため、1文字ごとに送るまでの秒数へ足す秒数
 		BattleTime = 4, -- 戦闘中の台詞を1本出しておく秒数
 		BattleQueueMax = 3, -- 戦闘中の台詞の順番待ちの上限。超えたら古い台詞から捨てる
+	},
+
+	-- 戦況の台詞。戦況の変化をきっかけに戦闘中の台詞を出す（発火の表は SenkyoSerifu.luau、文は Serifu.luau）
+	SenkyoSerifu = {
+		CheckInterval = 1, -- 部隊の接近・交戦の押され方・残り時間・兵力を見回る間隔（秒）
+		SekkinRange = 80, -- 相手の部隊が拠点に近づいたとみなす、拠点の中心からの水平の距離（スタッド）
+		HanbunRate = 0.5, -- 拠点の耐久と上忍・首領の体力が「半分を切った」とみなす、上限に対する割合
+		OshiMargin = 5, -- 交戦で押されているとみなす、交戦を始めてからの交戦の損害の相手との差（兵数）
 	},
 
 	-- 効果音。素材は Sounds.luau の登録表にあり、SoundPlayer.luau が鳴らす

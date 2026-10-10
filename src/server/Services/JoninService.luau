@@ -12,6 +12,7 @@
 --   与ダメージは威力を防御で軽減したもの（Stats.damage）。damaged で、個体に反応（吹き飛びなど）を始めさせる
 -- - 体力が 0 になった上忍は倒れる。率いていた部隊は残し、士気だけ下げる（ButaiService.loseJonin）。
 --   倒したプレイヤー（攻撃した人）がいれば、その人の撃破数に1を足す。defeated で、倒した人と一緒に知らせる（両軍、首領を含む）
+-- - 体力が変わったら healthChanged、個体として出入りしたら kotaiChanged で知らせる（戦況の台詞の SenkyoSerifuService が受ける）
 -- - 毒（酉花の奥義「毒手裏剣」。Config.luau の Poison 節）は、データの上で間隔ごとに体力を減らす。個体が消えても続く。
 --   毒でのとどめは、毒を付けたプレイヤーの撃破に数える。毒の間にもう一度付けると、残りの時間を Duration に戻す。
 --   与える回数は Duration を Interval で割った回数（8 秒・1 秒おきなら 8 回）で数える
@@ -103,6 +104,13 @@ local damagedEvent = Instance.new("BindableEvent")
 -- damage でダメージを与えたときに、キャラクター ID・与えたダメージ・反応の中身（Hit。無ければ nil）・
 -- 攻撃したプレイヤー（いなければ nil）で発火する
 JoninService.damaged = damagedEvent.Event
+local healthChangedEvent = Instance.new("BindableEvent")
+-- 体力が変わったときに（setHealth。攻撃・秘計・毒・窓口を含む）、キャラクター ID・変わる前の体力・変わった後の体力・
+-- 体力の上限で発火する。倒れたときは defeated より先に発火する
+JoninService.healthChanged = healthChangedEvent.Event
+local kotaiChangedEvent = Instance.new("BindableEvent")
+-- 個体として姿を現したとき（true）と、消えたとき（false）に、キャラクター ID と出ているかで発火する
+JoninService.kotaiChanged = kotaiChangedEvent.Event
 
 local function find(id: string): Jonin.Jonin?
 	for _, jonin in joninList do
@@ -154,6 +162,7 @@ function JoninService.setHealth(id: string, value: number, attacker: Player?): b
 	if not jonin then
 		return false
 	end
+	local before = jonin.health
 	local defeated = Jonin.setHealth(jonin, value)
 	if defeated then
 		local butai = jonin.butai
@@ -166,6 +175,9 @@ function JoninService.setHealth(id: string, value: number, attacker: Player?): b
 		end
 	end
 	publish(jonin)
+	if jonin.health ~= before then
+		healthChangedEvent:Fire(jonin.id, before, jonin.health, jonin.stats.MaxHealth)
+	end
 	if defeated then
 		local credited = if attacker and attacker.Parent then attacker else nil
 		if credited then
@@ -238,6 +250,7 @@ end
 -- 個体として出ているかを書く（JoninKotaiService が呼ぶ）。出ている間は部隊に追従させず、個体の位置を写してもらう
 function JoninService.setKotai(id: string, present: boolean)
 	local jonin = find(id)
+	local was = kotaiOf[id] == true
 	if present then
 		kotaiOf[id] = true
 	else
@@ -245,6 +258,9 @@ function JoninService.setKotai(id: string, present: boolean)
 	end
 	if jonin then
 		publish(jonin)
+	end
+	if was ~= present then
+		kotaiChangedEvent:Fire(id, present)
 	end
 end
 

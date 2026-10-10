@@ -142,7 +142,7 @@ src/
     DebugCommand  テスト用のサーバーコマンドの窓口
     CollisionGroups  キャラクターの物理の衝突のグループ（両軍の下忍と上忍・首領の個体は、プレイヤーにもほかの個体にもぶつからない）
     PlayerStore  プレイヤーごとの記録を DataStore に保存する共通の部品（読み込みのやり直し、変更を保存済みの記録に当てて書く UpdateAsync、退室時と BindToClose の保存、DataStore を使えないときのメモリ）。特技と秘計の熟練度の記録が使う
-    Services/  KukakuService / HaichiService / PartyService / ProgressService / JukurendoService / SelectionService / TokugiService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / JoninKotaiService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / CameraViewService / EnemyService / GeninKotaiService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService / ChohatsuService / HikeiHandanService
+    Services/  KukakuService / HaichiService / PartyService / ProgressService / JukurendoService / SelectionService / TokugiService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / JoninKotaiService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / CameraViewService / EnemyService / GeninKotaiService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService / ChohatsuService / HikeiHandanService / SenkyoSerifuService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
       HaichiService  ステージの配置（拠点・つながり・部隊・首領）を構成と目印から読み込む。試験用ステージの目印を作る
       ProgressService  プレイヤーごとの進行（開放済みとクリア済みのステージ）の DataStore への保存
@@ -160,7 +160,7 @@ src/
       HoshinService  上忍が部隊を率いて、配置で決めた方針（攻略・防衛・救援）に沿って部隊の目的地を決める
       MinimapService  ミニマップに出す区画の範囲と、出撃メンバーの位置と向きを Attribute で複製する
       ShihaiAreaService  支配エリア。兵站線につながった拠点の周りを支配エリアとし、その軍の部隊の交戦の押す力と、上忍と首領の攻撃と防御を上げる。ReplicatedStorage.ShihaiArea の Attribute で複製する
-      SerifuService  戦闘中の台詞を全員の画面の端に出す
+      SerifuService  戦闘中の台詞を画面の端に出す（戦況の台詞は出撃メンバーにだけ、窓口の PlaySerifu は全員に）
       HikeiService  秘計の発動の入口（持ち込み・使用記録・効果の時間管理）。秘計ごとの処理は各サービスが register で登録する。敵軍の上忍と首領の持ち込みは配置の構成から決める
       HyorokoService  秘計の兵糧庫。中にいる味方の通常拠点を、兵站線が切れても孤立しない拠点にする
       RakusekiService  秘計の落石。近くの落石地点に岩を落とし、その区間を相手の軍にとって通れなくする
@@ -171,6 +171,7 @@ src/
       BakuhawanaService  秘計の爆破罠。中にいる味方の拠点に罠を仕掛け、耐久が3分の1を下回ったら爆発させて拠点の中の相手を吹き飛ばす
       ChohatsuService  秘計の挑発。周りの相手の上忍を、効果時間の間、発動者のもとへ誘い出して部隊から引き離す
       HikeiHandanService  秘計の判断。敵軍の上忍と首領が、戦場の様子を見て持ち込んだ秘計を使う（味方軍は使わない）
+      SenkyoSerifuService  戦況の台詞。戦闘中の戦況の変化（制圧・孤立・接近・上忍の撃破・秘計など）を拾い、出撃したステージの発火の表から台詞を選んで出す
       ActionService  行動の状態遷移（入力、先行入力、被弾による中断）
       DamageService  プレイヤーの被ダメージの窓口
       CameraViewService  クライアントが送るカメラ（視界）の検証と保持。下忍を出撃メンバーの視界の外に出すために引く
@@ -228,6 +229,7 @@ default.project.json  Rojo のインスタンスツリー定義（Remotes・Serv
 - プレイヤーの出現は PlayerService が行い、Roblox の自動の出現（`Players.CharacterAutoLoads`）は止めている。入室した人はロビーに出る。倒れた人は同じ節の秒数の後に、SaishutsugekiService が出現し直させる。戦闘中の出撃メンバーは、兵站線につながった味方の拠点のうち倒れた位置に一番近い拠点から出て、パーティーで共有する兵力を1使う（計算は `src/shared/Saishutsugeki.luau`）。兵力0で倒れたら負ける。戦闘の外の出撃メンバーは出撃地点から、ほかの人はロビーから出る。兵力は workspace の Attribute `Heiryoku` で複製し、窓口の `SetHeiryoku`・`DumpHeiryoku` で確かめる
 - 画面上部の戦況の表示（BattleStatusController）は、戦闘のフェーズの出撃メンバーにだけ、中央に残り時間と兵力、左右に味方軍と敵軍の軍全体の士気のゲージを出す。値は `ReplicatedStorage.Shiki` の Attribute（`Mikatagun`・`Tekigun`）と workspace の Attribute（`BattleDeadline`・`Heiryoku`）から読む。残り時間は `Config.luau` の BattleStatus 節のしきい値以下で黄色と赤、兵力0は赤で出す（判断と文は `src/shared/BattleStatus.luau`）。窓口の `SetGunShiki`・`SetDeadline`・`SetHeiryoku` で確かめる
 - イベントシーンは、サーバーが出撃メンバーに `PlayEventScene` で流し、長さが過ぎるか全員がスキップを押すと次のフェーズへ進める。シーンの ID と長さは `src/shared/EventScenes.luau`、スキップの集計は `src/shared/SkipVote.luau` にある。窓口の `StartEventScene Shiken` で、試験用のシーンを流して出撃する
+- 戦闘中の台詞のうち戦況の台詞は、SenkyoSerifuService が戦況の変化をきっかけに出撃メンバーに出す（#125）。発火の表（台詞 ID・きっかけと条件・話者・表情）はステージごとに `src/shared/SenkyoSerifu.luau`、文は `src/shared/Serifu.luau`、数値は `Config.luau` の SenkyoSerifu 節にある。きっかけは、戦闘の開始・拠点の制圧・拠点の孤立・相手の部隊の拠点への接近・拠点の耐久が半分を切った・上忍の部隊が交戦で押されている・上忍と首領の秘計と伏兵の奇襲・上忍と首領の撃破・首領の個体の出現・上忍と首領の体力が半分を切った・残り時間・兵力の13種。どの台詞も1回のステージで1回だけ出し、操作キャラクターの差し込みはそのキャラクターで出撃した人がいるときだけ出す。伊賀第1ステージは、台本の下書き（`docs/story/iga-1.md`）のうちハヤテと操作キャラクターの台詞だけを置いた（NPC の上忍と首領の台詞は人選が決まってから。#14・#117）。試験用ステージには、13種のきっかけを1本ずつ確かめる試験用の台詞を置いた。窓口の `DumpSenkyoSerifu`（発火の表と出したか）・`LogSenkyoSerifu`（拾った変化と出した台詞）・`SetSenkyoSerifu`（止める）・`ResetSenkyoSerifu`（出した記録を空にする）で確かめる
 - パーティーとリーダーは PartyService が持つ（計算は `src/shared/Party.luau`）。リーダーは一番早く入った人で、プライベートサーバーでは、持ち主（`game.PrivateServerOwnerId`）がパーティーにいて待機中でなければ持ち主にする。出撃中に入った持ち主は待機中なので、リザルトのリトライとロビーへ戻る操作は出撃したリーダーが続け、ロビーに戻って合流した時点で持ち主がリーダーになる。進行を読み終える前の人がリーダーになったときは、読み終えてから選択を確かめ直す（SelectionService）。Studio ではプライベートサーバーを立てられないので、窓口の `SetPrivateServerOwner <プレイヤー名|UserId|なし>` で持ち主を上書きし（`なし` で上書きを外す）、`DumpParty` の `leader` と `privateServer`（`ownerId`・`override`・`privateServerOwnerId`）で確かめる。パーティーにいない UserId を渡すと、持ち主がいないときの決まりを1人で確かめられる
 - タイトル画面（TitleController）は、入室するたびにロビーの画面より手前に出す（保存はしない）。タイトル（`src/shared/Title.luau`。今は仮で、決まったらここだけを直す）、非公式ファンゲームかつパラレル設定である旨（文言はロビーの表記と同じ `src/shared/Notice.luau`）、「はじめる」のボタンを並べる。はじめるはクリック・タッチ・Enter（`InputMap.luau` の Hajimeru）と、ゲームパッドで選んだボタンの A で押し、押すとロビーの画面に進む。サーバーへは何も送らない。出撃前の画面と非公式の表記は、タイトル画面を閉じるまで出さない（後ろのボタンをゲームパッドで選べないように）。ゲームパッドのときは、はじめるを選ぶ。入室直後に選ぶと Studio が落ちるので、どの画面も `Ui.waitForSelectable` で入室から3秒たってキャラクターが出るまで待ってから選ぶ。窓口の `ShowTitle <プレイヤー名>` で、入り直さずにもう一度出せる（Player の Attribute の `TitleRequest` を書き換え、本人のクライアントが見て出す。出撃メンバーがステージに出ている間は出さない）
 - 出撃前は、リーダーがストーリー（クラン）を選び、そのストーリーのステージを選ぶ（`SelectStory`・`SelectStage`）。選べるのはリーダーが開放したステージのあるストーリーだけで、判定は `src/shared/SelectionRules.luau` の `checkStory`。ステージを選ぶとストーリーもそのクランになり、別のストーリーを選ぶとステージの選択が外れる。窓口の `SelectStory <プレイヤー名> <クラン ID>` で確かめる
