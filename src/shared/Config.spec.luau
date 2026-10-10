@@ -1164,6 +1164,14 @@ local SNAPSHOT = {
 		JoninPower = 0.6,
 		JoninShikiThreshold = 20,
 	},
+	Zensen = {
+		Gap = 4,
+		Spacing = 4,
+		RowGap = 4,
+		AttackInterval = 1.5,
+		AttackRandom = 1,
+		AggroRange = 15,
+	},
 	Butai = {
 		Speed = 12,
 		MoveInterval = 0.5,
@@ -1498,5 +1506,19 @@ test(
 			expect(maxIdle >= prewarm and maxIdle == math.floor(maxIdle)).toBe(true)
 		end
 		expect(pool.PrewarmPerFrame >= 1).toBe(true)
+	end
+)
+
+test(
+	"前線の列の間は、下忍の攻撃が届く距離より短い（向かい合う相手へ攻撃の動作が届いて見える）",
+	function()
+		expect(Config.Zensen.Gap > 0 and Config.Zensen.Gap < Config.Genin.AttackRange).toBe(true)
+	end
+)
+
+test(
+	"交戦中の敵軍の個体がプレイヤーを狙う距離は、攻撃トークンを受け取れる距離以下",
+	function()
+		expect(Config.Zensen.AggroRange > 0 and Config.Zensen.AggroRange <= Config.KogekiToken.Range).toBe(true)
 	end
 )

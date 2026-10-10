@@ -18,6 +18,9 @@
 --   決着したら残った部隊は目的地へ向けて動き出す。交戦の相手は Attribute の Kosen（相手の部隊 ID）で複製する
 -- - 兵数が減ったら（交戦と changeHeisu）、heisuLost で部隊 ID・軍・減った兵数・その時の位置を知らせる。
 --   拠点の耐久（KyotenService）はこれを受けて減る
+-- - 交戦の損害（交戦の計算で減った兵数）は、個体の撃破・秘計・changeHeisu の減少と分けて、addKosenLostListener で
+--   登録した関数を兵数を減らした同じ処理の中で呼んで知らせる（GeninKotaiService が前線の個体を減った数だけ倒れさせる）。
+--   交戦ごとに、交戦を始めてからの交戦の損害の合計を持つ（kosenLoss。窓口の DumpKosen の songai）
 -- - 潜んでいる伏兵部隊（Butai.fukuhei）は、交戦の相手を決める対象にしない。姿を現したら（reveal）対象にする。
 --   潜んでいる間は Attribute の Fukuhei を true にする
 -- - 大喝で動揺している部隊は、動揺の間だけ士気を下げる（setDoyo。Butai.doyo）。動揺の間は Attribute の Doyo を true にする
@@ -59,9 +62,15 @@ type KosenState = {
 	b: string,
 	fractionA: number,
 	fractionB: number,
+	-- 交戦を始めてからの交戦の損害（交戦の計算で減った兵数）の合計
+	lossA: number,
+	lossB: number,
 	-- 交戦を始めた時刻（os.clock）
 	startedAt: number,
 }
+
+-- 交戦の損害を受ける関数。部隊 ID・軍・減った兵数・交戦の相手の部隊 ID を受け取る
+export type KosenLostListener = (id: string, gun: Gun.Gun, loss: number, aite: string) -> ()
 
 local ButaiService = {}
 
@@ -92,6 +101,8 @@ local waiting: { [string]: boolean } = {}
 local shikiProvider: ((Butai.Butai) -> number)? = nil
 -- 部隊の交戦の押す力に掛ける支配エリアの倍率を返す関数（ShihaiAreaService が渡す）
 local shihaiAreaProvider: ((Butai.Butai) -> number)? = nil
+-- 交戦の損害で兵数が減ったときに呼ぶ関数（GeninKotaiService が登録する）
+local kosenLostListeners: { KosenLostListener } = {}
 
 local kosenStartedEvent = Instance.new("BindableEvent")
 -- 交戦を始めたときに、2つの部隊 ID で発火する
@@ -318,6 +329,27 @@ function ButaiService.aiteOf(id: string): string?
 	return aiteOf[id]
 end
 
+-- 部隊の今の交戦で、交戦を始めてから交戦の損害で減った兵数の合計。交戦していなければ nil
+function ButaiService.kosenLoss(id: string): number?
+	for _, state in kosenList do
+		if state.a == id then
+			return state.lossA
+		elseif state.b == id then
+			return state.lossB
+		end
+	end
+	return nil
+end
+
+-- 交戦の損害（交戦の計算）で部隊の兵数が減ったときに呼ぶ関数を登録する。部隊 ID・軍・減った兵数・交戦の相手の部隊 ID を
+-- 受け取る。個体の撃破・秘計・changeHeisu の減少では呼ばない。決着した交戦の最後の損害でも呼ぶ（そのとき aiteOf は nil で、
+-- 兵数 0 の部隊もまだ消していない）。
+-- BindableEvent ではなく兵数を減らした同じ処理の中で呼ぶ。知らせが後の再開に回ると、その間に個体の出し入れが、減った兵数と
+-- まだ倒れていない前線の個体の数を比べて、多い分の個体を部隊へ戻してしまうため
+function ButaiService.addKosenLostListener(listener: KosenLostListener)
+	table.insert(kosenLostListeners, listener)
+end
+
 function ButaiService.get(id: string): Butai.Butai?
 	return (find(id))
 end
@@ -331,6 +363,19 @@ end
 local function notifyLost(butai: Butai.Butai, loss: number)
 	if loss > 0 then
 		heisuLostEvent:Fire(butai.id, butai.gun, loss, { x = butai.position.x, z = butai.position.z })
+	end
+end
+
+-- 交戦の損害で兵数が減ったことを、登録した関数に知らせる。1つの関数の失敗で、ほかの関数と交戦の処理を止めない
+local function notifyKosenLost(butai: Butai.Butai, loss: number, aite: string)
+	if loss <= 0 then
+		return
+	end
+	for _, listener in kosenLostListeners do
+		local ok, err = pcall(listener, butai.id, butai.gun, loss, aite)
+		if not ok then
+			warn(`ButaiService: 部隊 {butai.id} の交戦の損害を知らせられなかった: {err}`)
+		end
 	end
 end
 
@@ -487,10 +532,10 @@ local function sideOf(butai: Butai.Butai, fraction: number): Kosen.Side
 end
 
 -- 交戦中の組を dt 秒押し合わせ、兵数に反映する。決着した組は交戦をやめさせ、
--- 兵数の減少と決着は一覧を回し終えてから知らせる
+-- 兵数の減少（heisuLost と交戦の損害）と決着は一覧を回し終えてから知らせる
 local function fightAll(dt: number)
 	local settled: { { a: string, b: string, winner: Kosen.Winner? } } = {}
-	local losses: { { butai: Butai.Butai, loss: number } } = {}
+	local losses: { { butai: Butai.Butai, loss: number, aite: string } } = {}
 	for _, state in table.clone(kosenList) do
 		local a, b = find(state.a), find(state.b)
 		if not a or not b then
@@ -499,10 +544,12 @@ local function fightAll(dt: number)
 		local result = Kosen.step(sideOf(a, state.fractionA), sideOf(b, state.fractionB), dt)
 		a.heisu = result.a.heisu
 		b.heisu = result.b.heisu
-		table.insert(losses, { butai = a, loss = result.a.loss })
-		table.insert(losses, { butai = b, loss = result.b.loss })
+		table.insert(losses, { butai = a, loss = result.a.loss, aite = b.id })
+		table.insert(losses, { butai = b, loss = result.b.loss, aite = a.id })
 		state.fractionA = result.a.fraction
 		state.fractionB = result.b.fraction
+		state.lossA += result.a.loss
+		state.lossB += result.b.loss
 		if result.settled then
 			local index = table.find(kosenList, state)
 			if index then
@@ -517,6 +564,7 @@ local function fightAll(dt: number)
 	end
 	for _, item in losses do
 		notifyLost(item.butai, item.loss)
+		notifyKosenLost(item.butai, item.loss, item.aite)
 	end
 	for _, item in settled do
 		kosenSettledEvent:Fire(item.a, item.b, item.winner)
@@ -557,7 +605,10 @@ local function beginKosen(a: Butai.Butai, b: Butai.Butai)
 	aiteOf[b.id] = a.id
 	waiting[a.id] = nil
 	waiting[b.id] = nil
-	table.insert(kosenList, { a = a.id, b = b.id, fractionA = 0, fractionB = 0, startedAt = os.clock() })
+	table.insert(
+		kosenList,
+		{ a = a.id, b = b.id, fractionA = 0, fractionB = 0, lossA = 0, lossB = 0, startedAt = os.clock() }
+	)
 	publish(a)
 	publish(b)
 	kosenStartedEvent:Fire(a.id, b.id)
@@ -701,7 +752,8 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpKosen",
 		"",
-		"交戦中の組（両部隊の兵数と端数、押す力、支配エリアの倍率、経過秒数）と、手前で待っている部隊を JSON で返す",
+		"交戦中の組（両部隊の兵数と端数、交戦を始めてからの交戦の損害の合計 songai、押す力、支配エリアの倍率、経過秒数）と、"
+			.. "手前で待っている部隊を JSON で返す",
 		function()
 			local now = os.clock()
 			local list = {}
@@ -718,6 +770,7 @@ local function registerDebugCommands()
 					b = state.b,
 					heisu = { if a then a.heisu else 0, if b then b.heisu else 0 },
 					fraction = { round(state.fractionA), round(state.fractionB) },
+					songai = { state.lossA, state.lossB },
 					push = push,
 					shihaiArea = shihaiArea,
 					elapsed = round(now - state.startedAt),

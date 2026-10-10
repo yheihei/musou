@@ -317,6 +317,16 @@ export type KosenSection = {
 	JoninShikiThreshold: number,
 }
 
+-- 交戦中の部隊の下忍の個体の見せ方。前線に向かい合って並ぶ間合いと間隔、攻撃の動作の間隔、プレイヤーを狙う距離
+export type ZensenSection = {
+	Gap: number,
+	Spacing: number,
+	RowGap: number,
+	AttackInterval: number,
+	AttackRandom: number,
+	AggroRange: number,
+}
+
 export type ButaiSection = {
 	-- 部隊の開始時の兵数。ステージ ID と部隊 ID（Haichi.luau の構成）で引く
 	Heisu: { [string]: { [string]: number } },
@@ -562,6 +572,7 @@ export type Config = {
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
+	Zensen: ZensenSection,
 	Butai: ButaiSection,
 	Hoshin: HoshinSection,
 	Kyoten: KyotenSection,
@@ -1880,6 +1891,20 @@ local Config: Config = {
 		-- 両軍の上忍がいる部隊どうしの交戦では、上忍同士も戦う
 		JoninPower = 0.6, -- 上忍同士の戦いで、1秒あたりに与えるダメージの技の倍率（攻撃を相手の防御で軽減し、士気の差の倍率を掛ける）
 		JoninShikiThreshold = 20, -- 味方軍の上忍が敵の上忍を削れる、部隊の士気の差の下限。敵軍の上忍に条件は無い
+	},
+
+	-- 交戦中の部隊の下忍の個体の見せ方。2つの部隊の位置を結ぶ線の中ほど（前線）に、部隊ごとに前線幅（Kosen 節の Zensenhaba）
+	-- までの個体が向かい合って並び、残りは後ろに控える。前線の個体は向かい合う相手へ攻撃の動作をするが、当たり判定は無い
+	-- （勝敗と損害は交戦の計算に従う）。並びの計算は Zensen.luau にある
+	Zensen = {
+		Gap = 4, -- 向かい合う両軍の前線の列の間（スタッド）。下忍の攻撃が届く距離（Genin 節の AttackRange）より短くする
+		Spacing = 4, -- 列の中で隣り合う個体の間隔（スタッド）。腕まで含めた体の横幅に合わせる
+		RowGap = 4, -- 前線の後ろに控える列の間隔（スタッド）
+		AttackInterval = 1.5, -- 前線の個体が攻撃の動作をする間隔（秒）
+		AttackRandom = 1, -- 攻撃の動作の間隔に、0 からこの秒数までを乱数で足す（前線の個体がそろって振らないように）
+		-- 交戦中の敵軍の個体は、この距離（スタッド。個体の位置から測る）までのプレイヤーを狙う（攻撃トークンに従う）。
+		-- 追ってくる個体からこの距離より離れると、前線へ戻る。攻撃トークンを受け取れる距離（KogekiToken 節の Range）以下にする
+		AggroRange = 15,
 	},
 
 	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にあり、移動の計算は Butai.luau にある
