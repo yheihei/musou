@@ -20,27 +20,31 @@
 -- - 枠 Q: cap をまとまりの人数の比で、D を超えないように分けた数（#85 と同じ。余った分はほかのまとまりへ人数の比で回す。
 --   味方軍だけのまとまりは味方軍の分しか取らず、残りはほかのまとまりの敵軍へ回る）
 -- - 味方軍の目標の合計 a = min(A, c, Q)。まとまりの中の味方軍の部隊へ兵数の比で分ける
--- - 敵軍の枠 C = Q − h。h は味方軍が押さえている数（heldOf。0〜a に収める）。C をまとまりの中の敵軍の部隊へ兵数の比で分ける
---   （tekiTargets）。まだ出ていない味方軍の目標は h に入らない（同じまとまりの敵軍を、味方軍の予約だけでは減らさない）
+-- - 敵軍の枠 C = Q − h。h は味方軍が押さえている数（heldOf。0〜Q に収める）。C をまとまりの中の敵軍の部隊へ兵数の比で分ける
+--   （tekiTargets）。まだ出ていない味方軍の目標は h に入らない（同じまとまりの敵軍を、味方軍の予約だけでは減らさない）。
+--   目標より多く出ている味方軍の個体（視界の中で戻せない個体）は h に数え、同じまとまりの敵軍が返す（ほかのまとまりは減らない）
 -- - ただし D は味方軍の上限までの兵数を含むので、まだ出ていない味方軍の分も、ほかのまとまりへ回す余りからは除く
 --   （味方軍は自分のまとまりの取り分から出し、ほかのまとまりの敵軍に返させない）
 -- - 端数は KotaiHaibun.split と同じく、切り捨てた残りの大きい順に1つずつ足す
 -- - まとまりごとに h + 敵軍の目標の合計 ≤ Q、Q の合計 ≤ cap。味方軍の目標の合計は c と Q を超えない
 --
--- 枠の返却（updateRequest・heldOf・hojuStopped・pickReturns・fill）
--- - 目標に足りない味方軍の部隊は、視界の外に出せる位置があれば、返却の求めを step ずつ増やす（足りない数まで）。
---   出せる位置が無ければ求めを増やさずに保つ。目標が 0 になったら（部隊が離れたら）取り消し、足りたら外す
--- - h は、味方軍の部隊ごとの min(目標, 出ている数 + 返却の求め) の合計。求めが増えると敵軍の枠が減る
+-- 枠の返却（updateRequests・heldOf・hojuStopped・pickReturns・fill）
+-- - 返却の求めは、今出せる味方軍の部隊だけが持つ。今出せる = 部隊の周りに視界の外に出せる位置があり、
+--   まとまりの味方軍の予算（a − まとまりの味方軍の出ている数）が 1 以上。今出せない部隊の求めは取り下げ（予約は数えず、
+--   敵軍の補充も止めない）、また出せるようになったら step から積み直す。求めは足りない数とまとまりの味方軍の予算を超えない
+-- - 求めを step 増やすのは、まとまりの前の返却が済んでいる（まとまりの敵軍の出ている数の合計 ≤ 今の求めで決めた敵軍の目標の
+--   合計）ときだけで、1回の判断で増やすのはまとまりの1部隊だけ（足りない数の多い部隊）。済んでいなければ増やさずに保つ。
+--   出た味方軍の個体は求めから引かないので、敵軍が返し続ける間は、1回の判断で返す数は step のまま（a = 10 なら 2 体ずつ）。
+--   待っている間に撃破で前の返却が済むと求めが1段増えるので、その後に返せるようになった判断では、求めの数まで返す
+-- - 目標が 0 になったら（部隊が離れたら）取り消し、足りたら外す。前のまとまりとメンバーが1人も重ならないまとまりへ移ったら
+--   0 から積み直す（sharesMember。移った先の敵軍に、前のまとまりで積んだ数を一度に返させない）
+-- - h は、味方軍の部隊ごとの max(出ている数, min(目標, 出ている数 + 返却の求め)) の合計。求めが増えると敵軍の枠が減る
 -- - 敵軍の個体は、まとまりごとにまとめて戻す。戻す数は、まとまりの敵軍の部隊の出ている数の合計 − 目標の合計。
 --   まとまりの敵軍の全部隊の個体を出撃メンバーから遠い順に並べ、視界の外の個体だけを戻す（pickReturns。
 --   視界の中の個体は戻さない）。片方の部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
 -- - 敵軍の部隊ごとの目標は、出す側（fill の足りない数）にだけ使う。戻した結果、目標より多い部隊と少ない部隊が
 --   残ってよい（まとまりの予算で出しすぎない）。味方軍の部隊と、どのまとまりにも入らない部隊は、部隊ごとに戻す
--- - 求めは部隊ごとに数え、増やす数は1回の判断で step まで。出た味方軍の個体は求めから引かないので、
---   1回に返す数は求めの数まで（a = 10 なら 2・4・4 体）
--- - 返却を求めている味方軍の部隊がいるまとまりでは、敵軍の補充を止める。空いた枠は待っている味方軍に先に回す
--- - 求めは部隊 ID で持ち、まとまりの番号が変わっても引き継ぐ。前のまとまりとメンバーが1人も重ならないまとまりへ移ったら、
---   呼ぶ側が 0 から積み直す（sharesMember。移った先の敵軍に、前のまとまりで積んだ数を一度に返させない）
+-- - 返却を求めている（今出せる）味方軍の部隊がいるまとまりでは、敵軍の補充を止める。空いた枠は待っている味方軍に先に回す
 -- - 出す順（fill）は、味方軍の足りない部隊が先で、次に敵軍。まとまりの予算（Q − まとまりの出ている数）、味方軍の予算
 --   （a − まとまりの味方軍の出ている数）、全体の予算（呼ぶ側が渡す）を超えない
 
@@ -96,10 +100,46 @@ export type WakuPlan = {
 export type TekiPlan = {
 	-- 敵軍の部隊 ID ごとの目標（出す対象でない部隊は 0）
 	targets: { [string]: number },
-	-- まとまりごとの、味方軍が押さえている数 h（0〜a に収めたもの）
+	-- まとまりごとの、味方軍が押さえている数 h（0〜Q に収めたもの）
 	held: { number },
 	-- まとまりごとの、敵軍の枠 C = Q − h
 	quotas: { number },
+}
+
+-- 味方軍の部隊ごとの返却の求め。部隊 ID で持つので、まとまりの番号が判断ごとに変わっても引き継ぐ
+export type Requests = {
+	-- 部隊 ID ごとの求めの数（求めていない部隊は入らない）
+	counts: { [string]: number },
+	-- 部隊 ID ごとの、求めたまとまりのメンバーの名前
+	members: { [string]: { string } },
+}
+
+-- 1部隊の求めを決める材料（updateRequest）
+export type RequestInput = {
+	-- 今の求め（無ければ nil）
+	prev: number?,
+	target: number,
+	present: number,
+	-- 部隊の周りに、視界の外に出せる位置があるか
+	spawnable: boolean,
+	-- まとまりの味方軍の予算（a − まとまりの味方軍の出ている数）
+	budget: number,
+	-- この判断で求めを増やす番か（まとまりの前の返却が済んでいて、まとまりで増やす1部隊に選ばれた）
+	grow: boolean,
+	step: number,
+}
+
+-- 部隊ごとの求めの移り変わり（記録用）。before は前の判断の求め（別のまとまりへ移って積み直したら nil で、
+-- 前の数とまとまりは movedFrom・movedCount）。spawnable は確かめたときだけ入る
+export type RequestNote = {
+	before: number?,
+	after: number?,
+	target: number,
+	present: number,
+	budget: number,
+	spawnable: boolean?,
+	movedFrom: { string }?,
+	movedCount: number?,
 }
 
 local GeninKotai = {}
@@ -223,22 +263,24 @@ function GeninKotai.planWaku(
 	}
 end
 
--- まとまりごとの、味方軍が押さえている数。味方軍の部隊ごとの min(目標, 出ている数 + 返却の求め) の合計。
--- present と requested は部隊 ID から引く（無ければ 0）。まだ出ていない味方軍の目標は、求めた分しか数えない
+-- まとまりごとの、味方軍が押さえている数。味方軍の部隊ごとの max(出ている数, min(目標, 出ている数 + 返却の求め)) の合計。
+-- present と requested は部隊 ID から引く（無ければ 0）。まだ出ていない味方軍の目標は、求めた分しか数えない。
+-- 目標より多く出ている部隊（視界の中で戻せない個体）は、出ている数をそのまま数える
 function GeninKotai.heldOf(plan: WakuPlan, present: { [string]: number }, requested: { [string]: number }): { number }
 	local result: { number } = {}
 	for index, group in plan.groups do
 		local total = 0
 		for _, id in group.mikataButai do
 			local target = plan.mikataTargets[id] or 0
-			total += math.min(target, (present[id] or 0) + (requested[id] or 0))
+			local count = present[id] or 0
+			total += math.max(count, math.min(target, count + (requested[id] or 0)))
 		end
 		result[index] = total
 	end
 	return result
 end
 
--- 敵軍の部隊ごとの目標。held はまとまりごとの味方軍が押さえている数（heldOf）で、0〜a に収めて使う。
+-- 敵軍の部隊ごとの目標。held はまとまりごとの味方軍が押さえている数（heldOf）で、0〜Q に収めて使う。
 -- 敵軍の枠 C = Q − h を、まとまりの中の敵軍の部隊へ兵数の比で分ける（部隊の目標は兵数を超えない）
 function GeninKotai.tekiTargets(plan: WakuPlan, held: { number }): TekiPlan
 	local targets: { [string]: number } = {}
@@ -248,7 +290,7 @@ function GeninKotai.tekiTargets(plan: WakuPlan, held: { number }): TekiPlan
 	local heldResult: { number } = {}
 	local quotas: { number } = {}
 	for index, group in plan.groups do
-		local h = math.clamp(math.floor(held[index] or 0), 0, group.mikataTarget)
+		local h = math.clamp(math.floor(held[index] or 0), 0, group.quota)
 		local quota = group.quota - h
 		heldResult[index] = h
 		quotas[index] = quota
@@ -264,25 +306,21 @@ function GeninKotai.tekiTargets(plan: WakuPlan, held: { number }): TekiPlan
 	return { targets = targets, held = heldResult, quotas = quotas }
 end
 
--- 味方軍の部隊の、返却の求めの次の数。prev は今の求め（無ければ nil）、spawnable は部隊の周りの視界の外に出せる位置があるか。
--- 目標が 0 以下なら取り消し（nil）、足りない数が 0 なら外す（nil）。出せる位置があれば step ずつ増やし（足りない数まで）、
--- 無ければ増やさずに保つ（足りない数まで）
-function GeninKotai.updateRequest(
-	prev: number?,
-	target: number,
-	present: number,
-	spawnable: boolean,
-	step: number
-): number?
-	if target <= 0 then
+-- 味方軍の部隊の、返却の求めの次の数（無ければ nil）。
+-- - 目標が 0 以下なら取り消し、足りない数が 0 なら外す
+-- - 今出せない（出せる位置が無いか、まとまりの味方軍の予算が 0）なら取り下げる（予約は数えず、補充も止めない）
+-- - 増やす番なら step 増やし、そうでなければ保つ。どちらも足りない数とまとまりの味方軍の予算を超えない
+function GeninKotai.updateRequest(input: RequestInput): number?
+	if input.target <= 0 then
 		return nil
 	end
-	local short = math.max(target - present, 0)
-	if short <= 0 then
+	local short = math.max(input.target - input.present, 0)
+	if short <= 0 or not input.spawnable or input.budget <= 0 then
 		return nil
 	end
-	local base = math.max(prev or 0, 0)
-	local nextValue = if spawnable then math.min(short, base + math.max(step, 0)) else math.min(short, base)
+	local limit = math.min(short, input.budget)
+	local base = math.max(input.prev or 0, 0)
+	local nextValue = if input.grow then math.min(limit, base + math.max(input.step, 0)) else math.min(limit, base)
 	return if nextValue > 0 then nextValue else nil
 end
 
@@ -311,6 +349,107 @@ function GeninKotai.hojuStopped(plan: WakuPlan, requested: { [string]: number })
 		result[index] = stopped
 	end
 	return result
+end
+
+-- 味方軍の部隊ごとの返却の求めを、1回の判断ぶん進める。present は部隊 ID ごとの今出ている数、prev は前の判断の求め、
+-- spawnable(id) はその部隊の周りに視界の外に出せる位置があるか（足りない数があり、まとまりの味方軍の予算が 1 以上で、
+-- 求めているか、まとまりの前の返却が済んでいる部隊についてだけ呼ぶ）、step は増やす数。
+-- - メンバーが1人も重ならないまとまりへ移った部隊は、前の求めを 0 から積み直す
+-- - まとまりの前の返却が済んでいれば（まとまりの敵軍の出ている数の合計 ≤ 前の求めで決めた敵軍の目標の合計）、
+--   増やせる部隊のうち足りない数の多い1部隊（同じなら ID の順）だけを step 増やす
+-- - 出す対象でない部隊（目標 0）と、いなくなった部隊の求めは残さない
+-- 次の求めと、味方軍の部隊ごとの移り変わり（記録用）を返す
+function GeninKotai.updateRequests(
+	plan: WakuPlan,
+	present: { [string]: number },
+	prev: Requests,
+	spawnable: (id: string) -> boolean,
+	step: number
+): (Requests, { [string]: RequestNote })
+	-- 前のまとまりとメンバーが重ならないまとまりへ移った部隊は、前の求めを数えない
+	local base: { [string]: number } = {}
+	local movedFrom: { [string]: { string } } = {}
+	for id, count in prev.counts do
+		local index = plan.groupOf[id]
+		local previous = prev.members[id]
+		if index and plan.mikataTargets[id] then
+			if previous and not GeninKotai.sharesMember(previous, plan.groups[index].members) then
+				movedFrom[id] = previous
+			else
+				base[id] = count
+			end
+		end
+	end
+	local done = {}
+	local before = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, present, base))
+	for index, group in plan.groups do
+		local tekiPresent, tekiTarget = 0, 0
+		for _, id in group.tekiButai do
+			tekiPresent += present[id] or 0
+			tekiTarget += before.targets[id] or 0
+		end
+		done[index] = tekiPresent <= tekiTarget
+	end
+
+	local counts: { [string]: number } = {}
+	local members: { [string]: { string } } = {}
+	local notes: { [string]: RequestNote } = {}
+	for id, target in plan.mikataTargets do
+		notes[id] = {
+			-- まとまりに入らない部隊（目標 0）の前の求めも、取り消したことが分かるよう入れる
+			before = if movedFrom[id] then nil else prev.counts[id],
+			after = nil,
+			target = target,
+			present = present[id] or 0,
+			budget = 0,
+			spawnable = nil,
+			movedFrom = movedFrom[id],
+			movedCount = if movedFrom[id] then prev.counts[id] else nil,
+		}
+	end
+	for index, group in plan.groups do
+		local mikataPresent = 0
+		for _, id in group.mikataButai do
+			mikataPresent += present[id] or 0
+		end
+		local budget = math.max(group.mikataTarget - mikataPresent, 0)
+		-- 今出せる部隊を確かめ、まとまりで増やす1部隊を選ぶ
+		local grower: string? = nil
+		local growerShort = 0
+		for _, id in group.mikataButai do
+			local note = notes[id]
+			note.budget = budget
+			local short = math.max(note.target - note.present, 0)
+			-- 求めていない部隊は、前の返却が済んでいなければ求めを始められないので、位置を確かめない
+			if note.target > 0 and short > 0 and budget > 0 and (base[id] ~= nil or done[index]) then
+				note.spawnable = spawnable(id)
+				local room = math.min(short, budget) > (base[id] or 0)
+				if note.spawnable and room and done[index] then
+					if grower == nil or short > growerShort or (short == growerShort and id < (grower :: string)) then
+						grower, growerShort = id, short
+					end
+				end
+			end
+		end
+		for _, id in group.mikataButai do
+			local note = notes[id]
+			note.after = GeninKotai.updateRequest({
+				prev = base[id],
+				target = note.target,
+				present = note.present,
+				spawnable = note.spawnable == true,
+				budget = budget,
+				grow = grower == id,
+				step = step,
+			})
+			local after = note.after
+			if after then
+				counts[id] = after
+				members[id] = group.members
+			end
+		end
+	end
+	return { counts = counts, members = members }, notes
 end
 
 -- 目標より多い個体を戻すときの候補。item は呼ぶ側の個体（体のモデルなど）、butai はその部隊 ID、

@@ -169,15 +169,23 @@ test(
 	end
 )
 
-test("押さえている数は 0 から味方軍の目標までに収める", function()
-	local plan = planOf({ mikata("m1", 0, 50, 40), teki("t1", 0, -50, 60) })
-	local over = GeninKotai.tekiTargets(plan, { 25 })
-	expect(over.held).toEqual({ 10 })
-	expect(over.targets.t1).toBe(30)
-	local under = GeninKotai.tekiTargets(plan, { -3 })
-	expect(under.held).toEqual({ 0 })
-	expect(under.targets.t1).toBe(40)
-end)
+test(
+	"押さえている数は 0 からまとまりの枠 Q までに収める（味方軍の目標より多い分も数える）",
+	function()
+		local plan = planOf({ mikata("m1", 0, 50, 40), teki("t1", 0, -50, 60) })
+		-- 味方軍の目標は 10 だが、視界の中で戻せない個体が多ければ、その分も敵軍の枠から引く
+		local over = GeninKotai.tekiTargets(plan, { 25 })
+		expect(over.held).toEqual({ 25 })
+		expect(over.quotas).toEqual({ 15 })
+		expect(over.targets.t1).toBe(15)
+		local beyond = GeninKotai.tekiTargets(plan, { 99 })
+		expect(beyond.held).toEqual({ 40 })
+		expect(beyond.targets.t1).toBe(0)
+		local under = GeninKotai.tekiTargets(plan, { -3 })
+		expect(under.held).toEqual({ 0 })
+		expect(under.targets.t1).toBe(40)
+	end
+)
 
 test("敵軍の兵数が足りなければ、敵軍の目標は兵数まで", function()
 	local plan = planOf({ mikata("m1", 0, 50, 40), teki("t1", 0, -50, 12) })
@@ -303,7 +311,7 @@ test(
 -- 押さえている数・返却の求め・補充の停止・出す順
 
 test(
-	"押さえている数は、味方軍の部隊ごとの min(目標, 出ている数 + 返却の求め) の合計",
+	"押さえている数は、味方軍の部隊ごとの max(出ている数, min(目標, 出ている数 + 返却の求め)) の合計",
 	function()
 		local plan = planOf({
 			mikata("m1", 0, 30, 30),
@@ -315,33 +323,144 @@ test(
 		expect(GeninKotai.heldOf(plan, {}, {})).toEqual({ 0 })
 		expect(GeninKotai.heldOf(plan, { m1 = 3 }, { m1 = 2 })).toEqual({ 5 })
 		expect(GeninKotai.heldOf(plan, { m1 = 6, m2 = 1 }, { m1 = 4, m2 = 4 })).toEqual({ 10 })
-		-- 目標より多く出ている部隊（視界の中で戻せない個体）は、目標までしか数えない
-		expect(GeninKotai.heldOf(plan, { m1 = 12 }, {})).toEqual({ 8 })
+		-- 目標より多く出ている部隊（視界の中で戻せない個体）は、出ている数をそのまま数える
+		expect(GeninKotai.heldOf(plan, { m1 = 12 }, {})).toEqual({ 12 })
+		expect(GeninKotai.heldOf(plan, { m1 = 3, m2 = 6 }, { m1 = 2 })).toEqual({ 11 })
 		-- まとまりに入らない部隊と、敵軍の部隊の数は数えない
 		expect(GeninKotai.heldOf(plan, { far = 10, t1 = 30 }, { far = 10, t1 = 5 })).toEqual({ 0 })
 	end
 )
 
+-- 1部隊の求めを決める材料。省いた値は、今出せて、増やす番で、まとまりの味方軍の予算 10
+local function requestOf(prev: number?, target: number, present: number, overrides: { [string]: any }?): number?
+	local input: GeninKotai.RequestInput = {
+		prev = prev,
+		target = target,
+		present = present,
+		spawnable = true,
+		budget = 10,
+		grow = true,
+		step = STEP,
+	}
+	for key, value in overrides or {} do
+		(input :: any)[key] = value
+	end
+	return GeninKotai.updateRequest(input)
+end
+
 test(
-	"返却の求めは、出せる位置があれば step ずつ増やし、無ければ保ち、要らなくなったら外す",
+	"返却の求めは、今出せて増やす番なら step 増やし、番でなければ保ち、要らなくなったら外す",
 	function()
-		-- 目標が 0 になったら（部隊が離れたら）取り消す
-		expect(GeninKotai.updateRequest(4, 0, 0, true, STEP)).toBe(nil)
-		-- 足りていれば外す（目標より多く出ていても）
-		expect(GeninKotai.updateRequest(4, 10, 10, true, STEP)).toBe(nil)
-		expect(GeninKotai.updateRequest(4, 10, 12, false, STEP)).toBe(nil)
-		-- 出せる位置があれば step ずつ増やす
-		expect(GeninKotai.updateRequest(nil, 10, 0, true, STEP)).toBe(2)
-		expect(GeninKotai.updateRequest(2, 10, 0, true, STEP)).toBe(4)
+		-- 目標が 0 になったら（部隊が離れたら）取り消し、足りていれば外す（目標より多く出ていても）
+		expect(requestOf(4, 0, 0)).toBe(nil)
+		expect(requestOf(4, 10, 10)).toBe(nil)
+		expect(requestOf(4, 10, 12)).toBe(nil)
+		-- 増やす番なら step 増やす
+		expect(requestOf(nil, 10, 0)).toBe(2)
+		expect(requestOf(2, 10, 0)).toBe(4)
+		-- 番でなければ（前の返却が済んでいない・ほかの部隊が増やす）保つ。求めていなければ求めない
+		expect(requestOf(4, 10, 0, { grow = false })).toBe(4)
+		expect(requestOf(nil, 10, 0, { grow = false })).toBe(nil)
+		expect(requestOf(4, 10, 0, { step = 0 })).toBe(4)
 		-- 足りない数より多くは求めない
-		expect(GeninKotai.updateRequest(8, 10, 0, true, STEP)).toBe(10)
-		expect(GeninKotai.updateRequest(4, 10, 6, true, STEP)).toBe(4)
-		expect(GeninKotai.updateRequest(nil, 10, 9, true, STEP)).toBe(1)
-		-- 出せる位置が無ければ増やさずに保つ（足りない数まで）。求めていなければ求めない
-		expect(GeninKotai.updateRequest(4, 10, 0, false, STEP)).toBe(4)
-		expect(GeninKotai.updateRequest(6, 10, 6, false, STEP)).toBe(4)
-		expect(GeninKotai.updateRequest(nil, 10, 0, false, STEP)).toBe(nil)
-		expect(GeninKotai.updateRequest(4, 10, 0, true, 0)).toBe(4)
+		expect(requestOf(8, 10, 0)).toBe(10)
+		expect(requestOf(4, 10, 7)).toBe(3)
+		expect(requestOf(nil, 10, 9)).toBe(1)
+	end
+)
+
+test(
+	"今出せない味方軍の部隊の求めは取り下げ、求めはまとまりの味方軍の予算を超えない",
+	function()
+		-- 周りに視界の外に出せる位置が無ければ、求めていた分も取り下げる（予約として数えない）
+		expect(requestOf(4, 10, 0, { spawnable = false })).toBe(nil)
+		expect(requestOf(nil, 10, 0, { spawnable = false })).toBe(nil)
+		-- まとまりの味方軍の予算が 0（ほかの部隊の多い分が視界の中に残る）なら、位置があっても取り下げる
+		expect(requestOf(4, 10, 0, { budget = 0 })).toBe(nil)
+		-- 求めは足りない数とまとまりの味方軍の予算の小さい方まで
+		expect(requestOf(4, 10, 0, { budget = 3 })).toBe(3)
+		expect(requestOf(nil, 10, 0, { budget = 1 })).toBe(1)
+		expect(requestOf(2, 10, 0, { budget = 1, grow = false })).toBe(1)
+	end
+)
+
+test(
+	"求めを増やすのは、まとまりの前の返却が済んでいるときの、足りない数の多い1部隊だけ",
+	function()
+		local plan = planOf({ mikata("m1", 0, 30, 30), mikata("m2", 0, -30, 10), teki("t1", 30, 0, 60) })
+		-- 目標は m1 8・m2 2。敵軍の枠は 40、t1 は 40 体出ている
+		local empty: GeninKotai.Requests = { counts = {}, members = {} }
+		local function always(): boolean
+			return true
+		end
+		local first, notes = GeninKotai.updateRequests(plan, { t1 = 40 }, empty, always, STEP)
+		-- 足りない数の多い m1 だけが求める（1回の判断で返すのは step だけ）
+		expect(first.counts).toEqual({ m1 = 2 })
+		expect(first.members.m1).toEqual({ "A" })
+		expect(notes.m1.budget).toBe(10)
+		expect(notes.m2.after).toBe(nil)
+		-- t1 がまだ返していなければ（40 体のまま）、前の返却が済んでいないので増やさない
+		local waiting = GeninKotai.updateRequests(plan, { t1 = 40 }, first, always, STEP)
+		expect(waiting.counts).toEqual({ m1 = 2 })
+		-- 返し終えたら（38 体）、また 1 部隊だけ増やす
+		local grown = GeninKotai.updateRequests(plan, { t1 = 38 }, first, always, STEP)
+		expect(grown.counts).toEqual({ m1 = 4 })
+		-- 出せなくなった部隊の求めは取り下げ、ほかの部隊が増やす番になる
+		local _, withdrawn = GeninKotai.updateRequests(plan, { t1 = 38 }, first, function(id: string): boolean
+			return id ~= "m1"
+		end, STEP)
+		expect(withdrawn.m1.before).toBe(2)
+		expect(withdrawn.m1.after).toBe(nil)
+		expect(withdrawn.m1.spawnable).toBe(false)
+		expect(withdrawn.m2.after).toBe(2)
+	end
+)
+
+test(
+	"ほかの味方軍の部隊の多い分が残り、まとまりの味方軍の予算が 0 なら、求めも補充の停止も無い",
+	function()
+		local plan = planOf({ mikata("m1", 0, 30, 30), mikata("m2", 0, -30, 10), teki("t1", 30, 0, 60) })
+		-- m2 の目標は 2 だが、視界の中で戻せない個体が 10 体残っている（まとまりの味方軍の予算 10 − 10 = 0）
+		local requests, notes = GeninKotai.updateRequests(plan, { m2 = 10, t1 = 30 }, {
+			counts = { m1 = 4 },
+			members = { m1 = { "A" } },
+		}, function(): boolean
+			return true
+		end, STEP)
+		expect(requests.counts).toEqual({})
+		expect(notes.m1.before).toBe(4)
+		expect(notes.m1.budget).toBe(0)
+		expect(GeninKotai.hojuStopped(plan, requests.counts)).toEqual({ false })
+		-- 多い分は押さえている数に数え、同じまとまりの敵軍の枠から引く
+		local tekiPlan = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, { m2 = 10 }, requests.counts))
+		expect(tekiPlan.held).toEqual({ 10 })
+		expect(tekiPlan.targets.t1).toBe(30)
+	end
+)
+
+test(
+	"目標が 0 になった部隊と、メンバーの重ならないまとまりへ移った部隊は、前の求めを残さない",
+	function()
+		local members = { { id = "A", x = 0, z = 0 }, { id = "B", x = 500, z = 0 } }
+		local plan =
+			planOf({ mikata("m1", 530, 0, 40), mikata("far", 250, 400, 40), teki("t2", 500, -30, 60) }, members)
+		local function always(): boolean
+			return true
+		end
+		-- m1 は A のまとまりで 4 体を求めていたが、B のまとまりへ移った。far は離れて目標 0 になった
+		local requests, notes = GeninKotai.updateRequests(plan, { t2 = 20 }, {
+			counts = { m1 = 4, far = 2 },
+			members = { m1 = { "A" }, far = { "A" } },
+		}, always, STEP)
+		expect(notes.m1.before).toBe(nil)
+		expect(notes.m1.movedFrom).toEqual({ "A" })
+		expect(notes.m1.movedCount).toBe(4)
+		expect(requests.counts.m1).toBe(2)
+		expect(requests.members.m1).toEqual({ "B" })
+		expect(notes.far.before).toBe(2)
+		expect(notes.far.target).toBe(0)
+		expect(notes.far.after).toBe(nil)
+		expect(requests.counts.far).toBe(nil)
 	end
 )
 
@@ -591,7 +710,7 @@ test(
 				for _, id in group.tekiButai do
 					tekiSum += tekiPlan.targets[id]
 				end
-				expect(tekiPlan.held[index] >= 0 and tekiPlan.held[index] <= group.mikataTarget).toBe(true)
+				expect(tekiPlan.held[index] >= 0 and tekiPlan.held[index] <= group.quota).toBe(true)
 				expect(tekiPlan.held[index] + tekiSum <= group.quota).toBe(true)
 				expect(tekiPlan.quotas[index]).toBe(group.quota - tekiPlan.held[index])
 			end
@@ -732,13 +851,11 @@ type Sim = {
 	members: { KotaiHaibun.Member },
 	butai: { SimButai },
 	seen: { [string]: boolean },
-	requests: { [string]: number },
-	-- 求めたまとまりのメンバー。メンバーが重ならないまとまりへ移ったら 0 から積み直す（サービスと同じ）
-	requestMembers: { [string]: { string } },
+	requests: GeninKotai.Requests,
 }
 
 local function newSim(members: { KotaiHaibun.Member }, butai: { SimButai }): Sim
-	return { members = members, butai = butai, seen = {}, requests = {}, requestMembers = {} }
+	return { members = members, butai = butai, seen = {}, requests = { counts = {}, members = {} } }
 end
 
 local function simButai(sim: Sim, id: string): SimButai
@@ -770,27 +887,11 @@ local function simStep(sim: Sim): (GeninKotai.WakuPlan, { boolean })
 		present[entry.id] = entry.present
 	end
 	local plan = GeninKotai.planWaku(states, sim.members, CAP, RATE, PARAMS)
-	local requests: { [string]: number } = {}
-	local memberLists: { [string]: { string } } = {}
-	for _, entry in sim.butai do
-		local index = plan.groupOf[entry.id]
-		if entry.gun == "Mikatagun" and index then
-			local members = plan.groups[index].members
-			local previous = sim.requestMembers[entry.id]
-			local before = if previous and GeninKotai.sharesMember(previous, members)
-				then sim.requests[entry.id]
-				else nil
-			local target = plan.mikataTargets[entry.id]
-			local spawnable = target > entry.present and not sim.seen[entry.id]
-			local request = GeninKotai.updateRequest(before, target, entry.present, spawnable, STEP)
-			if request then
-				requests[entry.id] = request
-				memberLists[entry.id] = members
-			end
-		end
-	end
-	sim.requests = requests
-	sim.requestMembers = memberLists
+	-- 出せる位置は、視界の中の部隊には無い
+	sim.requests = GeninKotai.updateRequests(plan, present, sim.requests, function(id: string): boolean
+		return not sim.seen[id]
+	end, STEP)
+	local requests = sim.requests.counts
 	local tekiPlan = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, present, requests))
 	-- 目標より多い個体を、視界の外なら戻す（視界の中の個体は戻さない）。味方軍の部隊と、まとまりに入らない敵軍の部隊は
 	-- 部隊ごと。まとまりに入る敵軍は、まとまりの全部隊の個体を遠い順に並べて戻す（サービスの returnExcess と同じ）。
@@ -864,55 +965,33 @@ test("模擬: 味方軍が視界の中で出せない間は、敵軍を減らさ
 		expect(stopped).toEqual({ false })
 	end
 	expect(presentOf(sim)).toEqual({ M = 0, T = 40 })
-	expect(sim.requests.M).toBe(nil)
+	expect(sim.requests.counts.M).toBe(nil)
 end)
 
 test(
-	"模擬: 視界の外に出せるようになると、敵軍から少しずつ枠を返させて味方軍を出す",
+	"模擬: 視界の外に出せるようになると、敵軍から step ずつ枠を返させて味方軍を出す",
 	function()
 		local sim = newSim(ONE, {
 			{ id = "M", gun = "Mikatagun", x = 0, z = 110, heisu = 40, present = 0 },
 			{ id = "T", gun = "Tekigun", x = 0, z = -110, heisu = 60, present = 40 },
 		})
 		local history = {}
-		for _ = 1, 4 do
+		for _ = 1, 6 do
 			simStep(sim)
 			table.insert(history, presentOf(sim))
 		end
+		-- 求めは 2 のまま。出た味方軍の分だけ押さえている数が増えるので、1回の判断で返すのは 2 体ずつ
 		expect(history).toEqual({
 			{ M = 2, T = 38 },
+			{ M = 4, T = 36 },
 			{ M = 6, T = 34 },
+			{ M = 8, T = 32 },
 			{ M = 10, T = 30 },
 			{ M = 10, T = 30 },
 		})
-		expect(sim.requests.M).toBe(nil)
+		expect(sim.requests.counts.M).toBe(nil)
 	end
 )
-
--- 視界の中で戦っている T1 と T2 が 20 体ずつ出たところへ、味方軍の部隊 M が近づく。
--- まとまりの敵軍の個体はすべて視界の中で戻せないので、味方軍は出られずに待ち、求めは上限の 10 まで積む
-local function waitingSim(): Sim
-	local sim = newSim(ONE, {
-		{ id = "M", gun = "Mikatagun", x = 0, z = 400, heisu = 40, present = 0 },
-		{ id = "T1", gun = "Tekigun", x = 0, z = -30, heisu = 30, present = 0 },
-		{ id = "T2", gun = "Tekigun", x = 30, z = -30, heisu = 30, present = 0 },
-	})
-	for _ = 1, 5 do
-		simStep(sim)
-	end
-	expect(presentOf(sim)).toEqual({ M = 0, T1 = 20, T2 = 20 })
-	sim.seen.T1 = true
-	sim.seen.T2 = true
-	simButai(sim, "M").z = 110
-	local stopped
-	for _ = 1, 6 do
-		_, stopped = simStep(sim)
-	end
-	expect(presentOf(sim)).toEqual({ M = 0, T1 = 20, T2 = 20 })
-	expect(sim.requests.M).toBe(10)
-	expect(stopped).toEqual({ true })
-	return sim
-end
 
 test(
 	"模擬: 片方の敵軍の部隊だけが視界の中なら、もう片方の視界の外の個体から返し、味方軍は待たずに出る",
@@ -930,46 +1009,79 @@ test(
 		sim.seen.T1 = true
 		simButai(sim, "M").z = 110
 		local history = {}
-		for _ = 1, 4 do
+		for _ = 1, 6 do
 			simStep(sim)
 			table.insert(history, presentOf(sim))
 		end
 		-- T1 の目標は 15 まで下がるが、視界の中の T1 は消さず、T2 から目標より多く返す
 		expect(history).toEqual({
 			{ M = 2, T1 = 20, T2 = 18 },
+			{ M = 4, T1 = 20, T2 = 16 },
 			{ M = 6, T1 = 20, T2 = 14 },
+			{ M = 8, T1 = 20, T2 = 12 },
 			{ M = 10, T1 = 20, T2 = 10 },
 			{ M = 10, T1 = 20, T2 = 10 },
 		})
-		expect(sim.requests.M).toBe(nil)
+		expect(sim.requests.counts.M).toBe(nil)
 	end
 )
+
+-- 視界の中で戦っている T1 と T2 が 20 体ずつ出たところへ、味方軍の部隊 M が近づく。
+-- まとまりの敵軍の個体はすべて視界の中で戻せないので、味方軍は出られずに待つ。求めは 2 のまま増えない
+local function waitingSim(): Sim
+	local sim = newSim(ONE, {
+		{ id = "M", gun = "Mikatagun", x = 0, z = 400, heisu = 40, present = 0 },
+		{ id = "T1", gun = "Tekigun", x = 0, z = -30, heisu = 30, present = 0 },
+		{ id = "T2", gun = "Tekigun", x = 30, z = -30, heisu = 30, present = 0 },
+	})
+	for _ = 1, 5 do
+		simStep(sim)
+	end
+	expect(presentOf(sim)).toEqual({ M = 0, T1 = 20, T2 = 20 })
+	sim.seen.T1 = true
+	sim.seen.T2 = true
+	simButai(sim, "M").z = 110
+	local stopped
+	for _ = 1, 6 do
+		_, stopped = simStep(sim)
+		expect(sim.requests.counts.M).toBe(2)
+	end
+	expect(presentOf(sim)).toEqual({ M = 0, T1 = 20, T2 = 20 })
+	expect(stopped).toEqual({ true })
+	return sim
+end
 
 test(
 	"模擬: 敵軍を戻せない間は味方軍が待って補充を止め、撃破で空いた枠は味方軍に先に回り、視界の外で残りが返る",
 	function()
 		local sim = waitingSim()
-		-- 待っている間は、判断を重ねても視界の中の敵軍を消さない
+		-- 待っている間は、判断を重ねても視界の中の敵軍を消さず、求めも増やさない
 		for _ = 1, 4 do
 			simStep(sim)
 		end
 		expect(presentOf(sim)).toEqual({ M = 0, T1 = 20, T2 = 20 })
+		expect(sim.requests.counts.M).toBe(2)
 
-		-- T1 を3体倒すと、空いた枠は味方軍に回り、敵軍は補充しない
+		-- T1 を3体倒すと、空いた枠は味方軍に回り、敵軍は補充しない。倒して前の返却が済んだので、求めは1段だけ増える
 		simKill(sim, "T1", 3)
+		local _, stopped = simStep(sim)
+		expect(presentOf(sim)).toEqual({ M = 3, T1 = 17, T2 = 20 })
+		expect(sim.requests.counts.M).toBe(4)
+		expect(stopped).toEqual({ true })
 		simStep(sim)
 		expect(presentOf(sim)).toEqual({ M = 3, T1 = 17, T2 = 20 })
-		-- 求めは、出た 3 体を数える次の判断で 7 になる
-		expect(sim.requests.M).toBe(10)
+		expect(sim.requests.counts.M).toBe(4)
 
 		-- 視界の外を向くと、遠い T2 の個体から返し、味方軍が目標まで出る。部隊ごとの目標とずれても補充はしない
 		sim.seen.T1 = false
 		sim.seen.T2 = false
 		simStep(sim)
+		expect(presentOf(sim)).toEqual({ M = 7, T1 = 17, T2 = 16 })
+		simStep(sim)
 		expect(presentOf(sim)).toEqual({ M = 10, T1 = 17, T2 = 13 })
-		local _, stopped = simStep(sim)
+		_, stopped = simStep(sim)
 		expect(presentOf(sim)).toEqual({ M = 10, T1 = 17, T2 = 13 })
-		expect(sim.requests.M).toBe(nil)
+		expect(sim.requests.counts.M).toBe(nil)
 		expect(stopped).toEqual({ false })
 	end
 )
@@ -983,7 +1095,7 @@ test(
 		expect(presentOf(sim)).toEqual({ M = 3, T1 = 17, T2 = 20 })
 		simButai(sim, "M").z = 400
 		local _, stopped = simStep(sim)
-		expect(sim.requests.M).toBe(nil)
+		expect(sim.requests.counts.M).toBe(nil)
 		expect(stopped).toEqual({ false })
 		expect(presentOf(sim)).toEqual({ M = 0, T1 = 17, T2 = 20 })
 		-- 視界の中の間は出せず、視界の外になったら枠まで補充する
@@ -1004,9 +1116,109 @@ test(
 		-- 交戦などで兵数が出ている数まで減ると、目標も出ている数に下がり、足りない数が 0 になる
 		simButai(sim, "M").heisu = 3
 		local _, stopped = simStep(sim)
-		expect(sim.requests.M).toBe(nil)
+		expect(sim.requests.counts.M).toBe(nil)
 		expect(stopped).toEqual({ false })
 		expect(presentOf(sim)).toEqual({ M = 3, T1 = 17, T2 = 20 })
+	end
+)
+
+test(
+	"模擬: 求めた後に味方軍の周りが視界の中になると求めを取り下げ、倒された敵軍を補充する（減り続けない）",
+	function()
+		local sim = newSim(ONE, {
+			{ id = "M", gun = "Mikatagun", x = 0, z = 110, heisu = 40, present = 0 },
+			{ id = "T", gun = "Tekigun", x = 0, z = -110, heisu = 200, present = 40 },
+		})
+		simStep(sim)
+		expect(presentOf(sim)).toEqual({ M = 2, T = 38 })
+		expect(sim.requests.counts.M).toBe(2)
+		-- M の周りが視界の中になり、出せなくなる。その後も T を 2 体ずつ倒し続ける
+		sim.seen.M = true
+		for _ = 1, 6 do
+			simKill(sim, "T", 2)
+			local _, stopped = simStep(sim)
+			expect(sim.requests.counts.M).toBe(nil)
+			expect(stopped).toEqual({ false })
+			expect(presentOf(sim)).toEqual({ M = 2, T = 38 })
+		end
+		-- また出せるようになったら、step から積み直す
+		sim.seen.M = false
+		simStep(sim)
+		expect(sim.requests.counts.M).toBe(2)
+		expect(presentOf(sim)).toEqual({ M = 4, T = 36 })
+	end
+)
+
+test(
+	"模擬: 同じまとまりのほかの味方軍の多い分が視界の中に残る間は、求めを出さず、敵軍の補充も止めない",
+	function()
+		-- m2 の目標は 2 だが、10 体が視界の中で戻せない。m1 は出せる位置があっても、まとまりの味方軍の枠に空きが無い
+		local sim = newSim(ONE, {
+			{ id = "m1", gun = "Mikatagun", x = 0, z = 110, heisu = 30, present = 0 },
+			{ id = "m2", gun = "Mikatagun", x = 0, z = 30, heisu = 10, present = 10 },
+			{ id = "T", gun = "Tekigun", x = 0, z = -110, heisu = 200, present = 30 },
+		})
+		sim.seen.m2 = true
+		for round = 1, 6 do
+			if round > 2 then
+				simKill(sim, "T", 2)
+			end
+			local _, stopped = simStep(sim)
+			expect(sim.requests.counts.m1).toBe(nil)
+			expect(stopped).toEqual({ false })
+			-- 多い分は押さえている数に数え、T は枠 30 まで補充する
+			expect(presentOf(sim)).toEqual({ m1 = 0, m2 = 10, T = 30 })
+		end
+	end
+)
+
+test(
+	"模擬: 視界の中に多い味方軍が残っても、同じまとまりの敵軍が返し、ほかのまとまりの敵軍は枠まで出る",
+	function()
+		local sim = newSim({ { id = "A", x = 0, z = 0 } }, {
+			{ id = "M", gun = "Mikatagun", x = 0, z = 30, heisu = 40, present = 0 },
+			{ id = "TA", gun = "Tekigun", x = 0, z = -110, heisu = 60, present = 0 },
+			{ id = "TB", gun = "Tekigun", x = 500, z = -110, heisu = 60, present = 0 },
+		})
+		for _ = 1, 8 do
+			simStep(sim)
+		end
+		expect(presentOf(sim)).toEqual({ M = 10, TA = 30, TB = 0 })
+		-- 離れた B が入ると A の取り分は 20、味方軍の目標は 5 に下がるが、M の 10 体は視界の中で戻せない
+		table.insert(sim.members, { id = "B", x = 500, z = 0 })
+		sim.seen.M = true
+		local plan
+		for _ = 1, 3 do
+			plan = simStep(sim)
+		end
+		expect(plan.mikataTargets.M).toBe(5)
+		-- A の視界の外の TA が多い分も返し（敵軍の枠 20 − 10）、B の TB は枠 20 まで出る
+		expect(presentOf(sim)).toEqual({ M = 10, TA = 10, TB = 20 })
+	end
+)
+
+test(
+	"模擬: 敵軍を返せない間に待った後、返せるようになっても1回の判断で返すのは step ずつ",
+	function()
+		local sim = newSim(ONE, {
+			{ id = "M", gun = "Mikatagun", x = 0, z = 110, heisu = 40, present = 0 },
+			{ id = "T", gun = "Tekigun", x = 0, z = -30, heisu = 60, present = 40 },
+		})
+		sim.seen.T = true
+		for _ = 1, 6 do
+			simStep(sim)
+		end
+		expect(sim.requests.counts.M).toBe(2)
+		expect(presentOf(sim)).toEqual({ M = 0, T = 40 })
+		sim.seen.T = false
+		local returned = {}
+		for _ = 1, 6 do
+			local before = simButai(sim, "T").present
+			simStep(sim)
+			table.insert(returned, before - simButai(sim, "T").present)
+		end
+		expect(returned).toEqual({ 2, 2, 2, 2, 2, 0 })
+		expect(presentOf(sim)).toEqual({ M = 10, T = 30 })
 	end
 )
 
@@ -1032,7 +1244,7 @@ test(
 )
 
 test(
-	"模擬: 待っている味方軍の部隊がメンバーの重ならないまとまりへ移ったら、求めを 0 から積み直す",
+	"模擬: 待っている味方軍の部隊が別のまとまりへ移っても、移った先の敵軍は step ずつ返す",
 	function()
 		local sim = newSim({ { id = "A", x = 0, z = 0 }, { id = "B", x = 300, z = 0 } }, {
 			{ id = "M", gun = "Mikatagun", x = -300, z = 0, heisu = 40, present = 0 },
@@ -1043,27 +1255,35 @@ test(
 			simStep(sim)
 		end
 		expect(presentOf(sim)).toEqual({ M = 0, TA = 20, TB = 20 })
-		-- A の近くで、TA が視界の中で戻せないので待つ（求めは味方軍の上限 5 まで積む）
+		-- A の近くで、TA が視界の中で戻せないので待つ
 		sim.seen.TA = true
 		local m = simButai(sim, "M")
 		m.x = -110
 		for _ = 1, 3 do
 			simStep(sim)
 		end
-		expect(sim.requests.M).toBe(5)
+		expect(sim.requests.counts.M).toBe(2)
+		expect(sim.requests.members.M).toEqual({ "A" })
 		expect(presentOf(sim)).toEqual({ M = 0, TA = 20, TB = 20 })
-		-- B の近くへ移ると、B の敵軍には 2 体から返させる（A で積んだ 5 体を一度に返させない）
+		-- B の近くへ移ると、B の敵軍が 2 体ずつ返す
 		m.x = 410
-		simStep(sim)
-		expect(sim.requests.M).toBe(2)
-		expect(presentOf(sim)).toEqual({ M = 2, TA = 20, TB = 18 })
-		simStep(sim)
-		expect(presentOf(sim)).toEqual({ M = 5, TA = 20, TB = 15 })
+		local history = {}
+		for _ = 1, 4 do
+			simStep(sim)
+			table.insert(history, presentOf(sim))
+		end
+		expect(sim.requests.members.M).toBe(nil)
+		expect(history).toEqual({
+			{ M = 2, TA = 20, TB = 18 },
+			{ M = 4, TA = 20, TB = 16 },
+			{ M = 5, TA = 20, TB = 15 },
+			{ M = 5, TA = 20, TB = 15 },
+		})
 	end
 )
 
 test(
-	"模擬: メンバーが合流しただけなら、待っている味方軍の求めは積み直さない",
+	"模擬: メンバーが合流しただけなら、待っている味方軍の求めと補充の停止は続く",
 	function()
 		local sim = newSim({ { id = "A", x = 0, z = 0 } }, {
 			{ id = "M", gun = "Mikatagun", x = -300, z = 0, heisu = 40, present = 0 },
@@ -1077,18 +1297,20 @@ test(
 		for _ = 1, 5 do
 			simStep(sim)
 		end
-		expect(sim.requests.M).toBe(10)
+		expect(sim.requests.counts.M).toBe(2)
 		-- B が A の近くへ来て同じまとまりになる（メンバーは A から A・B に変わる）
 		table.insert(sim.members, { id = "B", x = 30, z = 0 })
-		local plan = simStep(sim)
+		local plan, stopped = simStep(sim)
 		expect(plan.groups[1].members).toEqual({ "A", "B" })
-		expect(sim.requests.M).toBe(10)
+		expect(sim.requests.counts.M).toBe(2)
+		expect(sim.requests.members.M).toEqual({ "A", "B" })
+		expect(stopped).toEqual({ true })
 		expect(presentOf(sim)).toEqual({ M = 0, T = 40 })
 	end
 )
 
 test(
-	"模擬: どんな場面でも、出ている総数は 40 以下で、視界の中の部隊の個体は判断で増えも減りもしない",
+	"模擬: どんな場面でも、出ている総数は 40 以下で、視界の中の部隊の個体は判断で増えも減りもせず、求めも持たない",
 	function()
 		local nextNumber = random(91)
 		for _ = 1, 60 do
@@ -1128,6 +1350,8 @@ test(
 				for _, entry in sim.butai do
 					if sim.seen[entry.id] then
 						expect(entry.present).toBe(before[entry.id])
+						-- 今出せない（周りが視界の中の）味方軍の部隊は、求めを持たない
+						expect(sim.requests.counts[entry.id]).toBe(nil)
 					end
 				end
 			end

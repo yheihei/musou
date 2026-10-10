@@ -18,10 +18,13 @@
 --   サーバー全体の上限は MaxKotai（両軍とパーティー全体の合計で 40 体。1人あたりではない）。上限を先に近いメンバーの
 --   まとまりごとに人数の比で分け（#85）、まとまりの取り分の MikataRate（25%）までを味方軍の個体にする（1人なら 10 体、
 --   離れた2人なら 5 体ずつ）。まとまりの枠は近くの部隊の兵数（味方軍はその上限まで）を超えず、余りはほかのまとまりへ回す
--- - 敵軍の目標は、まとまりの枠から味方軍が押さえている数（出ている数と返却の求めの和。味方軍の目標まで）を引いた残りで
---   決める。まだ出ていない味方軍の目標だけでは、同じまとまりの敵軍を減らさない（ほかのまとまりへ回す余りからは除く）
--- - 目標に足りない味方軍の部隊の周りに出し入れしてよい位置があれば、敵軍の個体に枠の返却を求める数を
---   MikataReclaimStep ずつ増やす（足りない数まで）。位置が無ければ増やさずに保つ。目標が 0 になったら（部隊が離れたら）、
+-- - 敵軍の目標は、まとまりの枠から味方軍が押さえている数（部隊ごとの max(出ている数, min(目標, 出ている数 + 返却の求め))
+--   の和）を引いた残りで決める。まだ出ていない味方軍の目標だけでは、同じまとまりの敵軍を減らさない（ほかのまとまりへ回す
+--   余りからは除く）。目標より多く視界の中に残る味方軍の個体は、同じまとまりの敵軍が返す（ほかのまとまりは減らさない）
+-- - 返却の求めは、今出せる味方軍の部隊だけが持つ（GeninKotai.updateRequests）。今出せる = 部隊の周りに出し入れしてよい位置が
+--   あり、まとまりの味方軍の予算（味方軍の目標 − まとまりの味方軍の出ている数）が 1 以上。今出せなくなったら求めを取り下げ、
+--   敵軍の補充も止めない。求めは足りない数とまとまりの味方軍の予算を超えず、MikataReclaimStep 増やすのは、まとまりの前の返却が
+--   済んでいるとき（敵軍の出ている数 ≤ 今の求めで決めた敵軍の目標）の1部隊だけ。目標が 0 になったら（部隊が離れたら）、
 --   部隊がいなくなったら取り消し、足りたら外す。メンバーが1人も重ならないまとまりへ移ったら 0 から積み直す。
 --   返却を求めている味方軍の部隊がいるまとまりでは、敵軍を補充しない
 -- - 目標より多い個体は、出撃メンバーから遠い個体から部隊へ戻す（視界の中の個体は戻さないので、返せない間は味方軍が待つ）。
@@ -42,9 +45,10 @@
 -- 窓口
 -- - SetSpawning で出し入れを止める・再開する。止めても出ている個体は残る（ClearEnemies で部隊へ戻す）。
 --   止めている間も、兵数より多い個体を戻すことと、いなくなった部隊の個体を消すことは続ける
--- - LogSpawn で、出した・戻した・見送った・倒れて兵数を減らしたことと、枠の返却を求めた・求めを取り消した（外した）・
---   まとまりの敵軍の補充を止めた（再開した）ことを出力に出す（返却の求めと補充の停止は変わったときだけ。
---   敵軍の個体を戻した・見送ったことは、まとまりごとに部隊ごとの数を添えて出す）
+-- - LogSpawn で、出した・戻した・見送った・倒れて兵数を減らしたことと、枠の返却を求めた・減らした・取り下げた（今出せない）・
+--   外した（足りた）・取り消した（目標 0・部隊がいない・出し入れを止めた）こと、まとまりの敵軍の補充を止めた・再開したことを
+--   出力に出す（返却の求めと補充の停止は変わったときだけ。メンバーが1人でも重なるまとまりは同じまとまりとみなす。
+--   敵軍の個体を戻した・見送ったことは、まとまりごとに部隊ごとの数を添えて出し、倒れかけの個体は見送った数に入れない）
 -- - DumpGeninKotai で両軍の部隊ごとの軍・兵数・個体の数・目標・まとまりの番号・返却の求めと軍ごとの個体の数、
 --   DumpKotaiHaibun でまとまりごとの取り分・枠・味方軍の上限と目標・押さえている数・敵軍の枠・補充の停止を出す
 
@@ -90,14 +94,12 @@ local enabled = true
 local logEnabled = false
 -- 最後に決めた枠と目標（窓口の確認用）
 local lastPlan: LastPlan? = nil
--- 味方軍の部隊 ID ごとの、個体を出すために敵軍の個体に枠の返却を求めている数（部隊 ID で持つので、まとまりの番号が
--- 判断ごとに変わっても引き継ぐ）
-local requests: { [string]: number } = {}
--- 味方軍の部隊 ID ごとの、求めたまとまりのメンバーの名前。メンバーが1人も重ならないまとまりへ部隊が移ったら、
--- 求めを 0 から積み直す（移った先のまとまりの敵軍に、前のまとまりで積んだ数を一度に返させない）
-local requestMembers: { [string]: { string } } = {}
--- 敵軍の補充を止めているまとまりの印（メンバーの名前をつないだもの。記録を変わったときだけ出すのに使う）
-local stoppedKeys: { [string]: boolean } = {}
+-- 味方軍の部隊 ID ごとの、個体を出すために敵軍の個体に枠の返却を求めている数と、求めたまとまりのメンバー
+-- （部隊 ID で持つので、まとまりの番号が判断ごとに変わっても引き継ぐ。GeninKotai.updateRequests）
+local requests: GeninKotai.Requests = { counts = {}, members = {} }
+-- 敵軍の補充を止めているまとまりのメンバー。記録を変わったときだけ出すのに使う（メンバーが1人でも重なるまとまりは、
+-- 同じまとまりが続いているとみなし、メンバーが倒れた・合流しただけでは「止めた」「再開した」を出さない）
+local stoppedGroups: { { string } } = {}
 
 local function log(message: string)
 	if logEnabled then
@@ -337,113 +339,132 @@ local function groupKey(group: GeninKotai.WakuGroup): string
 	return table.concat(group.members, "、")
 end
 
--- 返却の求めと補充の停止を忘れる（出し入れを止めたとき）
+-- 返却の求めと補充の停止を忘れる（出し入れを止めたとき、戦闘のフェーズが終わったとき）。
+-- 求めていた数と、補充を止めていたまとまりは、変わったこととして記録に出す
 local function forgetRequests(reason: string)
-	if next(requests) ~= nil then
+	if next(requests.counts) ~= nil then
 		log(`{reason}ので、枠の返却の求めをすべて取り消した`)
 	end
-	table.clear(requests)
-	table.clear(requestMembers)
-	table.clear(stoppedKeys)
+	for _, members in stoppedGroups do
+		log(`まとまり（{table.concat(members, "、")}）の敵軍の補充を再開した（{reason}）`)
+	end
+	requests = { counts = {}, members = {} }
+	stoppedGroups = {}
 end
 
--- 味方軍の部隊ごとの返却の求めを、計画 plan と部隊の様子 states（present は今出ている数）で更新する。
--- 目標に足りない部隊の周りに出し入れしてよい位置があれば MikataReclaimStep ずつ増やし（足りない数まで）、無ければ保つ。
--- 目標が 0 になった部隊といなくなった部隊の求めは取り消し、足りた部隊の求めは外す。メンバーが1人も重ならないまとまりへ
--- 移った部隊は 0 から積み直す（メンバーが倒れた・合流した・離れただけなら引き継ぐ）。
--- 増やした・取り消した・外した・積み直したときだけ記録を出す
+-- 味方軍の部隊ごとの返却の求めを、計画 plan と部隊の様子 states（present は今出ている数）で1回の判断ぶん進める
+-- （規則は GeninKotai.updateRequests）。出せる位置は materialize と同じ選び方で確かめる。
+-- 求めが変わったとき（増やした・減らした・取り下げた・外した・取り消した・積み直した）だけ記録を出す
 local function updateRequests(
 	states: { GeninKotai.ButaiState },
 	plan: GeninKotai.WakuPlan,
 	watchers: { KotaiHaibun.Member },
 	bounds: BasePart
 )
-	local nextRequests: { [string]: number } = {}
-	local nextMembers: { [string]: { string } } = {}
-	local listed: { [string]: boolean } = {}
+	local present: { [string]: number } = {}
+	local centers: { [string]: { x: number, z: number } } = {}
 	for _, state in states do
-		if state.gun == "Mikatagun" then
-			listed[state.id] = true
-			local index = plan.groupOf[state.id]
-			local group = if index then plan.groups[index] else nil
-			local key = if group then groupKey(group) else nil
-			local before: number? = requests[state.id]
-			local previous = requestMembers[state.id]
-			if before and group and previous and not GeninKotai.sharesMember(previous, group.members) then
+		present[state.id] = state.present
+		centers[state.id] = { x = state.x, z = state.z }
+	end
+	local nextRequests, notes = GeninKotai.updateRequests(plan, present, requests, function(id: string): boolean
+		return canMaterialize(centers[id], watchers, bounds)
+	end, Config.GeninKotai.MikataReclaimStep)
+
+	for id, note in notes do
+		local index = plan.groupOf[id]
+		local key = if index then groupKey(plan.groups[index]) else nil
+		local before, after = note.before, note.after
+		local movedFrom = note.movedFrom
+		if movedFrom then
+			log(
+				`部隊 {id} がまとまり（{table.concat(movedFrom, "、")}）から（{key or "なし"}）へ移ったので、`
+					.. `枠の返却の求め（{note.movedCount or 0} 体）を 0 から積み直す`
+			)
+		end
+		if after and (before == nil or after > before) then
+			log(
+				`部隊 {id} の個体を出すために、まとまり（{key or "なし"}）の敵軍の個体に枠の返却を求めた`
+					.. `（求め {after} 体、目標 {note.target}、出している数 {note.present}）`
+			)
+		elseif after and before and after < before then
+			log(
+				`部隊 {id} の枠の返却の求めを {after} 体に減らした`
+					.. `（目標 {note.target}、出している数 {note.present}、まとまりの味方軍の空き {note.budget}）`
+			)
+		elseif before and not after then
+			if note.target <= 0 then
 				log(
-					`部隊 {state.id} がまとまり（{table.concat(previous, "、")}）から（{key}）へ移ったので、`
-						.. `枠の返却の求め（{before} 体）を 0 から積み直す`
+					`部隊 {id} の目標が 0 になったので、枠の返却の求め（{before} 体）を取り消した`
 				)
-				before = nil
-			end
-			local target = plan.mikataTargets[state.id] or 0
-			-- 求めが足りない数に届いていれば、位置を確かめなくても求めは変わらない
-			local spawnable = target - state.present > (before or 0)
-				and canMaterialize({ x = state.x, z = state.z }, watchers, bounds)
-			local after =
-				GeninKotai.updateRequest(before, target, state.present, spawnable, Config.GeninKotai.MikataReclaimStep)
-			if after and group then
-				nextRequests[state.id] = after
-				nextMembers[state.id] = group.members
-			end
-			if after and (before == nil or after > before) then
-				local label = if key then `まとまり（{key}）の` else ""
+			elseif note.present >= note.target then
 				log(
-					`部隊 {state.id} の個体を出すために、{label}敵軍の個体に枠の返却を求めた`
-						.. `（求め {after} 体、目標 {target}、出している数 {state.present}）`
+					`部隊 {id} は目標まで個体を出したので、枠の返却の求めを外した`
+						.. `（目標 {note.target}、出している数 {note.present}）`
 				)
-			elseif before and not after then
-				if target <= 0 then
-					log(
-						`部隊 {state.id} の目標が 0 になったので、枠の返却の求め（{before} 体）を取り消した`
-					)
-				else
-					log(
-						`部隊 {state.id} は目標まで個体を出したので、枠の返却の求めを外した`
-							.. `（目標 {target}、出している数 {state.present}）`
-					)
-				end
+			elseif note.budget <= 0 then
+				log(
+					`部隊 {id} はまとまりの味方軍の枠に空きが無く、今は個体を出せないので、`
+						.. `枠の返却の求め（{before} 体）を取り下げた`
+				)
+			else
+				log(
+					`部隊 {id} は周りが視界の中で、今は個体を出せないので、枠の返却の求め（{before} 体）を取り下げた`
+				)
 			end
 		end
 	end
-	for id, request in requests do
-		if not listed[id] then
+	for id, request in requests.counts do
+		if notes[id] == nil then
 			log(
 				`味方軍の部隊 {id} がいなくなったので、枠の返却の求め（{request} 体）を取り消した`
 			)
 		end
 	end
 	requests = nextRequests
-	requestMembers = nextMembers
 end
 
--- まとまりごとの敵軍の補充の停止が変わったときだけ、記録を出す（印で覚えるので、まとまりの番号が変わっても出し続けない）
+-- まとまりごとの敵軍の補充の停止が変わったときだけ、記録を出す。前の判断で止めていたまとまりとメンバーが1人でも重なる
+-- まとまりは、同じまとまりが続いているとみなす（メンバーが倒れた・合流しただけでは出さない）
 local function logStopped(plan: GeninKotai.WakuPlan, stopped: { boolean })
-	local nextKeys: { [string]: boolean } = {}
+	local current: { { string } } = {}
 	for index, group in plan.groups do
 		if stopped[index] then
-			local key = groupKey(group)
-			nextKeys[key] = true
-			if not stoppedKeys[key] then
+			table.insert(current, group.members)
+			local continued = false
+			for _, members in stoppedGroups do
+				if GeninKotai.sharesMember(members, group.members) then
+					continued = true
+					break
+				end
+			end
+			if not continued then
 				local ids = {}
 				for _, id in group.mikataButai do
-					if (requests[id] or 0) > 0 then
+					if (requests.counts[id] or 0) > 0 then
 						table.insert(ids, id)
 					end
 				end
 				local names = table.concat(ids, "、")
 				log(
-					`まとまり（{key}）の敵軍の補充を止めた（味方軍の部隊 {names} が枠の返却を求めている）`
+					`まとまり（{groupKey(group)}）の敵軍の補充を止めた（味方軍の部隊 {names} が枠の返却を求めている）`
 				)
 			end
 		end
 	end
-	for key in stoppedKeys do
-		if not nextKeys[key] then
-			log(`まとまり（{key}）の敵軍の補充を再開した`)
+	for _, members in stoppedGroups do
+		local continued = false
+		for _, now in current do
+			if GeninKotai.sharesMember(members, now) then
+				continued = true
+				break
+			end
+		end
+		if not continued then
+			log(`まとまり（{table.concat(members, "、")}）の敵軍の補充を再開した`)
 		end
 	end
-	stoppedKeys = nextKeys
+	stoppedGroups = current
 end
 
 -- 目標より多い個体を部隊へ戻す。視界の外か、戦場を見ているメンバー全員から PopDistance より遠い個体だけを戻す（force なし）。
@@ -496,7 +517,11 @@ local function returnExcess(
 					end
 				end
 			end
-			local picked = GeninKotai.pickReturns(candidates, excess, function(candidate): boolean
+			-- 倒れかけ（体力 0 で、倒れたことを知らせる前）の個体は数に入っているが、すぐに表から外れるので戻さない。
+			-- その分を戻す数から引く（見送った数にも混ぜない）
+			local dying = present - #candidates
+			local count = math.max(excess - dying, 0)
+			local picked = GeninKotai.pickReturns(candidates, count, function(candidate): boolean
 				return popSafe(candidate.item.position, watchers)
 			end)
 			local removedOf: { [string]: number } = {}
@@ -515,9 +540,9 @@ local function returnExcess(
 			if removed > 0 then
 				local parts = {}
 				for _, id in group.tekiButai do
-					local count = removedOf[id]
-					if count then
-						table.insert(parts, `{id} から {count} 体`)
+					local fromButai = removedOf[id]
+					if fromButai then
+						table.insert(parts, `{id} から {fromButai} 体`)
 					end
 				end
 				log(
@@ -525,9 +550,9 @@ local function returnExcess(
 						.. `（部隊 {table.concat(parts, "、")}。敵軍の枠 {quota}）`
 				)
 			end
-			if removed < excess then
+			if removed < count then
 				log(
-					`まとまり（{key}）の敵軍の個体 {excess - removed} 体は視界の中なので、戻すのを見送った`
+					`まとまり（{key}）の敵軍の個体 {count - removed} 体は視界の中なので、戻すのを見送った`
 						.. `（敵軍の枠 {quota}）`
 				)
 			end
@@ -603,8 +628,8 @@ local function tick()
 	local plan = GeninKotai.planWaku(states, points, Config.GeninKotai.MaxKotai, Config.GeninKotai.MikataRate)
 	-- 味方軍の部隊の返却の求めを増やし（減らし）てから、押さえている数で敵軍の目標を決める
 	updateRequests(states, plan, watchers, bounds)
-	local teki = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, present, requests))
-	local stopped = GeninKotai.hojuStopped(plan, requests)
+	local teki = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, present, requests.counts))
+	local stopped = GeninKotai.hojuStopped(plan, requests.counts)
 	logStopped(plan, stopped)
 	lastPlan = { plan = plan, teki = teki, stopped = stopped }
 
@@ -618,7 +643,7 @@ local function tick()
 		after[butai.id] = prune(butai.id)
 	end
 	local budget = math.min(Config.GeninKotai.MaxPerTick, Config.GeninKotai.MaxKotai - totalCount())
-	GeninKotai.fill(plan, teki, after, requests, budget, function(id: string, want: number): number
+	GeninKotai.fill(plan, teki, after, requests.counts, budget, function(id: string, want: number): number
 		local gun = gunOf[id]
 		local spawned, seen = materialize(id, gun, positions[id], want, watchers, bounds, kotaiColor(gun))
 		if spawned > 0 then
@@ -680,7 +705,7 @@ local function registerDebugCommands()
 					target = target,
 					distance = if distance then math.round(distance) else nil,
 					group = if last then last.plan.groupOf[butai.id] else nil,
-					request = if butai.gun == "Mikatagun" then requests[butai.id] or 0 else nil,
+					request = if butai.gun == "Mikatagun" then requests.counts[butai.id] or 0 else nil,
 					fukuhei = butai.fukuhei,
 				})
 			end
@@ -722,7 +747,7 @@ local function registerDebugCommands()
 				local mikataKotai, tekiKotai, request = 0, 0, 0
 				for _, id in group.mikataButai do
 					mikataKotai += prune(id)
-					request += requests[id] or 0
+					request += requests.counts[id] or 0
 				end
 				for _, id in group.tekiButai do
 					tekiKotai += prune(id)
@@ -797,9 +822,7 @@ function GeninKotaiService.start()
 		if next ~= "Battle" then
 			table.clear(kotai)
 			table.clear(kotaiGun)
-			table.clear(requests)
-			table.clear(requestMembers)
-			table.clear(stoppedKeys)
+			forgetRequests("戦闘のフェーズが終わった")
 			lastPlan = nil
 		end
 	end)
