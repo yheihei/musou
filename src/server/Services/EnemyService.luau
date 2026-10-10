@@ -1,9 +1,9 @@
 --!strict
 -- 両軍の下忍の個体と、窓口で出した敵（下忍と上忍）の体・動き・被ダメージ。体はサーバーの Humanoid のモデル
--- （#15 の案A。描き方は #15 で決める）。
+-- （#15 の案A。描き方は #15 で決める）で、使い終えたら壊さずにプールへ返して使い回す（下の「プール」）。
 -- 体を出すのは、実体化圏の下忍の個体（GeninKotaiService が両軍の部隊から出す。spawnKotai）と、
--- 窓口で出した敵（SpawnEnemy・SpawnEnemies）。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）体を片付ける。
--- ここは Humanoid に依存する部分（体の生成と消去、歩き、攻撃を受けた反応、倒れる）だけを持ち、部隊から何人出すか・
+-- 窓口で出した敵（SpawnEnemy・SpawnEnemies）。戦闘のフェーズが終わったら（決着・ロビーへの帰還・全員の離脱）体をプールへ返す。
+-- ここは Humanoid に依存する部分（体の生成とプール、歩き、攻撃を受けた反応、倒れる）だけを持ち、部隊から何人出すか・
 -- 兵数の数え方は GeninKotaiService と ReplicatedStorage.Shared.GeninKotai が持つ。描き方が変わったら、ここを差し替える。
 --
 -- 軍
@@ -26,6 +26,12 @@
 -- - プレイヤーが倒した体は、撃破数を足し、gekiha で種類・軍（倒れた体の軍）・倒れた位置・倒したプレイヤー・部隊 ID を知らせる
 -- - 部隊の下忍の個体が倒れたら（倒した人によらず）、kotaiDefeated で知らせる（GeninKotaiService が部隊の兵数を1減らす）
 -- - 個体を消す（remove。部隊へ戻す）ときは、倒れたことにしない（撃破数・兵数・知らせは動かない）
+-- - 体は Humanoid の Dead の状態にしない（Dead になった Humanoid は、体力を戻しても生き返らないことがあり、使い回せない）。
+--   体力が 0 になったことを HealthChanged で受けて倒れたときの処理を1回だけ走らせ、Humanoid を自分で力を出さない状態
+--   （Physics）にしてその場に倒す（Dead のときと同じ倒れ方）。飛んでいる・倒れている体は、Hanno が倒れたまま残す
+-- - 倒れた体は CorpseLifetime 秒だけ見せてから、プールへ返す
+-- - 奈落に落ちた体は倒れたことにして、すぐにプールへ返す（部品が消えていれば壊す）。飛んでいる体は Hanno が見つけ、
+--   歩いて落ちた体は、考える間隔ごとに HumanoidRootPart が workspace から外れた体を探して見つける（sweepFallen）
 --
 -- 攻撃トークン（計算は KogekiToken、数値は Config.luau の KogekiToken 節）
 -- - 1人のプレイヤーを同時に攻撃できる敵軍の下忍は、そのプレイヤーの攻撃トークンを持つ下忍だけ（PerPlayer 体まで）
@@ -43,6 +49,24 @@
 -- 毒（酉花の奥義「毒手裏剣」。数値は Config.luau の Poison 節）
 -- - 毒の間は Interval 秒ごとに Damage を与える。とどめは毒を付けたプレイヤーの撃破に数える
 -- - 毒の間にもう一度付けると、残りの時間を Duration に戻す。毒の間は緑の煙（Fire）の仮の見た目を出す
+--
+-- プール（#83。数え方は ReplicatedStorage.Shared.KotaiPool、数値は Config.luau の KotaiPool 節）
+-- - 使い終えた体は、ひな形（種類・軍・色。部隊の下忍の個体は軍のクランの色）ごとのプールへ返し、次に出すときに取り出す。
+--   返すのは、部隊へ戻したとき（remove・ClearEnemies）、倒れた姿を見せ終えたとき、戦闘のフェーズが終わって片付けるとき。
+--   プールが MaxIdle まで埋まっていれば、返した体は壊す
+-- - 取り出した体は、新しく作った体と同じ状態に戻してから出す（名前・体力・速さ・頭上の表示・Humanoid の状態・反応・毒の煙・
+--   ハイライト・衝突のグループ・固定・物理の持ち主・速度。部隊の中の自分の位置は出すたびに決め直す）。
+--   攻撃トークンの記録は、返すときに体の名前ごと消す（名前は出すたびに振り直す）
+-- - 遅れて届く攻撃（飛び道具）が、届くまでに使い回された体に当たらないよう、体を出した回の印を useOf で引ける
+-- - プールの体は workspace の KotaiPool フォルダに、区画とロビーから遠い地面の下（FallenPartsDestroyHeight より上）で
+--   固定して置く。workspace の外（nil や ServerStorage）に置くと、取り出すたびに体全体をクライアントへ複製し直すため
+--   （ADR 0003 の通信量）。StreamingEnabled の場所なので、プールに置いている間だけ体の ModelStreamingMode を
+--   Persistent にして、遠くに置いてもクライアントの読み込みから外さない（外れると、取り出したときに体全体を送り直す）。
+--   出ている間は、新しく作った体と同じ扱い（ひな形の ModelStreamingMode）に戻す
+-- - プールの体は敵の表（enemies）に入れないので、攻撃判定・狙い・攻撃トークン・窓口の対象にならない。光線（Hanno）からも外す
+-- - 出撃したら、そのステージの両軍の体を先読みの数（Prewarm）まで作ってプールに置く。1フレームに PrewarmPerFrame 体ずつ作る。
+--   ひな形は起動時に作ってあるので、複製するだけで待たない。そのステージで使わないひな形のプールの体は壊す
+-- - 窓口の DumpGeninPool で、ひな形ごとの作った数・取り出した数・返した数・壊した数・今プールにある数を確かめる
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -57,6 +81,7 @@ local Ground = require(ReplicatedStorage.Shared.Ground)
 local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
+local KotaiPool = require(ReplicatedStorage.Shared.KotaiPool)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
@@ -111,6 +136,27 @@ type Enemy = {
 	lastHitSilent: boolean,
 }
 
+-- 種類・軍・色ごとの体のひな形と、そのひな形の体のプール
+type Template = {
+	key: string,
+	kind: string,
+	gun: Gun.Gun,
+	color: Color3,
+	model: Model,
+	-- 体の衝突のグループ
+	group: string,
+	pool: KotaiPool.Pool<Model>,
+}
+
+-- 作った体。壊すまで、プール（KotaiPool フォルダ）と、出ている間（enemies と corpses）を行き来する
+type Rig = {
+	template: Template,
+	humanoid: Humanoid,
+	root: BasePart,
+	-- 出した回数（窓口の確認用。2 以上なら使い回した体）
+	uses: number,
+}
+
 -- 毒の中身
 type Poison = {
 	-- 毒を付けたプレイヤー
@@ -145,13 +191,26 @@ local kotaiDefeatedEvent = Instance.new("BindableEvent")
 EnemyService.kotaiDefeated = kotaiDefeatedEvent.Event
 
 local enemiesFolder: Folder
--- 種類・軍・色ごとの体のひな形。色を渡さなければ ENEMY_COLORS の色
-local templates: { [string]: Model } = {}
+-- プールの体を置くフォルダと位置（start で決める）
+local poolFolder: Folder
+local parkCFrame = CFrame.identity
+-- 種類・軍・色ごとの体のひな形とプール。色を渡さなければ ENEMY_COLORS の色
+local templates: { [string]: Template } = {}
+-- 作って、まだ壊していない体
+local rigs: { [Model]: Rig } = {}
 local radii: { [string]: number } = {}
 -- 部隊 ID から部隊の位置を引く関数（GeninKotaiService が登録する）
 local homeProvider: ((butaiId: string) -> Vector3?)? = nil
 local enemies: { [Model]: Enemy } = {}
+-- 倒れた姿を見せている体（倒れたときの処理を終え、プールへ返すのを待つ）
+local corpses: { [Model]: Enemy } = {}
 local aliveCount = 0
+-- 先読み。最後に先読みしたステージ ID、ひな形ごとの先読みの数、作っている途中か（窓口の確認用）と、
+-- 出撃し直したら前の先読みをやめるための番号
+local prewarmStage: string? = nil
+local prewarmTargets: { [Template]: number } = {}
+local prewarming = false
+local prewarmRun = 0
 -- 敵に振る番号。モデルの名前を種類と番号（Genin1、Jonin2…）にする
 local nextNumber = 1
 -- 体が動くか（敵軍の体はプレイヤーに近づいて攻撃し、部隊の下忍の個体は部隊について歩く）。
@@ -178,6 +237,23 @@ local LIE_HEIGHT = 1
 local POISON_NAME = "Doku"
 local POISON_COLOR = Color3.fromRGB(110, 210, 70)
 local POISON_SECONDARY_COLOR = Color3.fromRGB(40, 110, 30)
+-- プールの体を置く水平の位置（区画とロビーから遠い位置）と、FallenPartsDestroyHeight から上げる高さ（スタッド）。
+-- 地面の下の、体が消える高さより上に置く
+local POOL_X = -20000
+local POOL_Z = -20000
+local POOL_LIFT = 100
+
+-- 種類の能力値と頭上の表示を Humanoid に当てる（ひな形を作るときと、体を出すとき）
+local function applyDef(humanoid: Humanoid, kind: string, def: EnemyDef)
+	humanoid.DisplayName = def.DisplayName
+	humanoid.MaxHealth = def.MaxHealth
+	humanoid.Health = def.MaxHealth
+	humanoid.WalkSpeed = def.WalkSpeed
+	-- 下忍は頭上表示を出さず、上忍だけ名前と体力バーを出す
+	humanoid.DisplayDistanceType = if kind == "Jonin"
+		then Enum.HumanoidDisplayDistanceType.Viewer
+		else Enum.HumanoidDisplayDistanceType.None
+end
 
 local function buildTemplate(kind: string, def: EnemyDef, color: Color3): Model
 	local description = Instance.new("HumanoidDescription")
@@ -196,31 +272,35 @@ local function buildTemplate(kind: string, def: EnemyDef, color: Color3): Model
 	model.Name = kind
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
-	humanoid.DisplayName = def.DisplayName
-	humanoid.MaxHealth = def.MaxHealth
-	humanoid.Health = def.MaxHealth
-	humanoid.WalkSpeed = def.WalkSpeed
+	applyDef(humanoid, kind, def)
 	humanoid.BreakJointsOnDeath = false
-	-- 下忍は頭上表示を出さず、上忍だけ名前と体力バーを出す
-	humanoid.DisplayDistanceType = if kind == "Jonin"
-		then Enum.HumanoidDisplayDistanceType.Viewer
-		else Enum.HumanoidDisplayDistanceType.None
 
 	return model
 end
 
--- 種類・軍・色の体のひな形。初めて使う組み合わせなら作って覚える
-local function templateFor(kind: string, gun: Gun.Gun, color: Color3?): Model
+-- 種類・軍・色の体のひな形。初めて使う組み合わせなら、ひな形と空のプールを作って覚える
+local function templateFor(kind: string, gun: Gun.Gun, color: Color3?): Template
 	local paint = color or ENEMY_COLORS[kind]
 	local key = `{kind}/{gun}/{paint:ToHex()}`
-	local template = templates[key]
-	if not template then
-		template = buildTemplate(kind, ENEMY_DEFS[kind], paint)
-		-- 体はプレイヤーにもほかの体にもぶつからない。軍のグループにするのは、秘計の落石の岩が相手の軍の体だけを止めるため。
-		-- 複製した体もこのグループになる
-		CollisionGroups.apply(template, CollisionGroups.kotaiGroupOf(gun))
-		templates[key] = template
+	local existing = templates[key]
+	if existing then
+		return existing
 	end
+	local model = buildTemplate(kind, ENEMY_DEFS[kind], paint)
+	-- 体はプレイヤーにもほかの体にもぶつからない。軍のグループにするのは、秘計の落石の岩が相手の軍の体だけを止めるため。
+	-- 複製した体もこのグループになる
+	local group = CollisionGroups.kotaiGroupOf(gun)
+	CollisionGroups.apply(model, group)
+	local template: Template = {
+		key = key,
+		kind = kind,
+		gun = gun,
+		color = paint,
+		model = model,
+		group = group,
+		pool = KotaiPool.new(Config.KotaiPool.MaxIdle[gun]),
+	}
+	templates[key] = template
 	return template
 end
 
@@ -459,9 +539,61 @@ local function think(now: number)
 	end
 end
 
+-- 体をプールのフォルダに、戦場から離れた位置で固定して置く。Humanoid は自分で力を出さない状態（Physics）にして、
+-- 置いている間は歩かせず、状態も変えさせない
+local function park(model: Model)
+	local rig = rigs[model] :: Rig
+	-- プールの間は、遠くに置いてもクライアントの読み込みから外さない（外れると、取り出したときに体全体を送り直す）。
+	-- 遠くへ移す前に切り替える
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	rig.root.Anchored = true
+	model:PivotTo(parkCFrame)
+	model.Parent = poolFolder
+	rig.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+end
+
+-- 体が壊されていないか（奈落の下で部品が消えた体や、ほかで壊された体は false）。
+-- 作ったばかりで親の無い体は true
+local function isIntact(model: Model, rig: Rig): boolean
+	return rig.root.Parent == model and rig.humanoid.Parent == model
+end
+
+-- 体を壊し、作った体の表から外す
+local function destroyBody(model: Model)
+	rigs[model] = nil
+	model:Destroy()
+end
+
+-- 使い終えた体をプールへ返す。プールが上限（MaxIdle）まで埋まっていれば壊す。
+-- 出ている間に壊された体（部品が消えた体）は、壊した数に数えて表から外す
+local function putBack(model: Model)
+	local rig = rigs[model]
+	if not rig then
+		return
+	end
+	if not isIntact(model, rig) then
+		rigs[model] = nil
+		KotaiPool.discard(rig.template.pool)
+		model:Destroy()
+		return
+	end
+	if KotaiPool.put(rig.template.pool, model) then
+		park(model)
+	else
+		destroyBody(model)
+	end
+end
+
+-- 出していた体を使い終える。反応（Hanno）を止め、毒の煙を消してから、プールへ返す
+local function recycle(enemy: Enemy)
+	Hanno.forget(enemy.body)
+	removePoisonLook(enemy)
+	putBack(enemy.model)
+end
+
 local function onEnemyDied(enemy: Enemy)
-	-- 片付けで先に表から外した敵は数え直さない
-	if enemies[enemy.model] == nil then
+	-- 片付けで先に表から外した敵と、倒れたときの処理を終えた敵は数え直さない
+	if enemies[enemy.model] ~= enemy then
 		return
 	end
 	enemies[enemy.model] = nil
@@ -492,35 +624,139 @@ local function onEnemyDied(enemy: Enemy)
 		kotaiDefeatedEvent:Fire(enemy.model, enemy.butai, enemy.gun, position, living, enemy.lastHitSilent)
 	end
 
+	-- Humanoid を自分で力を出さない状態にして、その場に倒す（Dead の状態にしない体を、Dead のときと同じように倒す）
+	local rig = rigs[enemy.model]
+	if rig and isIntact(enemy.model, rig) then
+		enemy.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	end
+	-- 倒れた姿を CorpseLifetime 秒だけ見せてから、プールへ返す（片付けや奈落で先に返していたら何もしない）
+	corpses[enemy.model] = enemy
 	task.delay(Config.EnemyAI.CorpseLifetime, function()
-		enemy.model:Destroy()
+		if corpses[enemy.model] == enemy then
+			corpses[enemy.model] = nil
+			recycle(enemy)
+		end
 	end)
 end
 
--- (x, z) の地面の上に、軍 gun の体を1体出す。地面が無ければ出さずに nil を返す。
--- butai を渡すと部隊の下忍の個体にする（戦う相手がいなければ部隊の位置の周りへ戻る）。color は体の色
-local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, butai: string?, color: Color3?): Model?
-	local def = ENEMY_DEFS[kind]
-	local paint = color or ENEMY_COLORS[kind]
-	local model = templateFor(kind, gun, paint):Clone()
-	model.Name = `{kind}{nextNumber}`
-	nextNumber += 1
+-- 奈落に落ちた体（飛んでいる体は Hanno が、歩いて落ちた体は sweepFallen が呼ぶ）。倒れたことにして
+-- （倒れたときの処理は1回だけ）、倒れた姿を見せずにすぐプールへ返す（部品が消えていれば壊す）
+local function onFell(enemy: Enemy)
+	if enemies[enemy.model] == enemy then
+		local rig = rigs[enemy.model]
+		if rig and isIntact(enemy.model, rig) then
+			enemy.humanoid.Health = 0
+		end
+		onEnemyDied(enemy)
+	end
+	if corpses[enemy.model] == enemy then
+		corpses[enemy.model] = nil
+		recycle(enemy)
+	end
+end
+
+-- ひな形から体を1つ作る（プールが空のときと、先読み）。体力が 0 になっても Dead の状態にしない
+local function createBody(template: Template): Model
+	local model = template.model:Clone()
 	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
 	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+	-- Dead の状態にしないので Died は来ない。倒れたことは体力で見る（出ている間、つまり敵の表にある間だけ受ける）。
+	-- 知らせが遅れて届いても使い回した後の体を倒さないよう、知らせの値でなく今の体力を見る
+	humanoid.HealthChanged:Connect(function()
+		local enemy = enemies[model]
+		if enemy and humanoid.Health <= 0 then
+			onEnemyDied(enemy)
+		end
+	end)
+	rigs[model] = { template = template, humanoid = humanoid, root = root, uses = 0 }
+	return model
+end
 
-	if not Ground.placeCharacter(model, x, z) then
+-- ひな形のプールから体を1つ取り出す（無ければ作る）。2つ目の返り値は、プールから取り出したか。
+-- プールに置いている間に壊された体（部品が消えた体）は使わずに、壊した数に数えて次の体を取り出す
+local function takeBody(template: Template): (Model, boolean)
+	local function make(): Model
+		return createBody(template)
+	end
+	local model, reused = KotaiPool.take(template.pool, make)
+	while reused and not isIntact(model, rigs[model] :: Rig) do
+		rigs[model] = nil
+		KotaiPool.discard(template.pool)
 		model:Destroy()
+		model, reused = KotaiPool.take(template.pool, make)
+	end
+	return model, reused
+end
+
+-- 使い回した体から、前に出ていたときに付けたもの（攻撃を当てたときのハイライト・毒の煙）を外し、
+-- 部品の衝突のグループをひな形のグループにそろえる
+local function cleanBody(model: Model, group: string)
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			if descendant.CollisionGroup ~= group then
+				descendant.CollisionGroup = group
+			end
+		elseif descendant:IsA("Highlight") or (descendant:IsA("Fire") and descendant.Name == POISON_NAME) then
+			descendant:Destroy()
+		end
+	end
+end
+
+-- (x, z) の地面の上に、軍 gun の体を1体出す。体はひな形のプールから取り出し、無ければ作る。
+-- 地面が無ければ出さずに nil を返す。
+-- butai を渡すと部隊の下忍の個体にする（戦う相手がいなければ部隊の位置の周りへ戻る）。color は体の色
+local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, butai: string?, color: Color3?): Model?
+	-- 地面が無ければ、体を取り出さない
+	if not Ground.heightAt(x, z) then
 		return nil
 	end
+	local def = ENEMY_DEFS[kind]
+	local template = templateFor(kind, gun, color)
+	local model, reused = takeBody(template)
+	local rig = rigs[model] :: Rig
+	local humanoid, root = rig.humanoid, rig.root
+	if not Ground.placeCharacter(model, x, z) then
+		putBack(model)
+		return nil
+	end
+	model.Name = `{kind}{nextNumber}`
+	nextNumber += 1
+
+	-- 新しく作った体と同じ状態にする（使い回した体に、前に出ていたときの状態を残さない）
+	applyDef(humanoid, kind, def)
+	if reused then
+		cleanBody(model, template.group)
+	end
 	model.Parent = enemiesFolder
+	-- 出ている間の読み込みの扱いは、新しく作った体と同じに戻す（Persistent はプールの間だけ）
+	model.ModelStreamingMode = template.model.ModelStreamingMode
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+	root.Anchored = false
 	-- ノックバックの挙動を安定させるため物理はサーバーが持つ
-	root:SetNetworkOwner(nil)
+	pcall(function()
+		root:SetNetworkOwner(nil)
+	end)
+	-- 倒れたときや吹き飛んだときの速さを残さない
+	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+	if reused then
+		-- プールでは自分で力を出さない状態（Physics）にしてあるので、固定を外してから立たせる
+		humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+	-- 出すたびに変わる印（useOf）
+	rig.uses += 1
 
 	local reaction = Config.EnemyReaction
+	local body = Hanno.newBody(model, humanoid, root, {
+		lieHeight = LIE_HEIGHT * def.Scale,
+		scale = if kind == "Jonin" then reaction.JoninScale else 1,
+		flinchScale = if kind == "Jonin" then reaction.JoninFlinchScale else 1,
+	})
 	local enemy: Enemy = {
 		kind = kind,
 		gun = gun,
-		color = paint,
+		color = template.color,
 		model = model,
 		humanoid = humanoid,
 		root = root,
@@ -529,11 +765,7 @@ local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, buta
 		spin = math.random() * math.pi * 2,
 		lastAttack = 0,
 		lastHitBy = nil,
-		body = Hanno.newBody(model, humanoid, root, {
-			lieHeight = LIE_HEIGHT * def.Scale,
-			scale = if kind == "Jonin" then reaction.JoninScale else 1,
-			flinchScale = if kind == "Jonin" then reaction.JoninFlinchScale else 1,
-		}),
+		body = body,
 		hits = 0,
 		firstHitAt = nil,
 		poison = nil,
@@ -541,6 +773,14 @@ local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, buta
 		offset = Vector3.zero,
 		lastHitSilent = false,
 	}
+	-- 奈落に落ちたら、倒れたことにしてプールへ返す
+	body.onFell = function()
+		onFell(enemy)
+	end
+	if reused then
+		-- 前に出ていたときの歩く先を消す
+		Hanno.stopWalking(body)
+	end
 	if butai then
 		-- 部隊の位置の周り（GeninKotai 節の Spread の円の中）に、戦う相手がいないときに戻る自分の位置を決める
 		local angle = math.random() * math.pi * 2
@@ -549,23 +789,18 @@ local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, buta
 	end
 	enemies[model] = enemy
 	aliveCount += 1
-
-	humanoid.Died:Once(function()
-		onEnemyDied(enemy)
-	end)
 	return model
 end
 
--- 敵を1体消す（部隊の下忍の個体を部隊へ戻すとき）。倒れたことにしない（撃破数・兵数・知らせは動かない）
+-- 敵を1体消す（部隊の下忍の個体を部隊へ戻すとき）。倒れたことにしない（撃破数・兵数・知らせは動かない）。体はプールへ返す
 local function removeEnemy(enemy: Enemy)
-	if enemies[enemy.model] == nil then
+	if enemies[enemy.model] ~= enemy then
 		return
 	end
 	enemies[enemy.model] = nil
 	aliveCount -= 1
 	KogekiToken.forget(tokens, enemy.model.Name)
-	Hanno.forget(enemy.body)
-	enemy.model:Destroy()
+	recycle(enemy)
 end
 
 -- 軍 gun の部隊の下忍の個体を1体、(x, z) の地面の上に出す。color は体の色（クランの色）。地面が無ければ出さずに nil
@@ -593,6 +828,17 @@ end
 -- 体力が 0 になってから倒れたことを知らせるまでの間も true（部隊の個体の数と兵数をずらさないため）
 function EnemyService.isPresent(model: Model): boolean
 	return enemies[model] ~= nil
+end
+
+-- 体を出した回の印（体を出すたびに変わる）。出ていない体と、ここの体でないもの（プレイヤー、上忍と首領の個体）は nil。
+-- 遅れて届く攻撃（飛び道具）は、判定を出したときの印を覚えておき、届いたときに印が変わっていたら当てない
+-- （届くまでに体を部隊へ戻して、使い回した体を別の場所に出し直していることがある）
+function EnemyService.useOf(ref: Instance): number?
+	if not ref:IsA("Model") then
+		return nil
+	end
+	local rig = rigs[ref]
+	return if rig and enemies[ref] then rig.uses else nil
 end
 
 -- 生きている敵の位置。いなければ nil
@@ -673,41 +919,121 @@ function EnemyService.getTargets(gun: Gun.Gun): { HitShape.Target<Model> }
 	return targets
 end
 
--- 敵をすべて消す。倒れて消える前の敵も消し、撃破数には数えない
+-- Hanno を通らずに奈落へ落ちた体（歩いて区画の端から落ちた体など）を、奈落に落ちたときと同じ扱いにする。
+-- 体が消える高さ（FallenPartsDestroyHeight）の下でエンジンに workspace から外された体（HumanoidRootPart が
+-- workspace に無い体）と、部品が消えた体を見る
+local function sweepFallen()
+	for model, enemy in table.clone(enemies) do
+		local rig = rigs[model]
+		if not rig or not isIntact(model, rig) or not rig.root:IsDescendantOf(workspace) then
+			onFell(enemy)
+		end
+	end
+end
+
+-- 出ている敵をすべて片付けて、体をプールへ返す。倒れた姿を見せている体も返し、撃破数には数えない
 local function removeAll()
-	for model, enemy in enemies do
-		Hanno.forget(enemy.body)
-		model:Destroy()
+	for _, enemy in enemies do
+		recycle(enemy)
 	end
 	table.clear(enemies)
+	for _, enemy in corpses do
+		recycle(enemy)
+	end
+	table.clear(corpses)
 	aliveCount = 0
+	-- 表に無いものがフォルダに残っていれば消す
 	enemiesFolder:ClearAllChildren()
 	nextNumber = 1
 	KogekiToken.reset(tokens)
 	table.clear(lastCandidates)
 end
 
+-- 出撃したステージの両軍の下忍の個体の体を、先読みの数（Prewarm）まで作ってプールに置く。
+-- まとめて作って負荷の山を作らないよう、1フレームに PrewarmPerFrame 体ずつ作る。ひな形は起動時に作ってあるので、
+-- 複製するだけで待たない。出し入れの判断が先に体を使っても、作ってまだ壊していない体を数えて足りない分だけ作る。
+-- そのステージで使わないひな形（ほかのクランの色や窓口で出した敵）のプールの体は壊す
+local function prewarm(stageId: string)
+	local stage = Stages.get(stageId)
+	if not stage then
+		return
+	end
+	prewarmRun += 1
+	local run = prewarmRun
+	prewarmStage = stageId
+	local targets: { [Template]: number } = {}
+	for _, gun in Gun.list do
+		local template = templateFor("Genin", gun, Colors.Clan[Stages.clanOf(stage, gun)])
+		targets[template] = Config.KotaiPool.Prewarm[gun]
+	end
+	prewarmTargets = targets
+	for _, template in templates do
+		if not targets[template] then
+			for _, model in KotaiPool.drain(template.pool) do
+				destroyBody(model)
+			end
+		end
+	end
+	prewarming = true
+	task.spawn(function()
+		local ok, err = pcall(function()
+			-- 出撃し直したら（run が変わったら）、前のステージの先読みはやめる
+			while run == prewarmRun do
+				local made = 0
+				for template, target in targets do
+					local budget = Config.KotaiPool.PrewarmPerFrame - made
+					made += KotaiPool.fill(template.pool, target, budget, function()
+						local model = createBody(template)
+						park(model)
+						return model
+					end)
+				end
+				if made == 0 then
+					break
+				end
+				task.wait()
+			end
+		end)
+		if not ok then
+			warn(`EnemyService: 下忍の個体の体を先に作れなかった: {err}`)
+		end
+		if run == prewarmRun then
+			prewarming = false
+		end
+	end)
+end
+
 function EnemyService.start()
 	enemiesFolder = Instance.new("Folder")
 	enemiesFolder.Name = "Enemies"
 	enemiesFolder.Parent = workspace
-	-- 飛んでいる敵の光線を、ほかの敵に当てない
+	-- 使い終えた体を置くフォルダ。区画とロビーから遠い地面の下で、体が消える高さ（FallenPartsDestroyHeight）より上に置く
+	poolFolder = Instance.new("Folder")
+	poolFolder.Name = "KotaiPool"
+	poolFolder.Parent = workspace
+	parkCFrame = CFrame.new(POOL_X, workspace.FallenPartsDestroyHeight + POOL_LIFT, POOL_Z)
+	-- 飛んでいる敵の光線を、ほかの敵とプールの体に当てない
 	Hanno.excludeFolder(enemiesFolder)
+	Hanno.excludeFolder(poolFolder)
 
-	-- 戦闘のフェーズが終わったら片付ける
+	-- 戦闘のフェーズが終わったら片付ける（体はプールへ返す）
 	StageService.phaseChanged:Connect(function(next: StagePhase.Phase)
 		if next ~= "Battle" then
 			removeAll()
 		end
 	end)
+	-- 出撃したら、そのステージの両軍の体を先に作っておく（開始のイベントシーンの間に作り終える）
+	StageService.started:Connect(function(info: StageService.StartInfo)
+		prewarm(info.stageId)
+	end)
 
 	for kind in ENEMY_DEFS do
 		-- 腕まで含めた横幅の半分を半径にする（空間クエリで体のパーツに当てていたときと同じ広さ。軍と色によらない）
-		local size = templateFor(kind, AITE_GUN):GetExtentsSize()
+		local size = templateFor(kind, AITE_GUN).model:GetExtentsSize()
 		radii[kind] = math.max(size.X, size.Z) / 2
 	end
-	-- 部隊の下忍の個体の体（ステージごとの両軍のクランの色）を先に作る
-	-- （体を作る処理は待つことがあり、出し入れの判断の途中で待たないように）
+	-- 部隊の下忍の個体の体のひな形（ステージごとの両軍のクランの色）を先に作る
+	-- （ひな形を作る処理は待つことがあり、出し入れの判断と先読みの途中で待たないように）
 	for _, stage in Stages.definitions do
 		for _, gun in Gun.list do
 			templateFor("Genin", gun, Colors.Clan[Stages.clanOf(stage, gun)])
@@ -741,7 +1067,8 @@ function EnemyService.start()
 		"DumpEnemies",
 		"",
 		"生きている体（両軍の下忍の個体と窓口で出した敵。名前・種類・軍・体の色の RGB・部隊の下忍の個体なら部隊 ID・体力・"
-			.. "受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・攻撃トークンを持っている相手のプレイヤー・位置）を"
+			.. "受けた攻撃の数・最初に受けてからの秒数・反応の状態・毒の残り秒数・攻撃トークンを持っている相手のプレイヤー・位置・"
+			.. "体を出した回数（uses。2 以上ならプールから使い回した体）・Humanoid の状態（state）・固定しているか（anchored））を"
 			.. " JSON で返す",
 		function()
 			local list = {}
@@ -754,6 +1081,7 @@ function EnemyService.start()
 					local owner = KogekiToken.ownerOf(tokens, model.Name)
 					local holder = if owner then Players:GetPlayerByUserId(tonumber(owner) or 0) else nil
 					local color = enemy.color
+					local rig = rigs[model]
 					table.insert(list, {
 						name = model.Name,
 						kind = enemy.kind,
@@ -767,6 +1095,9 @@ function EnemyService.start()
 						poison = if poison then math.max(math.round((poison.untilTime - now) * 10) / 10, 0) else nil,
 						token = if holder then holder.Name else nil,
 						position = { math.round(position.X), math.round(position.Y), math.round(position.Z) },
+						uses = if rig then rig.uses else nil,
+						state = enemy.humanoid:GetState().Name,
+						anchored = enemy.root.Anchored,
 					})
 				end
 			end
@@ -774,6 +1105,44 @@ function EnemyService.start()
 				return a.name < b.name
 			end)
 			return HttpService:JSONEncode(list)
+		end
+	)
+	DebugCommand.register(
+		"DumpGeninPool",
+		"",
+		"下忍の個体の体のプールを、ひな形（種類・軍・体の色の RGB）ごとに、先読みの数（prewarm）・置ける数の上限（limit）・"
+			.. "作った数（created）・取り出した数（taken。使い回した数）・返した数（returned）・壊した数（destroyed）・"
+			.. "今プールにある数（idle）・出ている数（inUse。倒れた姿を見せている体も入る）で返す。先読みしたステージ（prewarmStage）・"
+			.. "先読みの途中か（prewarming）・プールのフォルダに置いている体の数（parked）を添えて JSON で返す",
+		function()
+			local pools = {}
+			for key, template in templates do
+				local stats = KotaiPool.stats(template.pool)
+				local color = template.color
+				table.insert(pools, {
+					key = key,
+					kind = template.kind,
+					gun = template.gun,
+					color = { math.round(color.R * 255), math.round(color.G * 255), math.round(color.B * 255) },
+					prewarm = prewarmTargets[template] or 0,
+					limit = template.pool.limit,
+					created = stats.created,
+					taken = stats.taken,
+					returned = stats.returned,
+					destroyed = stats.destroyed,
+					idle = stats.idle,
+					inUse = stats.inUse,
+				})
+			end
+			table.sort(pools, function(a, b)
+				return a.key < b.key
+			end)
+			return HttpService:JSONEncode({
+				prewarmStage = prewarmStage,
+				prewarming = prewarming,
+				parked = #poolFolder:GetChildren(),
+				pools = pools,
+			})
 		end
 	)
 	DebugCommand.register(
@@ -975,6 +1344,17 @@ function EnemyService.start()
 		while true do
 			task.wait(Config.EnemyAI.AITickInterval)
 			think(os.clock())
+		end
+	end)
+
+	-- 歩いて奈落へ落ちた体を、考える間隔ごとに見つける（1回の失敗で止まらないよう、失敗は警告にする）
+	task.spawn(function()
+		while true do
+			task.wait(Config.EnemyAI.AITickInterval)
+			local ok, err = pcall(sweepFallen)
+			if not ok then
+				warn(`EnemyService: 奈落に落ちた体を片付けられなかった: {err}`)
+			end
 		end
 	end)
 end

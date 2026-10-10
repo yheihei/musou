@@ -149,7 +149,8 @@ local function hitOne(player: Player, origin: Vector3, model: Model, attack: num
 	end
 end
 
--- 技の判定を1つ出し、形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる。
+-- 技の判定を1つ出し、形に入った敵に当てる。飛び道具のように時間差のある当たりは、その秒数だけ遅らせる
+-- （届くまでに下忍の個体の体が使い回されたら当てない）。
 -- once を渡すと、そこに入っている敵には当てず、当てた敵を入れる（同じ時刻の判定を1体に1回だけ当てる技）
 local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: Style, once: { [Model]: boolean }?)
 	local shape = HitShape.fromDef(hit.Shape, Config.Hitbox.Height)
@@ -169,7 +170,13 @@ local function doHit(player: Player, root: BasePart, hit: Config.HitDef, style: 
 			once[target.ref] = true
 		end
 		if target.delay > 0 then
-			task.delay(target.delay, hitOne, player, position, target.ref, attack, hit, style)
+			-- 届くまでに体が使い回されたら（下忍の個体を部隊へ戻し、同じ体を別の場所に出し直していたら）当てない
+			local use = EnemyService.useOf(target.ref)
+			task.delay(target.delay, function()
+				if EnemyService.useOf(target.ref) == use then
+					hitOne(player, position, target.ref, attack, hit, style)
+				end
+			end)
 		else
 			hitOne(player, position, target.ref, attack, hit, style)
 		end

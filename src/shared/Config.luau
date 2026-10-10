@@ -223,6 +223,19 @@ export type GeninKotaiSection = {
 	HomeRadius: number,
 }
 
+-- 下忍の個体の体のプール。出撃したときに先に作る体の数と、プールに置ける体の数の上限（軍ごと。ひな形ごとに数える）
+export type KotaiPoolSection = {
+	Prewarm: {
+		Mikatagun: number,
+		Tekigun: number,
+	},
+	MaxIdle: {
+		Mikatagun: number,
+		Tekigun: number,
+	},
+	PrewarmPerFrame: number,
+}
+
 -- 攻撃トークン。1人のプレイヤーを同時に攻撃できる下忍の数と、渡し方
 export type KogekiTokenSection = {
 	PerPlayer: number,
@@ -545,6 +558,7 @@ export type Config = {
 	CameraView: CameraViewSection,
 	KotaiHaibun: KotaiHaibunSection,
 	GeninKotai: GeninKotaiSection,
+	KotaiPool: KotaiPoolSection,
 	Jittaikaken: JittaikakenSection,
 	Kata: KataSection,
 	Kosen: KosenSection,
@@ -1644,7 +1658,7 @@ local Config: Config = {
 	EnemyAI = {
 		AggroRange = 80, -- 敵軍の体は、この距離（スタッド）までのプレイヤーを狙う。狙う相手がいなければ、下忍の個体は部隊へ戻る
 		AITickInterval = 0.25, -- 考える間隔（秒）
-		CorpseLifetime = 2, -- 倒れた敵を消すまでの秒数
+		CorpseLifetime = 2, -- 倒れた体を見せておく秒数。過ぎたら体をプール（KotaiPool 節）へ返す
 		-- 敵がプレイヤーの手前で止まるときの、敵の体の縁からプレイヤーの中心までの距離（スタッド）。
 		-- 敵はプレイヤーと重ならずに周りを囲む（攻撃が届く距離より手前で止まる）
 		PlayerGap = 2,
@@ -1692,6 +1706,24 @@ local Config: Config = {
 		PopDistance = 100, -- 出撃メンバー全員からこの距離（スタッド）より遠い位置なら、視界の中でも出し入れしてよい
 		ViewMargin = 3, -- 個体を出し入れする位置の周りのこの半径（スタッド。体の大きさ）が視界にかかれば、見えているとみなす
 		HomeRadius = 4, -- 戦う相手がいない個体は、部隊の中の自分の位置からこの距離（スタッド）より離れたら歩いて戻る
+	},
+
+	-- 下忍の個体の体のプール（#83）。使い終えた体を壊さずに、ひな形（種類・軍・色）ごとのプールへ返して使い回す。
+	-- 数え方は KotaiPool.luau、体の出し入れは EnemyService にある
+	KotaiPool = {
+		-- 先読みの数。出撃したときに先に作っておく体の数（そのステージの軍のひな形ごと）。個体の上限と同数にする
+		-- （敵軍は GeninKotai 節の MaxKotai、味方軍は MikataMaxKotai。近くに味方軍の部隊がいなければ、敵軍は MaxKotai まで出す）
+		Prewarm = {
+			Mikatagun = 10,
+			Tekigun = 40,
+		},
+		-- プールに置ける体の数の上限（ひな形ごと）。超えて返された体は壊す。倒れた体を見せている間に出し直した分を
+		-- 作り直さずに済むよう、先読みの数より多くする
+		MaxIdle = {
+			Mikatagun = 15,
+			Tekigun = 60,
+		},
+		PrewarmPerFrame = 2, -- 先読みで1フレームに作る体の数（まとめて作って負荷の山を作らないように）
 	},
 
 	-- 実体化圏。プレイヤーの周りに入った上忍と首領（両軍）と両軍の部隊の下忍を個体として出し、全員のプレイヤーから離れたら

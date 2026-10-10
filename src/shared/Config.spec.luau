@@ -1,6 +1,7 @@
 --!strict
 local Characters = require("./Characters")
 local Config = require("./Config")
+local Gun = require("./Gun")
 local Hikei = require("./Hikei")
 local Jukurendo = require("./Jukurendo")
 local Stats = require("./Stats")
@@ -1017,6 +1018,17 @@ local SNAPSHOT = {
 		ViewMargin = 3,
 		HomeRadius = 4,
 	},
+	KotaiPool = {
+		Prewarm = {
+			Mikatagun = 10,
+			Tekigun = 40,
+		},
+		MaxIdle = {
+			Mikatagun = 15,
+			Tekigun = 60,
+		},
+		PrewarmPerFrame = 2,
+	},
 	Jittaikaken = {
 		AppearRadius = 120,
 		DisappearRadius = 160,
@@ -1471,3 +1483,20 @@ test(
 test("最初から覚えている秘計で、新規の人も持ち込みの上限まで選べる", function()
 	expect(#Jukurendo.initialHikei() >= Hikei.MOCHIKOMI_MAX).toBe(true)
 end)
+
+test(
+	"下忍の個体の体の先読みの数は軍の個体の上限を超えず、プールに置ける数の上限は先読みの数以上",
+	function()
+		local pool = Config.KotaiPool
+		expect(pool.Prewarm.Tekigun <= Config.GeninKotai.MaxKotai).toBe(true)
+		expect(pool.Prewarm.Mikatagun <= Config.GeninKotai.MikataMaxKotai).toBe(true)
+		for _, gun in Gun.list do
+			local prewarm = pool.Prewarm[gun]
+			local maxIdle = pool.MaxIdle[gun]
+			expect(prewarm >= 0 and prewarm == math.floor(prewarm)).toBe(true)
+			-- 上限が先読みの数より少ないと、先に作った体をプールに置ききれない
+			expect(maxIdle >= prewarm and maxIdle == math.floor(maxIdle)).toBe(true)
+		end
+		expect(pool.PrewarmPerFrame >= 1).toBe(true)
+	end
+)

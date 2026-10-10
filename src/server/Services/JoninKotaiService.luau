@@ -604,7 +604,8 @@ local function applyHit(
 end
 
 -- 型の判定を1つ出し、形に入った相手に当てる。型をやめていたら出さない。
--- 直線（飛び道具）は、届くまでの秒数だけ遅らせて当てる（投げた後に型をやめても届く）
+-- 直線（飛び道具）は、届くまでの秒数だけ遅らせて当てる（投げた後に型をやめても届く）。
+-- 届くまでに下忍の個体の体が使い回されたら当てない
 local function fireHit(kotai: Kotai, run: Run, hit: Config.HitDef, aite: Aite)
 	if kotai.run ~= run or kotai.dying or kotaiOf[kotai.id] ~= kotai or Hanno.busy(kotai.body, os.clock()) then
 		return
@@ -620,7 +621,13 @@ local function fireHit(kotai: Kotai, run: Run, hit: Config.HitDef, aite: Aite)
 	local power = hit.Power * jonin.stats.Attack
 	for _, target in Hitbox.query(shape, origin, aite.list()) do
 		if target.delay > 0 then
-			task.delay(target.delay, applyHit, kotai, run.id, target.ref, position, power, hit, aite)
+			-- 届くまでに体が使い回されたら（下忍の個体を部隊へ戻し、同じ体を別の場所に出し直していたら）当てない
+			local use = EnemyService.useOf(target.ref)
+			task.delay(target.delay, function()
+				if EnemyService.useOf(target.ref) == use then
+					applyHit(kotai, run.id, target.ref, position, power, hit, aite)
+				end
+			end)
 		else
 			applyHit(kotai, run.id, target.ref, position, power, hit, aite)
 		end
