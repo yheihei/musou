@@ -27,11 +27,15 @@
 -- - 端数は KotaiHaibun.split と同じく、切り捨てた残りの大きい順に1つずつ足す
 -- - まとまりごとに h + 敵軍の目標の合計 ≤ Q、Q の合計 ≤ cap。味方軍の目標の合計は c と Q を超えない
 --
--- 枠の返却（updateRequest・heldOf・hojuStopped・fill）
+-- 枠の返却（updateRequest・heldOf・hojuStopped・pickReturns・fill）
 -- - 目標に足りない味方軍の部隊は、視界の外に出せる位置があれば、返却の求めを step ずつ増やす（足りない数まで）。
 --   出せる位置が無ければ求めを増やさずに保つ。目標が 0 になったら（部隊が離れたら）取り消し、足りたら外す
--- - h は、味方軍の部隊ごとの min(目標, 出ている数 + 返却の求め) の合計。求めが増えると敵軍の枠が減り、
---   目標より多い敵軍の個体は呼ぶ側が遠い順に視界の外で戻す（視界の中の個体は戻さない）
+-- - h は、味方軍の部隊ごとの min(目標, 出ている数 + 返却の求め) の合計。求めが増えると敵軍の枠が減る
+-- - 敵軍の個体は、まとまりごとにまとめて戻す。戻す数は、まとまりの敵軍の部隊の出ている数の合計 − 目標の合計。
+--   まとまりの敵軍の全部隊の個体を出撃メンバーから遠い順に並べ、視界の外の個体だけを戻す（pickReturns。
+--   視界の中の個体は戻さない）。片方の部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
+-- - 敵軍の部隊ごとの目標は、出す側（fill の足りない数）にだけ使う。戻した結果、目標より多い部隊と少ない部隊が
+--   残ってよい（まとまりの予算で出しすぎない）。味方軍の部隊と、どのまとまりにも入らない部隊は、部隊ごとに戻す
 -- - 求めは部隊ごとに数え、増やす数は1回の判断で step まで。出た味方軍の個体は求めから引かないので、
 --   1回に返す数は求めの数まで（a = 10 なら 2・4・4 体）
 -- - 返却を求めている味方軍の部隊がいるまとまりでは、敵軍の補充を止める。空いた枠は待っている味方軍に先に回す
@@ -307,6 +311,44 @@ function GeninKotai.hojuStopped(plan: WakuPlan, requested: { [string]: number })
 		result[index] = stopped
 	end
 	return result
+end
+
+-- 目標より多い個体を戻すときの候補。item は呼ぶ側の個体（体のモデルなど）、butai はその部隊 ID、
+-- distance は戦場を見ている出撃メンバーまでの一番近い水平の距離
+export type ReturnCandidate<T> = { item: T, butai: string, distance: number }
+
+-- 戻す個体を、出撃メンバーから遠い順に count 体まで選ぶ（同じ距離なら部隊 ID の順、同じ部隊なら渡した順）。
+-- canReturn が false の候補（視界の中で、メンバーから PopDistance 以内の個体）は飛ばして、次に遠い候補を見る。
+-- 戻せる候補が足りなければ、戻せる分だけを選ぶ。count 体を選び終えたら canReturn を呼ばない。選んだ候補を遠い順に返す
+function GeninKotai.pickReturns<T>(
+	candidates: { ReturnCandidate<T> },
+	count: number,
+	canReturn: (ReturnCandidate<T>) -> boolean
+): { ReturnCandidate<T> }
+	local order = {}
+	for index, candidate in candidates do
+		table.insert(order, { candidate = candidate, index = index })
+	end
+	table.sort(order, function(a, b)
+		if a.candidate.distance ~= b.candidate.distance then
+			return a.candidate.distance > b.candidate.distance
+		end
+		if a.candidate.butai ~= b.candidate.butai then
+			return a.candidate.butai < b.candidate.butai
+		end
+		return a.index < b.index
+	end)
+	local limit = math.max(math.floor(count), 0)
+	local picked: { ReturnCandidate<T> } = {}
+	for _, entry in order do
+		if #picked >= limit then
+			break
+		end
+		if canReturn(entry.candidate) then
+			table.insert(picked, entry.candidate)
+		end
+	end
+	return picked
 end
 
 type Need = { id: string, group: number, mikata: boolean, missing: number }

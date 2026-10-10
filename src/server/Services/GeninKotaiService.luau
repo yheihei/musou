@@ -24,8 +24,11 @@
 --   MikataReclaimStep ずつ増やす（足りない数まで）。位置が無ければ増やさずに保つ。目標が 0 になったら（部隊が離れたら）、
 --   部隊がいなくなったら取り消し、足りたら外す。メンバーが1人も重ならないまとまりへ移ったら 0 から積み直す。
 --   返却を求めている味方軍の部隊がいるまとまりでは、敵軍を補充しない
--- - 目標より多い部隊は、出撃メンバーから遠い個体から部隊へ戻す（視界の中の個体は戻さないので、返せない間は味方軍が待つ）。
---   目標に足りない部隊には、味方軍の部隊を先に、足りない数の多い部隊から順に、部隊の位置の周り（Spread の円の中、
+-- - 目標より多い個体は、出撃メンバーから遠い個体から部隊へ戻す（視界の中の個体は戻さないので、返せない間は味方軍が待つ）。
+--   味方軍の部隊と、どのまとまりにも入らない敵軍の部隊は部隊ごとに戻す。まとまりに入る敵軍は、まとまりごとに
+--   「敵軍の部隊の出ている数の合計 − 目標の合計」を、まとまりの敵軍の全部隊の個体から遠い順に戻す（returnExcess。
+--   ある部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返す。目標より多い部隊と少ない部隊は残ってよい）
+-- - 目標に足りない部隊には、味方軍の部隊を先に、足りない数の多い部隊から順に、部隊の位置の周り（Spread の円の中、
 --   区画の中、地面の上）に出す（GeninKotai.fill）。まとまりの枠の残り（味方軍は、まとまりの味方軍の目標の残りも）と、
 --   MaxKotai の残りと、1回の判断の MaxPerTick 体を超えない。撃破などで空いた枠は、待っている味方軍に先に回る
 -- - 出し入れする位置は、出撃メンバーの視界の外に限る（CameraViewService。#81）。ただし、出撃メンバー全員から
@@ -40,13 +43,15 @@
 -- - SetSpawning で出し入れを止める・再開する。止めても出ている個体は残る（ClearEnemies で部隊へ戻す）。
 --   止めている間も、兵数より多い個体を戻すことと、いなくなった部隊の個体を消すことは続ける
 -- - LogSpawn で、出した・戻した・見送った・倒れて兵数を減らしたことと、枠の返却を求めた・求めを取り消した（外した）・
---   まとまりの敵軍の補充を止めた（再開した）ことを出力に出す（返却の求めと補充の停止は変わったときだけ）
+--   まとまりの敵軍の補充を止めた（再開した）ことを出力に出す（返却の求めと補充の停止は変わったときだけ。
+--   敵軍の個体を戻した・見送ったことは、まとまりごとに部隊ごとの数を添えて出す）
 -- - DumpGeninKotai で両軍の部隊ごとの軍・兵数・個体の数・目標・まとまりの番号・返却の求めと軍ごとの個体の数、
 --   DumpKotaiHaibun でまとまりごとの取り分・枠・味方軍の上限と目標・押さえている数・敵軍の枠・補充の停止を出す
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Butai = require(ReplicatedStorage.Shared.Butai)
 local Colors = require(ReplicatedStorage.Shared.Colors)
 local Config = require(ReplicatedStorage.Shared.Config)
 local GeninKotai = require(ReplicatedStorage.Shared.GeninKotai)
@@ -441,6 +446,95 @@ local function logStopped(plan: GeninKotai.WakuPlan, stopped: { boolean })
 	stoppedKeys = nextKeys
 end
 
+-- 目標より多い個体を部隊へ戻す。視界の外か、戦場を見ているメンバー全員から PopDistance より遠い個体だけを戻す（force なし）。
+-- - 味方軍の部隊と、どのまとまりにも入らない敵軍の部隊（目標 0）は、部隊ごとに遠い個体から戻す
+-- - まとまりに入る敵軍は、まとまりごとに「敵軍の部隊の出ている数の合計 − 目標の合計」を、まとまりの敵軍の全部隊の個体から
+--   遠い順に戻す（GeninKotai.pickReturns）。部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
+local function returnExcess(
+	butaiList: { Butai.Butai },
+	plan: GeninKotai.WakuPlan,
+	teki: GeninKotai.TekiPlan,
+	watchers: { KotaiHaibun.Member }
+)
+	for _, butai in butaiList do
+		local grouped = butai.gun ~= "Mikatagun" and plan.groupOf[butai.id] ~= nil
+		if not grouped then
+			local count = prune(butai.id)
+			local target = if butai.gun == "Mikatagun"
+				then plan.mikataTargets[butai.id] or 0
+				else teki.targets[butai.id] or 0
+			if count > target then
+				local removed, kept = dematerialize(butai.id, count - target, watchers, false)
+				if removed > 0 then
+					log(`部隊 {butai.id} の個体を {removed} 体部隊へ戻した（目標 {target}）`)
+				end
+				if kept > 0 then
+					log(`部隊 {butai.id} の個体 {kept} 体は視界の中なので、戻すのを見送った`)
+				end
+			end
+		end
+	end
+
+	for index, group in plan.groups do
+		local present, target = 0, 0
+		for _, id in group.tekiButai do
+			present += prune(id)
+			target += teki.targets[id] or 0
+		end
+		local excess = present - target
+		if excess > 0 then
+			local candidates: { GeninKotai.ReturnCandidate<{ model: Model, position: Vector3 }> } = {}
+			for _, id in group.tekiButai do
+				for _, model in kotai[id] or {} do
+					local position = EnemyService.positionOf(model)
+					if position then
+						table.insert(candidates, {
+							item = { model = model, position = position },
+							butai = id,
+							distance = nearestDistance(position, watchers),
+						})
+					end
+				end
+			end
+			local picked = GeninKotai.pickReturns(candidates, excess, function(candidate): boolean
+				return popSafe(candidate.item.position, watchers)
+			end)
+			local removedOf: { [string]: number } = {}
+			local removed = 0
+			for _, candidate in picked do
+				if EnemyService.remove(candidate.item.model) then
+					removedOf[candidate.butai] = (removedOf[candidate.butai] or 0) + 1
+					removed += 1
+				end
+			end
+			for _, id in group.tekiButai do
+				prune(id)
+			end
+			local key = groupKey(group)
+			local quota = teki.quotas[index]
+			if removed > 0 then
+				local parts = {}
+				for _, id in group.tekiButai do
+					local count = removedOf[id]
+					if count then
+						table.insert(parts, `{id} から {count} 体`)
+					end
+				end
+				log(
+					`まとまり（{key}）の敵軍の個体を {removed} 体部隊へ戻した`
+						.. `（部隊 {table.concat(parts, "、")}。敵軍の枠 {quota}）`
+				)
+			end
+			if removed < excess then
+				log(
+					`まとまり（{key}）の敵軍の個体 {excess - removed} 体は視界の中なので、戻すのを見送った`
+						.. `（敵軍の枠 {quota}）`
+				)
+			end
+		end
+	end
+end
+
 -- 出し入れを1回決める
 local function tick()
 	local bounds = battleBounds()
@@ -514,22 +608,8 @@ local function tick()
 	logStopped(plan, stopped)
 	lastPlan = { plan = plan, teki = teki, stopped = stopped }
 
-	-- 目標より多い部隊から戻す（遠い個体から、視界の外の個体だけ。戻した分が枠の空きになる）
-	for _, butai in butaiList do
-		local count = prune(butai.id)
-		local target = if butai.gun == "Mikatagun"
-			then plan.mikataTargets[butai.id] or 0
-			else teki.targets[butai.id] or 0
-		if count > target then
-			local removed, kept = dematerialize(butai.id, count - target, watchers, false)
-			if removed > 0 then
-				log(`部隊 {butai.id} の個体を {removed} 体部隊へ戻した（目標 {target}）`)
-			end
-			if kept > 0 then
-				log(`部隊 {butai.id} の個体 {kept} 体は視界の中なので、戻すのを見送った`)
-			end
-		end
-	end
+	-- 目標より多い個体を戻す（遠い個体から、視界の外の個体だけ。敵軍はまとまりごと。戻した分が枠の空きになる）
+	returnExcess(butaiList, plan, teki, watchers)
 
 	-- 目標に足りない部隊へ出す。味方軍の部隊が先で、まとまりの枠の残りと、全体の上限と、1回の判断の上限まで。
 	-- 返却を求めている味方軍の部隊がいるまとまりの敵軍には出さない
