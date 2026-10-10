@@ -146,6 +146,18 @@ local function totalCount(): number
 	return total
 end
 
+-- 軍 gun の、今出している個体の数
+local function countOfGun(gun: Gun.Gun): number
+	local total = 0
+	for id in table.clone(kotai) do
+		local count = prune(id)
+		if kotaiGun[id] == gun then
+			total += count
+		end
+	end
+	return total
+end
+
 -- 部隊の、今出している個体の数（秘計が部隊の兵数を割合で減らすとき、個体として出ていない分だけに掛けるのに使う。両軍）
 function GeninKotaiService.countOf(butaiId: string): number
 	return prune(butaiId)
@@ -283,6 +295,11 @@ local function tick()
 		if prune(id) > 0 and (not butai or butai.gun ~= kotaiGun[id]) then
 			dematerialize(id, math.huge, watchers, true)
 			if butai then
+				-- 倒れかけ（体力 0 で、倒れたことを知らせる前）の前の軍の個体は消せずに残るので、表から外す。
+				-- 残すと、使い直した部隊の個体の数に混ざり、新しい軍の個体が前の軍の表に入る。
+				-- 外した個体が倒れても、軍が違うので兵数は減らさない（kotaiDefeated）
+				kotai[id] = nil
+				kotaiGun[id] = nil
 				log(`部隊 ID {id} を別の軍の部隊が使い直したので、前の軍の個体を消した`)
 			else
 				log(`部隊 {id} がいなくなったので、個体を消した`)
@@ -358,14 +375,25 @@ local function tick()
 		return a.id < b.id
 	end)
 	local budget = math.min(Config.GeninKotai.MaxPerTick, Config.GeninKotai.MaxKotai - totalCount())
+	-- 味方軍は、目標が減った部隊の個体が視界の中で戻せずに残っている間も、味方軍の上限を超えて出さない
+	local mikataBudget = math.max(Config.GeninKotai.MikataMaxKotai - countOfGun("Mikatagun"), 0)
 	for _, need in needs do
 		if budget <= 0 then
 			break
 		end
 		local want = math.min(need.missing, budget)
+		if need.gun == "Mikatagun" then
+			want = math.min(want, mikataBudget)
+		end
+		if want <= 0 then
+			continue
+		end
 		local spawned, seen =
 			materialize(need.id, need.gun, positions[need.id], want, watchers, bounds, kotaiColor(need.gun))
 		budget -= spawned
+		if need.gun == "Mikatagun" then
+			mikataBudget -= spawned
+		end
 		if spawned > 0 then
 			log(`部隊 {need.id} から個体を {spawned} 体出した（出している数 {prune(need.id)}）`)
 		end
@@ -506,6 +534,10 @@ function GeninKotaiService.start()
 			if heisu then
 				log(
 					`部隊 {butaiId} の個体 {model.Name} が倒れたので、兵数を1減らした（兵数 {heisu}）`
+				)
+			elseif butai and butai.gun ~= gun then
+				log(
+					`部隊 ID {butaiId} の前の軍の個体 {model.Name} が倒れた（別の軍の部隊が使い直したので、兵数は減らさない）`
 				)
 			else
 				log(`部隊 {butaiId} の個体 {model.Name} が倒れた（部隊はもういない）`)

@@ -140,7 +140,7 @@ src/
   shared/   ReplicatedStorage.Shared    サーバー・クライアント共通（Config など）
   server/   ServerScriptService.Server  ゲームロジック本体
     DebugCommand  テスト用のサーバーコマンドの窓口
-    CollisionGroups  キャラクターの物理の衝突のグループ（敵はプレイヤーにもほかの敵にもぶつからない）
+    CollisionGroups  キャラクターの物理の衝突のグループ（両軍の下忍と上忍・首領の個体は、プレイヤーにもほかの個体にもぶつからない）
     PlayerStore  プレイヤーごとの記録を DataStore に保存する共通の部品（読み込みのやり直し、変更を保存済みの記録に当てて書く UpdateAsync、退室時と BindToClose の保存、DataStore を使えないときのメモリ）。特技と秘計の熟練度の記録が使う
     Services/  KukakuService / HaichiService / PartyService / ProgressService / JukurendoService / SelectionService / TokugiService / StageService / ButaiService / KyotenService / HeitansenService / SaishutsugekiService / JoninService / JoninKotaiService / ShohaiService / ShihaiAreaService / HoshinService / MinimapService / SerifuService / PlayerService / ActionService / DamageService / CameraViewService / EnemyService / GeninKotaiService / CombatService / HikeiService / HyorokoService / RakusekiService / FukuheiService / KishinkaService / DaikatsuService / DaikakeiService / BakuhawanaService / ChohatsuService / HikeiHandanService
       KukakuService  ロビーと区画（Workspace.Lobby・Workspace.Stages）の目印の取得と、欠けたときの警告
