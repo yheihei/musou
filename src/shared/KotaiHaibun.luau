@@ -10,6 +10,8 @@
 -- - 兵数が足りずに使い切らなかった分は、ほかのまとまりへ人数の比で回す（近くに部隊のいないプレイヤーの分も回す）
 -- - 端数は、切り捨てた残りの大きい順に1つずつ足す（同じなら先のまとまり）。合計は上限と兵数の合計の小さい方
 -- - 部隊を渡さないときは、兵数の制限なしとして分ける
+-- - 両軍の下忍の個体の枠（GeninKotai.planWaku）も、まとまりの分け方（group）・部隊の数え方（assign）・
+--   整数への分け方（split）をここから使う
 
 local Config = require("./Config")
 
@@ -165,16 +167,36 @@ function KotaiHaibun.split(weights: { number }, limits: { number }, total: numbe
 	return result
 end
 
+-- 部隊を、一番近いプレイヤーのまとまりに数える（同じ距離なら id の小さいプレイヤー）。groups は group で分けたまとまり。
+-- 兵数が 0 以下の部隊と、reach を渡したときにどのプレイヤーからも reach より遠い部隊は数えない。
+-- 部隊 ID から、数えたまとまりの番号（groups の添字）を引く表を返す
+function KotaiHaibun.assign(groups: { { Member } }, butai: { ButaiInput }, reach: number?): { [string]: number }
+	local result: { [string]: number } = {}
+	for _, entry in butai do
+		if entry.heisu > 0 then
+			local bestIndex: number? = nil
+			local bestId = ""
+			local bestDistance = math.huge
+			for index, group in groups do
+				for _, member in group do
+					local d = distance(entry.x, entry.z, member.x, member.z)
+					if d < bestDistance or (d == bestDistance and bestIndex ~= nil and member.id < bestId) then
+						bestIndex, bestId, bestDistance = index, member.id, d
+					end
+				end
+			end
+			if bestIndex and (reach == nil or bestDistance <= reach) then
+				result[entry.id] = bestIndex
+			end
+		end
+	end
+	return result
+end
+
 -- 上限 cap を、プレイヤーのまとまりごとに分ける。butai を渡すと、近くの部隊の兵数を超えない
 function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiInput }?, params: Params?): { Group }
 	local p: Params = params or { GroupDistance = Config.KotaiHaibun.GroupDistance }
 	local groups = KotaiHaibun.group(members, p.GroupDistance)
-	local groupIndexOf: { [string]: number } = {}
-	for index, group in groups do
-		for _, member in group do
-			groupIndexOf[member.id] = index
-		end
-	end
 
 	local demands: { number } = table.create(#groups, if butai then 0 else math.huge)
 	local butaiOf: { { string } } = {}
@@ -182,22 +204,12 @@ function KotaiHaibun.allocate(members: { Member }, cap: number, butai: { ButaiIn
 		butaiOf[index] = {}
 	end
 	if butai then
+		local assigned = KotaiHaibun.assign(groups, butai, p.Reach)
 		for _, entry in butai do
-			if entry.heisu > 0 then
-				-- 一番近いプレイヤーのまとまりに数える（同じ距離なら id の小さいプレイヤー）
-				local best: Member? = nil
-				local bestDistance = math.huge
-				for _, member in members do
-					local d = distance(entry.x, entry.z, member.x, member.z)
-					if d < bestDistance or (d == bestDistance and best ~= nil and member.id < best.id) then
-						best, bestDistance = member, d
-					end
-				end
-				if best and (p.Reach == nil or bestDistance <= p.Reach) then
-					local index = groupIndexOf[best.id]
-					demands[index] += entry.heisu
-					table.insert(butaiOf[index], entry.id)
-				end
+			local index = assigned[entry.id]
+			if index then
+				demands[index] += entry.heisu
+				table.insert(butaiOf[index], entry.id)
 			end
 		end
 	end

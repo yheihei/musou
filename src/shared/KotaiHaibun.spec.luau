@@ -134,6 +134,25 @@ test(
 	end
 )
 
+test(
+	"部隊の数え方: 一番近いプレイヤーのまとまりの番号を返し、兵数 0 と reach の外は数えない",
+	function()
+		local members = { { id = "B", x = 200, z = 0 }, { id = "A", x = 0, z = 0 } }
+		local groups = KotaiHaibun.group(members, 80)
+		local butai = {
+			{ id = "near", x = 120, z = 0, heisu = 30 },
+			{ id = "home", x = 10, z = 0, heisu = 5 },
+			-- 2人から同じ距離なら、id の小さいプレイヤー（A）のまとまり
+			{ id = "middle", x = 100, z = 0, heisu = 5 },
+			{ id = "empty", x = 0, z = 10, heisu = 0 },
+			{ id = "far", x = 0, z = 300, heisu = 10 },
+		}
+		expect(KotaiHaibun.assign(groups, butai, 120)).toEqual({ near = 2, home = 1, middle = 1 })
+		expect(KotaiHaibun.assign(groups, butai).far).toBe(1)
+		expect(KotaiHaibun.assign({}, butai)).toEqual({})
+	end
+)
+
 test("部隊は一番近いプレイヤーのまとまりに数える", function()
 	local members = { { id = "A", x = 0, z = 0 }, { id = "B", x = 200, z = 0 } }
 	local groups = KotaiHaibun.allocate(members, 40, { { id = "b1", x = 120, z = 0, heisu = 30 } }, PARAMS)

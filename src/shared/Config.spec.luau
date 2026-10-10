@@ -1010,7 +1010,8 @@ local SNAPSHOT = {
 	},
 	GeninKotai = {
 		MaxKotai = 40,
-		MikataMaxKotai = 10,
+		MikataRate = 0.25,
+		MikataReclaimStep = 2,
 		Interval = 0.5,
 		MaxPerTick = 8,
 		Spread = 10,
@@ -1489,7 +1490,10 @@ test(
 	function()
 		local pool = Config.KotaiPool
 		expect(pool.Prewarm.Tekigun <= Config.GeninKotai.MaxKotai).toBe(true)
-		expect(pool.Prewarm.Mikatagun <= Config.GeninKotai.MikataMaxKotai).toBe(true)
+		-- 味方軍の個体は、まとまりごとの取り分 × MikataRate の切り捨ての合計なので、MaxKotai × MikataRate の切り捨てを超えない
+		expect(pool.Prewarm.Mikatagun <= math.floor(Config.GeninKotai.MaxKotai * Config.GeninKotai.MikataRate)).toBe(
+			true
+		)
 		for _, gun in Gun.list do
 			local prewarm = pool.Prewarm[gun]
 			local maxIdle = pool.MaxIdle[gun]

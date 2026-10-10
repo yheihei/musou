@@ -211,10 +211,12 @@ export type EnemyAISection = {
 	PlayerGap: number,
 }
 
--- 実体化圏の下忍の個体。サーバー全体の上限と味方軍の上限と、出し入れの間隔と位置
+-- 実体化圏の下忍の個体。サーバー全体の上限と、まとまりの取り分のうち味方軍に回す割合と、枠の返却の求めの増やし方と、
+-- 出し入れの間隔と位置
 export type GeninKotaiSection = {
 	MaxKotai: number,
-	MikataMaxKotai: number,
+	MikataRate: number,
+	MikataReclaimStep: number,
 	Interval: number,
 	MaxPerTick: number,
 	Spread: number,
@@ -1698,8 +1700,12 @@ local Config: Config = {
 	-- 出す・消すの半径は Jittaikaken 節、上限の配分は KotaiHaibun 節、数の計算は GeninKotai.luau にある
 	GeninKotai = {
 		MaxKotai = 40, -- サーバー全体で個体として出す下忍の上限（両軍とパーティー全体の合計。1人あたりではない）
-		-- 味方軍の個体の上限（MaxKotai の内数）。味方軍の目標を先にこの数までで決め、敵軍は MaxKotai の残りを使う
-		MikataMaxKotai = 10,
+		-- MaxKotai を出撃メンバーのまとまりごとに人数の比で分けた取り分のうち、味方軍の個体に回す割合の上限。
+		-- 1人なら 40 × 0.25 = 10 体、離れた2人なら 5 体ずつ（切り捨て）。敵軍はまとまりの枠の残りを使う
+		MikataRate = 0.25,
+		-- 味方軍の個体を出すために、敵軍の個体に枠の返却を求める数を、1回の判断でこの数ずつ増やす（少しずつ返させる）。
+		-- 出た味方軍の個体は求めから引かないので、1回に返す数は求めの数まで（味方軍の目標 10 なら 2・4・4 体）
+		MikataReclaimStep = 2,
 		Interval = 0.5, -- 出し入れを決める間隔（秒）
 		MaxPerTick = 8, -- 1回の判断で出す個体の上限（まとめて出して負荷の山を作らないように）
 		Spread = 10, -- 部隊の位置からこの半径（スタッド）の中に個体を出し、戦う相手がいない個体はこの中へ戻る
@@ -1712,7 +1718,7 @@ local Config: Config = {
 	-- 数え方は KotaiPool.luau、体の出し入れは EnemyService にある
 	KotaiPool = {
 		-- 先読みの数。出撃したときに先に作っておく体の数（そのステージの軍のひな形ごと）。個体の上限と同数にする
-		-- （敵軍は GeninKotai 節の MaxKotai、味方軍は MikataMaxKotai。近くに味方軍の部隊がいなければ、敵軍は MaxKotai まで出す）
+		-- （敵軍は GeninKotai 節の MaxKotai、味方軍は MaxKotai × MikataRate。近くに味方軍の部隊がいなければ、敵軍は MaxKotai まで出す）
 		Prewarm = {
 			Mikatagun = 10,
 			Tekigun = 40,
