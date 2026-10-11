@@ -1165,6 +1165,22 @@ local SNAPSHOT = {
 		JoninPower = 0.6,
 		JoninShikiThreshold = 20,
 	},
+	Zensen = {
+		Gap = 4,
+		Spacing = 4,
+		RowGap = 4,
+		AttackInterval = 1.5,
+		AttackRandom = 1,
+		AggroRange = 15,
+	},
+	GeninMotion = {
+		Interval = 0.1,
+		MoveThreshold = 1,
+		IdleDelay = 0.3,
+		RunSpeed = 16,
+		LocomotionFade = 0.2,
+		ActionFade = 0.1,
+	},
 	Butai = {
 		Speed = 12,
 		MoveInterval = 0.5,
@@ -1307,6 +1323,12 @@ local SNAPSHOT = {
 		HoldPerChar = 0.03,
 		BattleTime = 4,
 		BattleQueueMax = 3,
+	},
+	SenkyoSerifu = {
+		CheckInterval = 1,
+		SekkinRange = 80,
+		HanbunRate = 0.5,
+		OshiMargin = 5,
 	},
 	Sound = {
 		Volume = {
@@ -1502,5 +1524,32 @@ test(
 			expect(maxIdle >= prewarm and maxIdle == math.floor(maxIdle)).toBe(true)
 		end
 		expect(pool.PrewarmPerFrame >= 1).toBe(true)
+	end
+)
+
+test(
+	"前線の列の間は、下忍の攻撃が届く距離より短い（向かい合う相手へ攻撃の動作が届いて見える）",
+	function()
+		expect(Config.Zensen.Gap > 0 and Config.Zensen.Gap < Config.Genin.AttackRange).toBe(true)
+	end
+)
+
+test(
+	"交戦中の敵軍の個体がプレイヤーを狙う距離は、攻撃トークンを受け取れる距離以下",
+	function()
+		expect(Config.Zensen.AggroRange > 0 and Config.Zensen.AggroRange <= Config.KogekiToken.Range).toBe(true)
+	end
+)
+
+test(
+	"下忍の移動のモーションに移る速さは下忍の歩く速さより遅く、待機に移るまでの秒数は考える間隔より長い",
+	function()
+		local params = Config.GeninMotion
+		expect(params.Interval > 0).toBe(true)
+		expect(params.MoveThreshold > 0 and params.MoveThreshold < Config.Genin.WalkSpeed).toBe(true)
+		-- 考える間隔ごとの歩き直しの間の止まりで待機に移ると、走りのモーションを流し直してしまう
+		expect(params.IdleDelay > Config.EnemyAI.AITickInterval).toBe(true)
+		expect(params.RunSpeed > 0).toBe(true)
+		expect(params.LocomotionFade >= 0 and params.ActionFade >= 0).toBe(true)
 	end
 )

@@ -1,6 +1,7 @@
 --!strict
 -- 仮エフェクト。本番アセットに差し替えるまでの目印として半透明パーツを一瞬出す。
 -- 上忍と首領の型の予備動作（地面に描く判定の範囲と、体の光）も、予備動作の間だけ出す。
+-- パーツはどれも固定し、当たり判定・接触・空間クエリから外す（プレイヤーにも個体にも当たらない）。
 
 local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -34,6 +35,14 @@ local AREA_STEP = 10
 local AREA_BAR_WIDTH = 0.5
 -- 予備動作で光らせる体の塗りの透明度
 local GLOW_FILL_TRANSPARENCY = 0.45
+-- 斬撃の色・長さ・太さ（スタッド）・体の中心から正面へ離す距離（スタッド）・傾き（度）・残す秒数
+-- （交戦の前線の下忍の攻撃の動作。モーションが無い間の仮の見た目）
+local SLASH_COLOR = Color3.fromRGB(235, 235, 245)
+local SLASH_LENGTH = 3
+local SLASH_WIDTH = 0.25
+local SLASH_FORWARD = 2
+local SLASH_TILT = 40
+local SLASH_LIFETIME = 0.15
 -- 炎の塊の数と色
 local FLAME_COUNT = 7
 local FLAME_COLORS = {
@@ -248,6 +257,24 @@ function Vfx.blades(shape: HitShape.Shape, origin: HitShape.Origin)
 			CFrame = up,
 		}):Play()
 	end
+end
+
+-- 斬撃の仮エフェクト（交戦の前線の下忍の攻撃の動作）。体の中心 position から水平の向き look へ少し離した位置に、
+-- 斜めの細い板を一瞬出す。見た目だけで、当たり判定は持たない
+function Vfx.slash(position: Vector3, look: Vector3)
+	local flat = Vector3.new(look.X, 0, look.Z)
+	if flat.Magnitude < 1e-6 then
+		return
+	end
+	local forward = flat.Unit
+	local center = position + forward * SLASH_FORWARD
+	local part = Instance.new("Part")
+	part.Size = Vector3.new(SLASH_LENGTH, SLASH_WIDTH, SLASH_WIDTH)
+	-- 正面を向けた横長の板を、正面の軸の周りに傾けて斜めにする
+	part.CFrame = CFrame.lookAt(center, center + forward) * CFrame.Angles(0, 0, math.rad(SLASH_TILT))
+	part.Color = SLASH_COLOR
+	part.CastShadow = false
+	flash(part, SLASH_LIFETIME)
 end
 
 function Vfx.hit(model: Model)

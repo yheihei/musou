@@ -171,3 +171,135 @@ test("金鬼は同じ段のモーションを石舟斎より遅く再生する",
 	expect(speedOf("KanaOni") < speedOf("Sekishusai")).toBe(true)
 	expect(speedOf("KanaOni") / speedOf("Sekishusai")).toBeNear(0.8)
 end)
+
+test(
+	"下忍のモーションの項目の並びは、Motions.Genin の項目と同じで、ID は 0 以上の整数",
+	function()
+		local expected: { [string]: boolean } = {}
+		for item, id in Motions.Genin :: any do
+			expected[item] = true
+			expect(id >= 0 and id == math.floor(id)).toBe(true)
+		end
+		local actual: { [string]: boolean } = {}
+		for _, item in Motions.GENIN_ITEMS do
+			actual[item] = true
+		end
+		expect(actual).toEqual(expected)
+		expect(#Motions.GENIN_ITEMS).toBe(8)
+	end
+)
+
+test("下忍の待機と移動は、Ninja パックのアニメーション", function()
+	local ninja: { [number]: boolean } = {}
+	for _, ids in Motions.LocomotionAnimations do
+		for _, id in ids do
+			ninja[id] = true
+		end
+	end
+	expect(ninja[Motions.Genin.Idle]).toBe(true)
+	expect(ninja[Motions.Genin.Run]).toBe(true)
+end)
+
+test("下忍のモーションの ID は項目で引き、項目でなければ 0", function()
+	expect(Motions.geninIdOf("Run")).toBe(Motions.Genin.Run)
+	withMotion(Motions.Genin :: any, "Launch", 666, function()
+		expect(Motions.geninIdOf("Launch")).toBe(666)
+	end)
+	expect(Motions.geninIdOf("Jump")).toBe(0)
+	expect(Motions.isGeninItem("Knockback")).toBe(true)
+	expect(Motions.isGeninItem("knockback")).toBe(false)
+	expect(Motions.isGeninItem(3)).toBe(false)
+end)
+
+test(
+	"下忍のモーションの ID は項目ごとに差し替えられ、項目でなければ差し替えない",
+	function()
+		withMotion(Motions.Genin :: any, "Attack", Motions.Genin.Attack, function()
+			expect(Motions.setGeninId("Attack", 507770239)).toBe(true)
+			expect(Motions.Genin.Attack).toBe(507770239)
+			expect(Motions.geninIdOf("Attack")).toBe(507770239)
+		end)
+		expect(Motions.setGeninId("Jump", 1)).toBe(false)
+		expect((Motions.Genin :: any).Jump).toBe(nil)
+	end
+)
+
+test(
+	"下忍のモーションは、待機・移動・攻撃・被弾の反応の順に上の優先度で重ね、待機と移動だけをくり返す",
+	function()
+		expect(Motions.geninPriorityOf("Idle")).toBe("Idle")
+		expect(Motions.geninPriorityOf("Run")).toBe("Movement")
+		expect(Motions.geninPriorityOf("Attack")).toBe("Action")
+		for _, item in { "Flinch", "Knockback", "Launch", "Down", "GetUp" } do
+			expect(Motions.geninPriorityOf(item)).toBe("Action2")
+		end
+		for _, item in Motions.GENIN_ITEMS do
+			expect(Motions.isGeninLocomotion(item)).toBe(item == "Idle" or item == "Run")
+		end
+	end
+)
+
+test("下忍は速さが閾値を超えたら移動、閾値以下なら待機のモーションにする", function()
+	expect(Motions.geninLocomotionOf(nil, 12, 0, 1, 0.3)).toBe("Run")
+	expect(Motions.geninLocomotionOf("Idle", 1.5, 0, 1, 0.3)).toBe("Run")
+	expect(Motions.geninLocomotionOf(nil, 0, 0, 1, 0.3)).toBe("Idle")
+	expect(Motions.geninLocomotionOf("Idle", 1, 5, 1, 0.3)).toBe("Idle")
+end)
+
+test("移動のモーションの下忍は、止まってから決めた秒数たつまで移動のまま", function()
+	expect(Motions.geninLocomotionOf("Run", 0, 0, 1, 0.3)).toBe("Run")
+	expect(Motions.geninLocomotionOf("Run", 0.5, 0.29, 1, 0.3)).toBe("Run")
+	expect(Motions.geninLocomotionOf("Run", 0, 0.3, 1, 0.3)).toBe("Idle")
+	-- 待機の下忍は、止まっている秒数によらず待機のまま
+	expect(Motions.geninLocomotionOf("Idle", 0, 0, 1, 0.3)).toBe("Idle")
+end)
+
+test(
+	"移動のモーションは、歩く速さと等速の速さの比で流し、速さが無ければ等速",
+	function()
+		expect(Motions.geninRunPlaybackOf(12, 16)).toBeNear(0.75)
+		expect(Motions.geninRunPlaybackOf(24, 16)).toBeNear(1.5)
+		expect(Motions.geninRunPlaybackOf(0, 16)).toBe(1)
+		expect(Motions.geninRunPlaybackOf(12, 0)).toBe(1)
+	end
+)
+
+test(
+	"被弾の反応のモーションは反応の状態から引き、打ち上げで飛んでいれば打ち上げ、ほかの飛び方は吹き飛び",
+	function()
+		expect(Motions.geninReactionOf("Flinch", nil)).toBe("Flinch")
+		expect(Motions.geninReactionOf("Air", "Knockback")).toBe("Knockback")
+		expect(Motions.geninReactionOf("Air", "Launch")).toBe("Launch")
+		expect(Motions.geninReactionOf("Air", nil)).toBe("Knockback")
+		expect(Motions.geninReactionOf("Down", "Launch")).toBe("Down")
+		expect(Motions.geninReactionOf("GetUp", nil)).toBe("GetUp")
+		expect(Motions.geninReactionOf(nil, nil)).toBe(nil)
+	end
+)
+
+test(
+	"のけぞりと飛ぶ反応は状態が変わるたびに流し直し、ダウンと起き上がりと反応の終わりは種類が変わったときだけ",
+	function()
+		expect(Motions.geninReactionRestarts(nil, "Flinch")).toBe(true)
+		expect(Motions.geninReactionRestarts("Flinch", "Flinch")).toBe(true)
+		expect(Motions.geninReactionRestarts("Air", "Air")).toBe(true)
+		expect(Motions.geninReactionRestarts("Down", "Air")).toBe(true)
+		expect(Motions.geninReactionRestarts("Air", "Down")).toBe(true)
+		expect(Motions.geninReactionRestarts("Down", "Down")).toBe(false)
+		expect(Motions.geninReactionRestarts("Down", "GetUp")).toBe(true)
+		expect(Motions.geninReactionRestarts("GetUp", "Down")).toBe(true)
+		expect(Motions.geninReactionRestarts("GetUp", nil)).toBe(true)
+		expect(Motions.geninReactionRestarts(nil, nil)).toBe(false)
+	end
+)
+
+test(
+	"待機と移動は、反応の最中でなければ速さで選び、のけぞりと起き上がりの間は待機、飛んでいる間と倒れている間は流さない",
+	function()
+		expect(Motions.geninLocomotionMode(nil)).toBe("Speed")
+		expect(Motions.geninLocomotionMode("Flinch")).toBe("Idle")
+		expect(Motions.geninLocomotionMode("GetUp")).toBe("Idle")
+		expect(Motions.geninLocomotionMode("Air")).toBe("None")
+		expect(Motions.geninLocomotionMode("Down")).toBe("None")
+	end
+)

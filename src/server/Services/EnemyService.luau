@@ -14,17 +14,49 @@
 --   体で押したり上に乗ったりしない
 --
 -- 動き
--- - 敵軍の体は、近くのプレイヤー（Config.luau の EnemyAI 節の AggroRange 以内）へ近づいて攻撃するだけである。
+-- - 敵軍の体は、近くのプレイヤー（Config.luau の EnemyAI 節の AggroRange 以内。交戦中の部隊の個体は Zensen 節の
+--   AggroRange 以内）へ近づいて攻撃するだけである。
 --   プレイヤーへの攻撃は DamageService の被ダメージの窓口に渡す。重ならないよう、プレイヤーの手前で止まり、
 --   ほかの体とも離れて囲む（立ち位置の計算は EnemySpacing）
--- - 味方軍の下忍の個体は、プレイヤーを狙わず、攻撃もしない（攻撃トークンの候補にも入らない）。ほかの下忍とも戦わない
---   （交戦中の下忍同士の姿は #89）
--- - 狙う相手がいない部隊の下忍の個体（味方軍はいつも）は、部隊の位置（setHomeProvider で登録した関数で引く）の周りの
---   自分の位置へ戻り、部隊について歩く。窓口で出した敵はその場にとどまる
+-- - 味方軍の下忍の個体は、プレイヤーを狙わず、プレイヤーを攻撃しない（攻撃トークンの候補にも入らない）。
+--   交戦中は前線に並び、敵軍の下忍と向かい合って攻撃の動作をする（下の「交戦」）
+-- - 狙う相手がいない部隊の下忍の個体（味方軍はいつも）は、交戦していなければ、部隊の位置（setHomeProvider で登録した
+--   関数で引く）の周りの自分の位置へ戻り、部隊について歩く。窓口で出した敵はその場にとどまる
+--
+-- 交戦（#89。並びの計算は ReplicatedStorage.Shared.Zensen、数値は Config.luau の Zensen 節）
+-- - 交戦中の部隊（setKosenProvider で登録した関数で引く）の個体のうち、プレイヤーを狙っていないものは、考える間隔ごとに
+--   交戦の組ごとに前線と控えに並べる。並ぶ位置へ寄り、相手の部隊の方を向く。前線に並ぶのは部隊ごとに前線幅
+--   （Kosen 節の Zensenhaba）体まで
+-- - 並ぶ位置に着いた前線の個体は、向かい合う相手の個体へ、間隔をあけて攻撃の動作をする。当たり判定は無く、ダメージも
+--   反応も起こさない。攻撃の動作は下忍の攻撃のモーション（Motions.Genin.Attack）を個体の Animator で再生する。
+--   ID が 0 の間（読み込めなかったときも）は、正面に小さな斬撃の仮エフェクト（Vfx.slash。当たり判定・接触・空間クエリから
+--   外したパーツ）を出す
+-- - 交戦中の部隊の敵軍の個体は、Zensen 節の AggroRange 以内のプレイヤーを狙い（攻撃トークンに従う）、狙っている間は
+--   並ばない。プレイヤーが離れたら前線へ戻る（窓口の SetKosenAggro false の間は狙わない。確認用）
+-- - 交戦の損害の演出（defeatZensen）で、部隊の前線の個体を倒れさせる。向かい合う相手が、その時に攻撃の動作をする
+-- - 交戦が決着したら（交戦の様子を引けなくなったら）、部隊について歩く動きと、プレイヤーを狙う動きに戻る
+--
+-- モーション（#88。項目と ID は ReplicatedStorage.Shared.Motions の Genin、数値は Config.luau の GeninMotion 節）
+-- - 下忍の体（両軍の部隊の下忍の個体と、窓口で出した下忍）に、サーバーから体の Animator で流す（#15 の案A。
+--   トラックはクライアントへ複製される）。ID が 0 の項目は流さない。窓口で出した上忍には流さない
+-- - 待機（Idle）と移動（Run）はくり返し流す。Interval ごとに体の水平の速さを見て、MoveThreshold を超えたら移動にし、
+--   止まってから IdleDelay 秒たったら待機にする（のけぞりと起き上がりの間と、止まって攻撃するときは、すぐ待機にする）。
+--   移動は、歩く速さと RunSpeed の比の速さで流す
+-- - 攻撃（Attack）は、プレイヤーを攻撃したときと前線の攻撃の動作で1回流す
+-- - 被弾の反応（Flinch・Knockback・Launch・Down・GetUp）は、反応（Hanno）の状態が変わったとき（onStateChanged）に、
+--   攻撃より上の優先度で1回流す。前の反応のモーションと攻撃のモーションは止め、反応が終わったら止める
+-- - 飛んでいる間と倒れている間と倒れた後は、待機と移動を止める。倒れたら攻撃も止める（被弾の反応は続ける）。
+--   体をプールへ返すときは、すべて止める（使い回した体は、何も流れていない状態から出る）
+-- - 読み込んだトラックは、体ごと・項目ごとに覚えて使い回す（プールをまたいでも残し、体を壊したら手放す）。
+--   ID が変わっていたら読み込み直す
+-- - 窓口の SetGeninMotion で ID を差し替え（サーバーを止めるまで続く）、DumpGeninMotion で ID と、項目ごとに
+--   流している体の数を確かめる
 --
 -- 倒れたとき
 -- - プレイヤーが倒した体は、撃破数を足し、gekiha で種類・軍（倒れた体の軍）・倒れた位置・倒したプレイヤー・部隊 ID を知らせる
 -- - 部隊の下忍の個体が倒れたら（倒した人によらず）、kotaiDefeated で知らせる（GeninKotaiService が部隊の兵数を1減らす）
+-- - 交戦の損害の演出で倒した個体は、部隊の兵数を交戦の計算で減らし終えているので、撃破数・兵数・拠点の耐久・救援数に
+--   数えない（gekiha でも kotaiDefeated でも知らせない）
 -- - 個体を消す（remove。部隊へ戻す）ときは、倒れたことにしない（撃破数・兵数・知らせは動かない）
 -- - 体は Humanoid の Dead の状態にしない（Dead になった Humanoid は、体力を戻しても生き返らないことがあり、使い回せない）。
 --   体力が 0 になったことを HealthChanged で受けて倒れたときの処理を1回だけ走らせ、Humanoid を自分で力を出さない状態
@@ -82,14 +114,17 @@ local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
 local KotaiPool = require(ReplicatedStorage.Shared.KotaiPool)
+local Motions = require(ReplicatedStorage.Shared.Motions)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
+local Zensen = require(ReplicatedStorage.Shared.Zensen)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local DamageService = require(script.Parent.DamageService)
 local PlayerService = require(script.Parent.PlayerService)
 local StageService = require(script.Parent.StageService)
 local CollisionGroups = require(script.Parent.Parent.CollisionGroups)
 local Hanno = require(script.Parent.Parent.Combat.Hanno)
+local Vfx = require(script.Parent.Parent.Combat.Vfx)
 
 type EnemyDef = Config.EnemySection
 
@@ -134,6 +169,55 @@ type Enemy = {
 	offset: Vector3,
 	-- とどめが、兵数の減少を拠点の耐久に数えない攻撃（秘計の爆破罠）だったか
 	lastHitSilent: boolean,
+	-- 交戦中の部隊の個体を前線か控えに並べたなら、最後の判断で決めた並ぶ位置（プレイヤーを狙っていれば nil）
+	zensen: ZensenOrder?,
+	-- 前線で次に攻撃の動作をする時刻（os.clock）。並ぶ位置に着くまでは nil
+	swingAt: number?,
+	-- 最後の判断で狙ったプレイヤー（確認用）
+	target: Player?,
+	-- 交戦の損害の演出で倒したか（部隊の兵数は交戦の計算で減らし終えているので、倒れても知らせない）
+	kosenSongai: boolean?,
+}
+
+-- 交戦中の部隊の個体の並ぶ位置（Zensen の並び）
+type ZensenOrder = {
+	-- 並ぶ位置（水平。高さは問わない）
+	point: Vector3,
+	-- 向く向き（水平の単位ベクトル。自分の部隊から相手の部隊への向き）
+	look: Vector3,
+	-- 列（0 が前線、1 から後ろへ控えの列）と、列の中の位置の番号。次の並びに引き継ぐ
+	row: number,
+	column: number,
+	-- 前線の個体か（false なら控え）
+	front: boolean,
+	-- 前線の個体が向かい合う相手の個体
+	aite: Model?,
+}
+
+-- 交戦中の部隊の様子（setKosenProvider で登録した関数が返す）
+export type KosenInfo = {
+	-- 交戦の相手の部隊 ID
+	aite: string,
+	-- 自分の部隊と相手の部隊の水平の位置
+	position: Zensen.Point,
+	aitePosition: Zensen.Point,
+}
+
+-- 交戦中の部隊の個体の様子（窓口の確認用。kosenKotaiOf）
+export type KosenKotai = {
+	name: string,
+	-- 前線の個体か（控えは false）。前線にも控えにも並べていなければ nil
+	front: boolean?,
+	-- 前線の個体が向かい合う相手の個体の名前
+	aite: string?,
+	-- 個体の正面（水平の向き）。倒れているなど、正面が水平に近くなければ nil
+	look: Zensen.Point?,
+	-- 並ぶ位置までの水平の距離（スタッド）。並べていなければ nil
+	distance: number?,
+	-- 並ぶ位置に着いているか（着いた個体が相手の部隊の方を向く）。並べていなければ nil
+	arrived: boolean?,
+	-- 最後の判断で狙ったプレイヤー
+	player: Player?,
 }
 
 -- 種類・軍・色ごとの体のひな形と、そのひな形の体のプール
@@ -155,6 +239,31 @@ type Rig = {
 	root: BasePart,
 	-- 出した回数（窓口の確認用。2 以上なら使い回した体）
 	uses: number,
+	-- 下忍のモーションを流している様子。体を壊すまで、出し入れをまたいで使い回す
+	motion: MotionState,
+}
+
+-- 体に読み込んだ、下忍のモーションの項目1つのトラック
+type LoadedTrack = {
+	-- 読み込んだときの ID（窓口で差し替えたら読み込み直す）
+	id: number,
+	track: AnimationTrack,
+}
+
+-- 体ごとの、下忍のモーションを流している様子（ヘッダーの「モーション」）
+type MotionState = {
+	-- 項目ごとに読み込んだトラック
+	tracks: { [string]: LoadedTrack },
+	-- 流す待機か移動の項目（Idle・Run）。止めている間（倒れた後・飛んでいる間・倒れている間・プール）は nil
+	locomotion: string?,
+	-- 流している待機か移動のトラック（ID が 0 なら nil）
+	locomotionTrack: AnimationTrack?,
+	-- 体の水平の速さが MoveThreshold 以下になった時刻（os.clock）。動いている間は nil
+	stillSince: number?,
+	-- 流している攻撃のトラック
+	attackTrack: AnimationTrack?,
+	-- 流している被弾の反応のトラック
+	reactionTrack: AnimationTrack?,
 }
 
 -- 毒の中身
@@ -201,6 +310,10 @@ local rigs: { [Model]: Rig } = {}
 local radii: { [string]: number } = {}
 -- 部隊 ID から部隊の位置を引く関数（GeninKotaiService が登録する）
 local homeProvider: ((butaiId: string) -> Vector3?)? = nil
+-- 部隊 ID から交戦中の部隊の様子を引く関数（GeninKotaiService が登録する）。交戦していなければ nil を返す
+local kosenProvider: ((butaiId: string) -> KosenInfo?)? = nil
+-- 交戦中の部隊の敵軍の個体がプレイヤーを狙うか。窓口の SetKosenAggro で切り替える（確認用）
+local kosenAggro = true
 local enemies: { [Model]: Enemy } = {}
 -- 倒れた姿を見せている体（倒れたときの処理を終え、プールへ返すのを待つ）
 local corpses: { [Model]: Enemy } = {}
@@ -233,6 +346,21 @@ local NEAR_RANGE = 10
 local STEP = 3
 -- 倒れているときの、地面から HumanoidRootPart の中心までの高さ（体の大きさの倍率を掛ける）
 local LIE_HEIGHT = 1
+-- 交戦中の個体は、前線か控えの並ぶ位置からこの距離（スタッド）より離れていなければ、着いたとみなして止まる
+-- （Humanoid:MoveTo は目標の 0.7〜0.8 スタッド手前で止まるので、それより広くする）
+local ZENSEN_TOLERANCE = 1.5
+-- 並ぶ位置に着いた個体は、正面と相手の部隊の方の向きのずれがこの角度（度）より大きければ向き直す
+local TURN_THRESHOLD = 5
+-- 窓口で正面の向きを出すときに、正面が水平に近いとみなす HumanoidRootPart の LookVector の上下の成分の上限
+-- （倒れている個体の正面は出さない）
+local UPRIGHT_LIMIT = 0.7
+-- 下忍のモーションの優先度の名前（Motions.geninPriorityOf）から引く、トラックの優先度
+local MOTION_PRIORITIES: { [Motions.GeninPriority]: Enum.AnimationPriority } = {
+	Idle = Enum.AnimationPriority.Idle,
+	Movement = Enum.AnimationPriority.Movement,
+	Action = Enum.AnimationPriority.Action,
+	Action2 = Enum.AnimationPriority.Action2,
+}
 -- 毒の間に出す緑の煙の名前と色
 local POISON_NAME = "Doku"
 local POISON_COLOR = Color3.fromRGB(110, 210, 70)
@@ -304,8 +432,9 @@ local function templateFor(kind: string, gun: Gun.Gun, color: Color3?): Template
 	return template
 end
 
-local function findNearestTarget(position: Vector3): (Player?, BasePart?)
-	local bestPlayer, bestRoot, bestDistance = nil, nil, Config.EnemyAI.AggroRange
+-- position から range（スタッド）以内で一番近い、倒れていないプレイヤー
+local function findNearestTarget(position: Vector3, range: number): (Player?, BasePart?)
+	local bestPlayer, bestRoot, bestDistance = nil, nil, range
 	for _, player in Players:GetPlayers() do
 		local character = player.Character
 		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -424,6 +553,268 @@ local function updateTokens(candidates: { [Player]: { KogekiToken.Candidate } },
 	end
 end
 
+-- 個体を水平の向き look（単位ベクトル）へ向ける。向きのずれが TURN_THRESHOLD（度）より小さければ向き直さない
+local function faceToward(enemy: Enemy, look: Vector3)
+	local current = enemy.root.CFrame.LookVector
+	local flat = Vector3.new(current.X, 0, current.Z)
+	if flat.Magnitude > 1e-3 and flat.Unit:Dot(look) >= math.cos(math.rad(TURN_THRESHOLD)) then
+		return
+	end
+	local here = enemy.root.Position
+	enemy.root.CFrame = CFrame.lookAt(here, here + look)
+end
+
+-- 体の Animator に、下忍のモーションの項目 item の今の ID のトラックを読み込む。読み込んだものは体ごと・項目ごとに
+-- 使い回し（プールをまたいでも残す）、ID が変わっていたら前のトラックを捨てて読み込み直す。ID が 0 か、読み込めなければ nil
+local function trackFor(rig: Rig, item: string): AnimationTrack?
+	local id = Motions.geninIdOf(item)
+	local tracks = rig.motion.tracks
+	local loaded = tracks[item]
+	if loaded then
+		if loaded.id == id then
+			return loaded.track
+		end
+		tracks[item] = nil
+		loaded.track:Stop(0)
+		loaded.track:Destroy()
+	end
+	if id <= 0 then
+		return nil
+	end
+	local animator = rig.humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		local created = Instance.new("Animator")
+		created.Parent = rig.humanoid
+		animator = created
+	end
+	local animation = Instance.new("Animation")
+	animation.AnimationId = `rbxassetid://{id}`
+	local ok, result = pcall(function(): AnimationTrack
+		return (animator :: Animator):LoadAnimation(animation)
+	end)
+	if not ok then
+		warn(`EnemyService: 下忍のモーション {item}（{id}）を読み込めなかった: {result}`)
+		return nil
+	end
+	local track = result :: AnimationTrack
+	tracks[item] = { id = id, track = track }
+	return track
+end
+
+-- 待機か移動のモーション item をくり返し流す（nil なら止める）。同じ項目を流していれば何もしない（restart なら流し直す）。
+-- 移動は、歩く速さと GeninMotion 節の RunSpeed の比の速さで流す。ID が 0 の項目は流さない
+local function setLocomotion(rig: Rig, item: string?, restart: boolean?)
+	local motion = rig.motion
+	if motion.locomotion == item and not restart then
+		return
+	end
+	local fade = Config.GeninMotion.LocomotionFade
+	local previous = motion.locomotionTrack
+	motion.locomotion = item
+	motion.locomotionTrack = nil
+	if previous then
+		previous:Stop(fade)
+	end
+	if not item then
+		return
+	end
+	local track = trackFor(rig, item)
+	if not track then
+		return
+	end
+	track.Priority = MOTION_PRIORITIES[Motions.geninPriorityOf(item)]
+	track.Looped = true
+	local speed = if item == "Run"
+		then Motions.geninRunPlaybackOf(rig.humanoid.WalkSpeed, Config.GeninMotion.RunSpeed)
+		else 1
+	track:Play(fade, 1, speed)
+	motion.locomotionTrack = track
+end
+
+-- 体の水平の速さ（スタッド/秒）。固定している体（飛んでいる間・倒れている間・起き上がっている間）は止まっているとみなす
+local function horizontalSpeedOf(root: BasePart): number
+	if root.Anchored then
+		return 0
+	end
+	local velocity = root.AssemblyLinearVelocity
+	return math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+end
+
+-- 体の水平の速さで、待機と移動のどちらを流すかを選び直す（Motions.geninLocomotionOf）。
+-- 移動を流している体は、止まってから GeninMotion 節の IdleDelay 秒たつまで移動のまま
+local function chooseLocomotion(rig: Rig, now: number)
+	local params = Config.GeninMotion
+	local motion = rig.motion
+	local speed = horizontalSpeedOf(rig.root)
+	if speed > params.MoveThreshold then
+		motion.stillSince = nil
+	elseif not motion.stillSince then
+		motion.stillSince = now
+	end
+	local stillSince = motion.stillSince
+	local stillFor = if stillSince then now - stillSince else 0
+	setLocomotion(
+		rig,
+		Motions.geninLocomotionOf(motion.locomotion, speed, stillFor, params.MoveThreshold, params.IdleDelay)
+	)
+end
+
+-- 下忍の体の待機と移動のモーションを、今の様子で決め直す（Motions.geninLocomotionMode）。倒れた体と、飛んでいる間・
+-- 倒れている間は止める。のけぞりと起き上がりの間はその場で止めているので待機にし、反応の最中でなければ体の速さで選ぶ
+local function refreshLocomotion(enemy: Enemy, now: number)
+	local rig = rigs[enemy.model]
+	if not rig then
+		return
+	end
+	local alive = enemies[enemy.model] == enemy and enemy.humanoid.Health > 0
+	local mode = if alive then Motions.geninLocomotionMode(Hanno.kindOf(enemy.body)) else "None"
+	if mode == "Speed" then
+		chooseLocomotion(rig, now)
+	elseif mode == "Idle" then
+		setLocomotion(rig, "Idle")
+	else
+		setLocomotion(rig, nil)
+	end
+end
+
+-- 間隔ごとに、出ている下忍の体の待機と移動を選び直す
+local function updateLocomotion(now: number)
+	for _, enemy in enemies do
+		if enemy.kind == "Genin" then
+			refreshLocomotion(enemy, now)
+		end
+	end
+end
+
+-- 下忍の攻撃のモーション（Motions.Genin.Attack）を1回流す。流したら true（下忍でない体と、ID が 0 か読み込めなければ false）
+local function playAttack(enemy: Enemy): boolean
+	local rig = rigs[enemy.model]
+	if enemy.kind ~= "Genin" or not rig then
+		return false
+	end
+	-- 止まって攻撃する体は、止まってからの IdleDelay 秒を待たずに待機にする（走る足のまま攻撃しないように）
+	if rig.motion.locomotion == "Run" and horizontalSpeedOf(rig.root) <= Config.GeninMotion.MoveThreshold then
+		setLocomotion(rig, "Idle")
+	end
+	local track = trackFor(rig, "Attack")
+	if not track then
+		return false
+	end
+	track.Priority = MOTION_PRIORITIES[Motions.geninPriorityOf("Attack")]
+	track.Looped = false
+	track:Play(Config.GeninMotion.ActionFade)
+	rig.motion.attackTrack = track
+	return true
+end
+
+-- 被弾の反応のモーション item を、攻撃より上の優先度で1回流す（nil なら止める）。前の反応のモーションは止め、
+-- 反応を始めたら攻撃のモーションも止める。ID が 0 の項目は流さない
+local function playReaction(rig: Rig, item: string?)
+	local motion = rig.motion
+	local fade = Config.GeninMotion.ActionFade
+	local previous = motion.reactionTrack
+	motion.reactionTrack = nil
+	if previous then
+		previous:Stop(fade)
+	end
+	if not item then
+		return
+	end
+	local attack = motion.attackTrack
+	motion.attackTrack = nil
+	if attack then
+		attack:Stop(fade)
+	end
+	local track = trackFor(rig, item)
+	if not track then
+		return
+	end
+	track.Priority = MOTION_PRIORITIES[Motions.geninPriorityOf(item)]
+	track.Looped = false
+	track:Play(fade)
+	motion.reactionTrack = track
+end
+
+-- 反応（Hanno）の状態が変わったら、被弾の反応のモーションを流し（反応が終わったら止め）、待機と移動を決め直す。
+-- のけぞりと飛ぶ反応は攻撃を受けるたびに流し直し、ダウンと起き上がりは種類が変わったときだけ流す
+local function onHannoChanged(enemy: Enemy, state: Hanno.State?, previous: Hanno.State?)
+	local model = enemy.model
+	local rig = rigs[model]
+	-- プールへ返した体には流さない（倒れた姿を見せている間は流す）
+	if not rig or (enemies[model] ~= enemy and corpses[model] ~= enemy) then
+		return
+	end
+	local kind = if state then state.kind else nil
+	if Motions.geninReactionRestarts(if previous then previous.kind else nil, kind) then
+		playReaction(rig, Motions.geninReactionOf(kind, if state then state.reaction else nil))
+	end
+	refreshLocomotion(enemy, os.clock())
+end
+
+-- 倒れた体の、待機と移動と攻撃のモーションを止める（被弾の反応のモーションは、倒れたまま残す間も続ける）
+local function stopActing(rig: Rig)
+	setLocomotion(rig, nil)
+	local motion = rig.motion
+	local attack = motion.attackTrack
+	motion.attackTrack = nil
+	if attack then
+		attack:Stop(Config.GeninMotion.ActionFade)
+	end
+end
+
+-- 体のモーションをすべてすぐに止める（体をプールへ返すとき）。使い回した体は、何も流れていない状態から出る
+local function stopMotions(rig: Rig)
+	local motion = rig.motion
+	motion.locomotion = nil
+	motion.locomotionTrack = nil
+	motion.stillSince = nil
+	motion.attackTrack = nil
+	motion.reactionTrack = nil
+	for _, loaded in motion.tracks do
+		loaded.track:Stop(0)
+	end
+end
+
+-- 交戦の前線の個体の攻撃の動作。下忍の攻撃のモーション（Motions.Genin.Attack）を個体の Animator で再生する。
+-- モーションがまだ無い（ID が 0 か、読み込めない）間は、正面 look に小さな斬撃の仮エフェクトを出す。
+-- どちらも見た目だけで、当たり判定は無い（プレイヤーにも個体にも当たらず、ダメージも反応も起こさない）
+local function swing(enemy: Enemy, look: Vector3)
+	if not playAttack(enemy) then
+		Vfx.slash(enemy.root.Position, look)
+	end
+end
+
+-- 次に攻撃の動作をする時刻。Zensen 節の間隔に、乱数の秒数を足す（前線の個体がそろって振らないように）
+local function nextSwingTime(now: number): number
+	return now + Config.Zensen.AttackInterval + math.random() * Config.Zensen.AttackRandom
+end
+
+-- 交戦中の部隊の個体を、前線か控えの並ぶ位置へ寄せ、相手の部隊の方を向かせる。並ぶ位置に着いた前線の個体は、
+-- 向かい合う相手の個体がいれば、間隔をあけて攻撃の動作をする（当たり判定は無い）
+local function holdZensen(enemy: Enemy, order: ZensenOrder, now: number)
+	local position = enemy.root.Position
+	if horizontalDistance(position, order.point) > ZENSEN_TOLERANCE then
+		enemy.humanoid:MoveTo(Vector3.new(order.point.X, position.Y, order.point.Z))
+		enemy.swingAt = nil
+		return
+	end
+	enemy.humanoid:Move(Vector3.zero)
+	faceToward(enemy, order.look)
+	local aite = if order.front and order.aite then enemies[order.aite] else nil
+	if not aite or aite.humanoid.Health <= 0 then
+		enemy.swingAt = nil
+		return
+	end
+	local swingAt = enemy.swingAt
+	if not swingAt then
+		-- 着いたら、間隔の中のばらけた時刻に最初の攻撃の動作をする
+		enemy.swingAt = now + math.random() * (Config.Zensen.AttackInterval + Config.Zensen.AttackRandom)
+	elseif now >= swingAt then
+		swing(enemy, order.look)
+		enemy.swingAt = nextSwingTime(now)
+	end
+end
+
 local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	updatePoison(enemy, now)
 	if enemy.humanoid.Health <= 0 then
@@ -440,6 +831,12 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 		return
 	end
 	if not aim then
+		-- 交戦中の部隊の個体は、前線か控えに並ぶ
+		local order = enemy.zensen
+		if order then
+			holdZensen(enemy, order, now)
+			return
+		end
 		-- 狙う相手がいない（味方軍の下忍の個体はいつも）部隊の下忍の個体は、部隊の位置の周りの自分の位置へ戻る
 		-- （部隊について歩く）。窓口で出した敵はその場にとどまる
 		local home = if enemy.butai and homeProvider then homeProvider(enemy.butai) else nil
@@ -494,6 +891,8 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 		return
 	end
 	enemy.lastAttack = now
+	-- 下忍は攻撃のモーションを流す（ID が 0 なら流さない）
+	playAttack(enemy)
 
 	DamageService.damage(targetPlayer, {
 		origin = enemy.root.Position,
@@ -507,15 +906,117 @@ local function updateEnemy(enemy: Enemy, now: number, aim: Target?)
 	end
 end
 
--- 考える間隔ごとに、敵軍の体ごとに狙うプレイヤーを決め、攻撃トークンを渡してから動かす。
--- 味方軍の下忍の個体はプレイヤーを狙わず、攻撃トークンの候補にも入らない（部隊について歩く）
-local function think(now: number)
+-- 交戦の組の片側の個体を、並びの計算に渡す形にする。前の並びの位置（列と列の中の位置の番号）も渡して引き継ぐ
+local function zensenSideOf(position: Zensen.Point, list: { Enemy }): Zensen.Side
+	local kotai: { Zensen.Kotai } = {}
+	for _, enemy in list do
+		local p = enemy.root.Position
+		local previous = enemy.zensen
+		table.insert(kotai, {
+			id = enemy.model.Name,
+			x = p.X,
+			z = p.Z,
+			row = if previous then previous.row else nil,
+			column = if previous then previous.column else nil,
+		})
+	end
+	return { position = position, kotai = kotai }
+end
+
+-- 並びの計算の結果を、片側の個体の並ぶ位置にする。byName は両側の個体を名前で引く表（向かい合う相手を引く）
+local function applyZensen(list: { Enemy }, layout: Zensen.SideLayout, byName: { [string]: Model })
+	local look = Vector3.new(layout.look.x, 0, layout.look.z)
+	for _, enemy in list do
+		local slot = layout.slots[enemy.model.Name]
+		if slot then
+			enemy.zensen = {
+				point = Vector3.new(slot.point.x, 0, slot.point.z),
+				look = look,
+				row = slot.row,
+				column = slot.column,
+				front = slot.front,
+				aite = if slot.aite then byName[slot.aite] else nil,
+			}
+		else
+			enemy.zensen = nil
+		end
+	end
+end
+
+-- 交戦中の部隊の個体のうち、プレイヤーを狙っていない生きている個体を、交戦の組ごとに前線と控えに並べる（Zensen.layout）。
+-- 交戦していない個体と、プレイヤーを狙っている個体は並べない
+local function arrangeZensen(aims: { [Enemy]: Target }, kosenOf: (butaiId: string?) -> KosenInfo?)
+	local byButai: { [string]: { Enemy } } = {}
+	for _, enemy in enemies do
+		local butaiId = enemy.butai
+		if butaiId and enemy.humanoid.Health > 0 and not aims[enemy] and kosenOf(butaiId) then
+			local list = byButai[butaiId]
+			if not list then
+				list = {}
+				byButai[butaiId] = list
+			end
+			table.insert(list, enemy)
+		else
+			enemy.zensen = nil
+		end
+	end
+	local done: { [string]: boolean } = {}
+	for butaiId in byButai do
+		local info = kosenOf(butaiId)
+		if done[butaiId] or not info then
+			continue
+		end
+		done[butaiId] = true
+		done[info.aite] = true
+		-- 組の中の順は部隊 ID の順にそろえる（2つの部隊が同じ位置にいるときの向きを、どちらから並べても同じにする）
+		local firstId, secondId = butaiId, info.aite
+		local firstPosition, secondPosition = info.position, info.aitePosition
+		if secondId < firstId then
+			firstId, secondId = secondId, firstId
+			firstPosition, secondPosition = secondPosition, firstPosition
+		end
+		local firstList, secondList = byButai[firstId] or {}, byButai[secondId] or {}
+		local byName: { [string]: Model } = {}
+		for _, list in { firstList, secondList } do
+			for _, enemy in list do
+				byName[enemy.model.Name] = enemy.model
+			end
+		end
+		local layout = Zensen.layout(zensenSideOf(firstPosition, firstList), zensenSideOf(secondPosition, secondList))
+		applyZensen(firstList, layout.a, byName)
+		applyZensen(secondList, layout.b, byName)
+	end
+end
+
+-- 考える間隔ごとに、敵軍の体ごとに狙うプレイヤーを決め、攻撃トークンを渡し、交戦中の部隊の個体を前線と控えに並べてから動かす。
+-- 味方軍の下忍の個体はプレイヤーを狙わず、攻撃トークンの候補にも入らない（部隊について歩くか、交戦中なら前線と控えに並ぶ）。
+-- 交戦中の部隊の敵軍の個体は、Zensen 節の AggroRange 以内のプレイヤーだけを狙い、狙っている間は並ばない
+local function thinkOnce(now: number)
 	local aims: { [Enemy]: Target } = {}
 	local candidates: { [Player]: { KogekiToken.Candidate } } = {}
+	-- 部隊 ID ごとの交戦の様子。この判断の中で部隊ごとに1回だけ引く（交戦していなければ false）
+	local kosenCache: { [string]: KosenInfo | false } = {}
+	local function kosenOf(butaiId: string?): KosenInfo?
+		local provider = kosenProvider
+		if not butaiId or not provider then
+			return nil
+		end
+		local cached = kosenCache[butaiId]
+		if cached == nil then
+			cached = provider(butaiId) or false
+			kosenCache[butaiId] = cached
+		end
+		return if cached then cached else nil
+	end
 	if aiEnabled then
 		for _, enemy in enemies do
 			if enemy.gun == AITE_GUN and enemy.humanoid.Health > 0 then
-				local player, root = findNearestTarget(enemy.root.Position)
+				-- 交戦中の部隊の個体は、近くのプレイヤーだけを狙う（窓口の SetKosenAggro false の間は狙わない）
+				local range = Config.EnemyAI.AggroRange
+				if kosenOf(enemy.butai) then
+					range = if kosenAggro then Config.Zensen.AggroRange else 0
+				end
+				local player, root = findNearestTarget(enemy.root.Position, range)
 				if player and root then
 					aims[enemy] = { player = player, root = root }
 					if enemy.kind == "Genin" and not isDowned(enemy) then
@@ -533,9 +1034,20 @@ local function think(now: number)
 			end
 		end
 		updateTokens(candidates, now)
+		arrangeZensen(aims, kosenOf)
 	end
 	for _, enemy in enemies do
-		updateEnemy(enemy, now, aims[enemy])
+		local aim = aims[enemy]
+		enemy.target = if aim then aim.player else nil
+		updateEnemy(enemy, now, aim)
+	end
+end
+
+-- 考える間隔ごとに呼ぶ。1回の失敗で体の動きが止まらないよう、失敗は警告にして次の間隔で続ける
+local function think(now: number)
+	local ok, err = pcall(thinkOnce, now)
+	if not ok then
+		warn(`EnemyService: 体の動きを決められなかった: {err}`)
 	end
 end
 
@@ -577,6 +1089,8 @@ local function putBack(model: Model)
 		model:Destroy()
 		return
 	end
+	-- 次に出すときに何も流れていない状態から始めるよう、モーションをすべて止める
+	stopMotions(rig)
 	if KotaiPool.put(rig.template.pool, model) then
 		park(model)
 	else
@@ -619,14 +1133,17 @@ local function onEnemyDied(enemy: Enemy)
 		PlayerService.addGekihasu(living)
 		gekihaEvent:Fire(enemy.kind, enemy.gun, position, living, enemy.butai)
 	end
-	-- 部隊の下忍の個体は、倒した人によらず知らせる（兵数を1減らす）
-	if enemy.butai then
+	-- 部隊の下忍の個体は、倒した人によらず知らせる（兵数を1減らす）。交戦の損害の演出で倒した個体は、
+	-- 兵数を交戦の計算で減らし終えているので知らせない（倒した人もいないので、上の撃破にも数えない）
+	if enemy.butai and not enemy.kosenSongai then
 		kotaiDefeatedEvent:Fire(enemy.model, enemy.butai, enemy.gun, position, living, enemy.lastHitSilent)
 	end
 
-	-- Humanoid を自分で力を出さない状態にして、その場に倒す（Dead の状態にしない体を、Dead のときと同じように倒す）
+	-- Humanoid を自分で力を出さない状態にして、その場に倒す（Dead の状態にしない体を、Dead のときと同じように倒す）。
+	-- 待機と移動と攻撃のモーションは止める（被弾の反応のモーションは、倒れたまま残す間も続ける）
 	local rig = rigs[enemy.model]
 	if rig and isIntact(enemy.model, rig) then
+		stopActing(rig)
 		enemy.humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 	end
 	-- 倒れた姿を CorpseLifetime 秒だけ見せてから、プールへ返す（片付けや奈落で先に返していたら何もしない）
@@ -669,7 +1186,19 @@ local function createBody(template: Template): Model
 			onEnemyDied(enemy)
 		end
 	end)
-	rigs[model] = { template = template, humanoid = humanoid, root = root, uses = 0 }
+	local motion: MotionState = {
+		tracks = {},
+		locomotion = nil,
+		locomotionTrack = nil,
+		stillSince = nil,
+		attackTrack = nil,
+		reactionTrack = nil,
+	}
+	rigs[model] = { template = template, humanoid = humanoid, root = root, uses = 0, motion = motion }
+	-- 体を壊したら、読み込んだトラックを手放す
+	model.Destroying:Once(function()
+		table.clear(motion.tracks)
+	end)
 	return model
 end
 
@@ -727,6 +1256,8 @@ local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, buta
 	applyDef(humanoid, kind, def)
 	if reused then
 		cleanBody(model, template.group)
+		-- プールへ返すときに止めたモーションが、残っていないようにする
+		stopMotions(rig)
 	end
 	model.Parent = enemiesFolder
 	-- 出ている間の読み込みの扱いは、新しく作った体と同じに戻す（Persistent はプールの間だけ）
@@ -789,6 +1320,13 @@ local function spawnEnemy(kind: string, gun: Gun.Gun, x: number, z: number, buta
 	end
 	enemies[model] = enemy
 	aliveCount += 1
+	if kind == "Genin" then
+		-- 下忍は、反応の状態が変わったら被弾の反応のモーションを流し、待機のモーションから始める
+		body.onStateChanged = function(state, previous)
+			onHannoChanged(enemy, state, previous)
+		end
+		refreshLocomotion(enemy, os.clock())
+	end
 	return model
 end
 
@@ -853,6 +1391,92 @@ end
 -- 部隊 ID から部隊の位置（水平。高さは問わない）を引く関数を登録する。戦う相手がいない部隊の下忍の個体はそこへ戻る
 function EnemyService.setHomeProvider(provider: (butaiId: string) -> Vector3?)
 	homeProvider = provider
+end
+
+-- 部隊 ID から交戦中の部隊の様子（交戦の相手の部隊 ID と両部隊の位置）を引く関数を登録する。交戦していなければ nil を返す。
+-- 交戦中の部隊の個体は、交戦の組ごとに前線と控えに並ぶ
+function EnemyService.setKosenProvider(provider: (butaiId: string) -> KosenInfo?)
+	kosenProvider = provider
+end
+
+-- 交戦中の部隊の敵軍の個体が、近くのプレイヤーを狙うかを切り替える（確認用。止めると、前線の攻撃の動作が
+-- プレイヤーに当たらないことを、攻撃トークンの攻撃と分けて確かめられる）
+function EnemyService.setKosenAggro(enabled: boolean)
+	kosenAggro = enabled
+end
+
+-- 交戦の損害の演出で、部隊の前線の個体を count 体まで倒れさせ、倒れさせた個体のモデルを返す（前線の個体が足りなければ全員）。
+-- 前線の個体は最後の判断で並べたもの。相手と向かい合って並ぶ位置に着いている個体を先に選び（Zensen.chooseFallen）、
+-- 並ぶ位置に着いている向かい合う相手に、その時に攻撃の動作をさせる。部隊の兵数は交戦の計算で減らし終えているので、
+-- 倒れても撃破数・兵数・拠点の耐久・救援数に数えない（倒した人を持たせず、kotaiDefeated でも知らせない）
+function EnemyService.defeatZensen(butaiId: string, count: number): { Model }
+	local candidates: { Zensen.FallCandidate } = {}
+	local byName: { [string]: Enemy } = {}
+	for model, enemy in enemies do
+		local order = enemy.zensen
+		if enemy.butai == butaiId and enemy.humanoid.Health > 0 and order and order.front then
+			local distance = horizontalDistance(enemy.root.Position, order.point)
+			byName[model.Name] = enemy
+			table.insert(candidates, {
+				id = model.Name,
+				engaged = order.aite ~= nil and distance <= ZENSEN_TOLERANCE,
+				distance = distance,
+			})
+		end
+	end
+	local now = os.clock()
+	local fallen = {}
+	for _, id in Zensen.chooseFallen(candidates, count) do
+		local enemy = byName[id]
+		local order = enemy.zensen
+		-- 向かい合う相手が斬ったように、並ぶ位置に着いている相手に、その時に攻撃の動作をさせる
+		local aite = if order and order.aite then enemies[order.aite] else nil
+		local aiteOrder = if aite then aite.zensen else nil
+		if
+			aite
+			and aiteOrder
+			and aite.humanoid.Health > 0
+			and horizontalDistance(aite.root.Position, aiteOrder.point) <= ZENSEN_TOLERANCE
+			and not Hanno.busy(aite.body, now)
+		then
+			swing(aite, aiteOrder.look)
+			aite.swingAt = nextSwingTime(now)
+		end
+		Vfx.hit(enemy.model)
+		enemy.kosenSongai = true
+		enemy.lastHitBy = nil
+		enemy.lastHitSilent = false
+		enemy.humanoid.Health = 0
+		table.insert(fallen, enemy.model)
+	end
+	return fallen
+end
+
+-- 部隊の生きている個体の、交戦中の様子（前線か控えか・向かい合う相手・正面の向き・並ぶ位置までの距離と着いたか・
+-- 狙ったプレイヤー）を名前の順に返す（窓口の確認用）
+function EnemyService.kosenKotaiOf(butaiId: string): { KosenKotai }
+	local list: { KosenKotai } = {}
+	for model, enemy in enemies do
+		if enemy.butai == butaiId and enemy.humanoid.Health > 0 then
+			local order = enemy.zensen
+			local facing = enemy.root.CFrame.LookVector
+			local upright = math.abs(facing.Y) <= UPRIGHT_LIMIT
+			local distance = if order then horizontalDistance(enemy.root.Position, order.point) else nil
+			table.insert(list, {
+				name = model.Name,
+				front = if order then order.front else nil,
+				aite = if order and order.aite then order.aite.Name else nil,
+				look = if upright then { x = facing.X, z = facing.Z } else nil,
+				distance = distance,
+				arrived = if distance then distance <= ZENSEN_TOLERANCE else nil,
+				player = enemy.target,
+			})
+		end
+	end
+	table.sort(list, function(a, b)
+		return a.name < b.name
+	end)
+	return list
 end
 
 -- 攻撃側から呼ばれる被ダメージ処理。撃破数はとどめを刺したプレイヤーに付く。
@@ -1145,6 +1769,92 @@ function EnemyService.start()
 			})
 		end
 	)
+	local geninItems = table.concat(Motions.GENIN_ITEMS, "・")
+	DebugCommand.register(
+		"SetGeninMotion",
+		"<項目> <アニメーション ID|0>",
+		`下忍のモーションの項目（{geninItems}）のアニメーション ID を差し替える。0 にするとその項目は流さない。`
+			.. "差し替えはサーバーを止めるまで続き、Motions.luau は変わらない。待機と移動は流している体もすぐ流し直し、"
+			.. "攻撃と被弾の反応は次に流すときから使う（Studio で候補のモーションを試す用。確認用）",
+		function(item, value)
+			if type(item) ~= "string" or not Motions.isGeninItem(item) then
+				error(`項目は {geninItems} のどれかで指定する（{tostring(item)}）`, 0)
+			end
+			local id = DebugCommand.toNumber(value, "アニメーション ID")
+			if id < 0 or id ~= math.floor(id) then
+				error(`アニメーション ID は 0 以上の整数で指定する（{tostring(value)}）`, 0)
+			end
+			local previous = Motions.geninIdOf(item)
+			Motions.setGeninId(item, id)
+			if Motions.isGeninLocomotion(item) then
+				-- その項目を流している体は、新しい ID で流し直す（0 なら止める）
+				for model in enemies do
+					local rig = rigs[model]
+					if rig and rig.motion.locomotion == item then
+						setLocomotion(rig, item, true)
+					end
+				end
+			end
+			return `下忍のモーション {item} を {id} にした（前は {previous}）`
+		end
+	)
+	DebugCommand.register(
+		"DumpGeninMotion",
+		"",
+		"下忍のモーションの項目ごとの ID（ids。0 は流さない）と、その項目を今流している下忍の体の数（playing）を JSON で返す。"
+			.. "出ている下忍の体の数（bodies。倒れた姿を見せている体も入る）・そのうち生きている数（alive）・"
+			.. "待機と移動を止めている数（locomotionStopped。倒れた後・飛んでいる間・倒れている間）・"
+			.. "プールにある下忍の体の数（pooled）とそのうち何かを流している数（pooledPlaying。0 になる）・"
+			.. "下忍の移動のモーションを流す速さ（runPlayback）を添える",
+		function()
+			local ids: { [string]: number } = {}
+			local playing: { [string]: number } = {}
+			for _, item in Motions.GENIN_ITEMS do
+				ids[item] = Motions.geninIdOf(item)
+				playing[item] = 0
+			end
+			local bodies, alive, stopped, pooled, pooledPlaying = 0, 0, 0, 0, 0
+			for model, rig in rigs do
+				if rig.template.kind ~= "Genin" then
+					continue
+				end
+				local enemy = enemies[model] or corpses[model]
+				local busy = false
+				for item, loaded in rig.motion.tracks do
+					if loaded.track.IsPlaying then
+						busy = true
+						if enemy then
+							playing[item] = (playing[item] or 0) + 1
+						end
+					end
+				end
+				if enemy then
+					bodies += 1
+					if enemy.humanoid.Health > 0 then
+						alive += 1
+					end
+					if rig.motion.locomotion == nil then
+						stopped += 1
+					end
+				else
+					pooled += 1
+					if busy then
+						pooledPlaying += 1
+					end
+				end
+			end
+			return HttpService:JSONEncode({
+				ids = ids,
+				playing = playing,
+				bodies = bodies,
+				alive = alive,
+				locomotionStopped = stopped,
+				pooled = pooled,
+				pooledPlaying = pooledPlaying,
+				runPlayback = Motions.geninRunPlaybackOf(Config.Genin.WalkSpeed, Config.GeninMotion.RunSpeed),
+			})
+		end
+	)
 	DebugCommand.register(
 		"SetEnemyAI",
 		"<true|false>",
@@ -1354,6 +2064,17 @@ function EnemyService.start()
 			local ok, err = pcall(sweepFallen)
 			if not ok then
 				warn(`EnemyService: 奈落に落ちた体を片付けられなかった: {err}`)
+			end
+		end
+	end)
+
+	-- 下忍の体の待機と移動のモーションを、間隔ごとに体の速さで選び直す（1回の失敗で止まらないよう、失敗は警告にする）
+	task.spawn(function()
+		while true do
+			task.wait(Config.GeninMotion.Interval)
+			local ok, err = pcall(updateLocomotion, os.clock())
+			if not ok then
+				warn(`EnemyService: 下忍の待機と移動のモーションを選べなかった: {err}`)
 			end
 		end
 	end)

@@ -9,8 +9,12 @@
 -- - 消した個体は部隊に戻る（兵数は変わらない。返却）
 -- - 個体が倒れたら（倒した人によらず）、部隊の兵数を1減らす（ButaiService.changeHeisu）。減った兵数は拠点の耐久にも数える
 --   （ButaiService.heisuLost を KyotenService が受ける）。秘計の爆破罠のとどめは、拠点の耐久に数えない（silent）
--- - 交戦などで兵数が個体の数より少なくなったら、多い分の個体をすぐに部隊へ戻す
+-- - 交戦の損害で兵数が減ったら（ButaiService.addKosenLostListener）、その部隊の前線の個体を減った数だけ倒れさせる
+--   （EnemyService.defeatZensen。出ている前線の個体が足りなければ出ている分だけ）。兵数は交戦の計算で減らし終えているので、
+--   倒れさせた個体はすぐに個体の表から外し、倒れても兵数を減らさない（撃破数・拠点の耐久・救援数にも数えない）
+-- - それでも兵数が個体の数より少なければ（前線の個体が足りずに倒れさせられなかった分）、多い分の個体をすぐに部隊へ戻す
 -- - 部隊がいなくなったら（敗走など）、その部隊の個体を消す。部隊 ID を別の軍の部隊が使い直したときも、前の軍の個体を消す
+-- - 交戦中の部隊の個体を前線と控えに並べ、動かすのは EnemyService（交戦の様子は setKosenProvider で渡す）
 --
 -- 出し入れ（戦闘のフェーズの間、Interval ごと）
 -- - 対象は、両軍の部隊のうち潜んでいない伏兵でないもの。半径・視界・Spread・MaxPerTick の決まりは両軍で同じ
@@ -45,12 +49,15 @@
 -- 窓口
 -- - SetSpawning で出し入れを止める・再開する。止めても出ている個体は残る（ClearEnemies で部隊へ戻す）。
 --   止めている間も、兵数より多い個体を戻すことと、いなくなった部隊の個体を消すことは続ける
--- - LogSpawn で、出した・戻した・見送った・倒れて兵数を減らしたことと、枠の返却を求めた・減らした・取り下げた（今出せない）・
---   外した（足りた）・取り消した（目標 0・部隊がいない・出し入れを止めた）こと、まとまりの敵軍の補充を止めた・再開したことを
---   出力に出す（返却の求めと補充の停止は変わったときだけ。メンバーが1人でも重なるまとまりは同じまとまりとみなす。
---   敵軍の個体を戻した・見送ったことは、まとまりごとに部隊ごとの数を添えて出し、倒れかけの個体は見送った数に入れない）
+-- - LogSpawn で、出した・戻した・見送った・倒れて兵数を減らした・交戦の損害で前線の個体を倒したことと、枠の返却を求めた・
+--   減らした・取り下げた（今出せない）・外した（足りた）・取り消した（目標 0・部隊がいない・出し入れを止めた）こと、
+--   まとまりの敵軍の補充を止めた・再開したことを出力に出す（返却の求めと補充の停止は変わったときだけ。メンバーが1人でも
+--   重なるまとまりは同じまとまりとみなす。敵軍の個体を戻した・見送ったことは、まとまりごとに部隊ごとの数を添えて出し、
+--   倒れかけの個体は見送った数に入れない）
 -- - DumpGeninKotai で両軍の部隊ごとの軍・兵数・個体の数・目標・まとまりの番号・返却の求めと軍ごとの個体の数、
 --   DumpKotaiHaibun でまとまりごとの取り分・枠・味方軍の上限と目標・押さえている数・敵軍の枠・補充の停止を出す
+-- - DumpKosenKotai で、交戦の組ごとに両部隊の前線の個体（正面と相手の部隊の方向の角度の差）、控えの数、
+--   交戦の損害の合計と、演出で倒した数を出す。SetKosenAggro で、交戦中の敵軍の個体がプレイヤーを狙うかを切り替える
 
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -65,6 +72,7 @@ local KotaiHaibun = require(ReplicatedStorage.Shared.KotaiHaibun)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
+local Zensen = require(ReplicatedStorage.Shared.Zensen)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local CameraViewService = require(script.Parent.CameraViewService)
@@ -73,6 +81,10 @@ local KukakuService = require(script.Parent.KukakuService)
 local StageService = require(script.Parent.StageService)
 
 local GeninKotaiService = {}
+
+-- 部隊の今の交戦で、交戦の損害の演出で倒した前線の個体の数（taoshita）と、前線の個体が出ていない・足りないので
+-- 倒さなかった数（fusoku）。交戦を始めたときと、交戦の相手が替わったときに数え直す。2つの合計が、その交戦の交戦の損害の合計になる
+type ZensenRecord = { aite: string, taoshita: number, fusoku: number }
 
 -- 出す位置が視界にかかるかを確かめる高さ。地面から下忍の体の中ほどまで（スタッド）
 local BODY_CENTER_HEIGHT = 3
@@ -100,6 +112,8 @@ local requests: GeninKotai.Requests = { counts = {}, members = {} }
 -- 敵軍の補充を止めているまとまりのメンバー。記録を変わったときだけ出すのに使う（メンバーが1人でも重なるまとまりは、
 -- 同じまとまりが続いているとみなし、メンバーが倒れた・合流しただけでは「止めた」「再開した」を出さない）
 local stoppedGroups: { { string } } = {}
+-- 部隊 ID ごとの、今の交戦の演出の記録（窓口の確認用）
+local zensenRecords: { [string]: ZensenRecord } = {}
 
 local function log(message: string)
 	if logEnabled then
@@ -560,6 +574,57 @@ local function returnExcess(
 	end
 end
 
+-- 部隊の今の交戦の演出の記録。交戦の相手が替わっていたら数え直す
+local function zensenRecordOf(butaiId: string, aiteId: string): ZensenRecord
+	local record = zensenRecords[butaiId]
+	if not record or record.aite ~= aiteId then
+		record = { aite = aiteId, taoshita = 0, fusoku = 0 }
+		zensenRecords[butaiId] = record
+	end
+	return record
+end
+
+-- 交戦の損害で部隊の兵数が loss 減ったら、その部隊の前線の個体を loss 体倒れさせる（出ている前線の個体が足りなければ
+-- 出ている分だけ）。兵数は交戦の計算で減らし終えているので、倒れさせた個体はすぐに個体の表から外す（兵数と比べる
+-- 個体の数に入れず、多い分を部隊へ戻す処理に回さない）。倒れても兵数は減らさない（EnemyService が kotaiDefeated で知らせない）
+local function onKosenLost(butaiId: string, gun: Gun.Gun, loss: number, aiteId: string)
+	local record = zensenRecordOf(butaiId, aiteId)
+	-- 個体の出ていない部隊（出撃メンバーから遠い交戦）は、数えるだけにする。
+	-- 部隊 ID を別の軍の部隊が使い直していたら、前の軍の個体は倒さない（次の判断で消す）
+	if prune(butaiId) == 0 or kotaiGun[butaiId] ~= gun then
+		record.fusoku += loss
+		return
+	end
+	local fallen = EnemyService.defeatZensen(butaiId, loss)
+	local list = kotai[butaiId]
+	local names = {}
+	for _, model in fallen do
+		local index = if list then table.find(list, model) else nil
+		if list and index then
+			table.remove(list, index)
+		end
+		table.insert(names, model.Name)
+	end
+	prune(butaiId)
+	record.taoshita += #fallen
+	record.fusoku += loss - #fallen
+	local butai = ButaiService.get(butaiId)
+	local heisu = if butai then butai.heisu else 0
+	local total = record.taoshita + record.fusoku
+	if #fallen > 0 then
+		log(
+			`部隊 {butaiId} の交戦の損害 {loss} で、前線の個体 {table.concat(names, "、")} を倒した`
+				.. `（兵数 {heisu}、この交戦で演出で倒した数 {record.taoshita}、交戦の損害の合計 {total}）`
+		)
+	end
+	if #fallen < loss then
+		log(
+			`部隊 {butaiId} の交戦の損害 {loss} のうち {loss - #fallen} は、出ている前線の個体が足りないので倒さなかった`
+				.. `（兵数 {heisu}、この交戦で演出で倒した数 {record.taoshita}、交戦の損害の合計 {total}）`
+		)
+	end
+end
+
 -- 出し入れを1回決める
 local function tick()
 	local bounds = battleBounds()
@@ -584,7 +649,9 @@ local function tick()
 			end
 		end
 	end
-	-- 交戦などで兵数が個体の数より少なくなったら、多い分をすぐに部隊へ戻す（出し入れを止めている間も行う）
+	-- 兵数が個体の数より少なくなったら、多い分をすぐに部隊へ戻す（出し入れを止めている間も行う）。
+	-- 交戦の損害は前線の個体を倒れさせて数を合わせる（onKosenLost）ので、ここで戻すのは、前線の個体が足りずに
+	-- 倒れさせられなかった分（プレイヤーを狙っていて前線にいなかった個体など）
 	local butaiList = {}
 	for _, butai in ButaiService.list() do
 		if not butai.fukuhei then
@@ -656,6 +723,57 @@ local function tick()
 	end)
 end
 
+local function round(value: number): number
+	return math.round(value * 10) / 10
+end
+
+-- 交戦中の部隊の片側の様子（窓口の DumpKosenKotai）。角度の差は、個体の正面と、自分の部隊の位置から相手の部隊の位置への向き。
+-- 角度の差の最大は、並ぶ位置に着いた前線の個体（歩いている途中の個体は歩く向きを向いている）で求める
+local function describeZensen(butai: Butai.Butai, aite: Butai.Butai): { [string]: any }
+	local direction = Zensen.direction(
+		{ x = butai.position.x, z = butai.position.z },
+		{ x = aite.position.x, z = aite.position.z }
+	)
+	local zensen = {}
+	local maxAngle: number? = nil
+	local hikae, player = 0, 0
+	for _, entry in EnemyService.kosenKotaiOf(butai.id) do
+		if entry.front then
+			local look = entry.look
+			local angle = if look then Zensen.angle(look, direction) else nil
+			if angle and entry.arrived then
+				maxAngle = math.max(maxAngle or 0, angle)
+			end
+			local distance = entry.distance
+			table.insert(zensen, {
+				name = entry.name,
+				angle = if angle then round(angle) else nil,
+				aite = entry.aite,
+				distance = if distance then round(distance) else nil,
+			})
+		elseif entry.front == false then
+			hikae += 1
+		elseif entry.player then
+			player += 1
+		end
+	end
+	local record = zensenRecords[butai.id]
+	local current = if record and record.aite == aite.id then record else nil
+	return {
+		id = butai.id,
+		gun = butai.gun,
+		heisu = butai.heisu,
+		kotai = prune(butai.id),
+		songai = ButaiService.kosenLoss(butai.id) or 0,
+		taoshita = if current then current.taoshita else 0,
+		fusoku = if current then current.fusoku else 0,
+		zensen = zensen,
+		maxAngle = if maxAngle then round(maxAngle) else nil,
+		hikae = hikae,
+		player = player,
+	}
+end
+
 local function registerDebugCommands()
 	DebugCommand.register(
 		"SetSpawning",
@@ -670,9 +788,9 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"LogSpawn",
 		"<true|false>",
-		"実体化圏の下忍の個体を出した・部隊へ戻した・視界の中で見送った・倒れて部隊の兵数を減らしたことと、味方軍の部隊が"
-			.. "敵軍の個体に枠の返却を求めた・求めを減らした・今出せないので取り下げた・取り消した（外した）こと、まとまりの敵軍の補充を止めた・再開したことを"
-			.. "出力に出す（返却の求めと補充の停止は変わったときだけ）（確認用）",
+		"実体化圏の下忍の個体を出した・部隊へ戻した・視界の中で見送った・倒れて部隊の兵数を減らした・交戦の損害で前線の個体を倒したことと、"
+			.. "味方軍の部隊が敵軍の個体に枠の返却を求めた・求めを減らした・今出せないので取り下げた・取り消した（外した）こと、"
+			.. "まとまりの敵軍の補充を止めた・再開したことを出力に出す（返却の求めと補充の停止は変わったときだけ）（確認用）",
 		function(value)
 			logEnabled = value == true or value == "true"
 			return `実体化圏の下忍の出し入れの記録を{if logEnabled then "出す" else "止めた"}`
@@ -782,6 +900,49 @@ local function registerDebugCommands()
 			})
 		end
 	)
+
+	DebugCommand.register(
+		"DumpKosenKotai",
+		"",
+		"交戦中の組ごとに、両部隊の部隊 ID・軍・兵数・出している個体の数（kotai）・前線の個体（zensen。名前、個体の正面と"
+			.. "自分の部隊から相手の部隊への向きの角度の差 angle（度）、向かい合う相手 aite、並ぶ位置までの距離 distance）・"
+			.. "並ぶ位置に着いた前線の個体の angle の最大（maxAngle）・控えの個体の数（hikae）・プレイヤーを狙っている個体の数（player）・"
+			.. "交戦を始めてからの交戦の損害の合計（songai）・交戦の損害の演出で倒した前線の個体の数（taoshita）・"
+			.. "前線の個体が出ていない・足りないので倒さなかった数（fusoku。taoshita との和が songai）を JSON で返す",
+		function()
+			local result = {}
+			local seen: { [string]: boolean } = {}
+			for _, butai in ButaiService.list() do
+				local aiteId = ButaiService.aiteOf(butai.id)
+				local aite = if aiteId then ButaiService.get(aiteId) else nil
+				if not aite or seen[butai.id] then
+					continue
+				end
+				seen[butai.id] = true
+				seen[aite.id] = true
+				-- 組の中の順は部隊 ID の順
+				local first, second = butai, aite
+				if second.id < first.id then
+					first, second = second, first
+				end
+				table.insert(result, { butai = { describeZensen(first, second), describeZensen(second, first) } })
+			end
+			return HttpService:JSONEncode({ kosen = result })
+		end
+	)
+
+	DebugCommand.register(
+		"SetKosenAggro",
+		"<true|false>",
+		"交戦中の部隊の敵軍の個体が、近く（Config.luau の Zensen 節の AggroRange）のプレイヤーを狙うかを切り替える。"
+			.. "止めると、前線の攻撃の動作がプレイヤーに当たらないことを、攻撃トークンの攻撃と分けて確かめられる（確認用）",
+		function(value)
+			local aggro = value == true or value == "true"
+			EnemyService.setKosenAggro(aggro)
+			local result = if aggro then "再開した" else "止めた"
+			return `交戦中の敵軍の個体がプレイヤーを狙うのを{result}`
+		end
+	)
 end
 
 function GeninKotaiService.start()
@@ -789,6 +950,30 @@ function GeninKotaiService.start()
 	EnemyService.setHomeProvider(function(butaiId: string): Vector3?
 		local butai = ButaiService.get(butaiId)
 		return if butai then Vector3.new(butai.position.x, 0, butai.position.z) else nil
+	end)
+
+	-- 交戦中の部隊の個体は、交戦の組ごとに前線と控えに並ぶ（交戦が決着したら、部隊について歩く動きに戻る）
+	EnemyService.setKosenProvider(function(butaiId: string): EnemyService.KosenInfo?
+		local aiteId = ButaiService.aiteOf(butaiId)
+		local butai = ButaiService.get(butaiId)
+		local aite = if aiteId then ButaiService.get(aiteId) else nil
+		if not butai or not aite then
+			return nil
+		end
+		return {
+			aite = aite.id,
+			position = { x = butai.position.x, z = butai.position.z },
+			aitePosition = { x = aite.position.x, z = aite.position.z },
+		}
+	end)
+
+	-- 交戦の損害で兵数が減ったら、その部隊の前線の個体を減った数だけ倒れさせる
+	ButaiService.addKosenLostListener(onKosenLost)
+	-- 交戦を始めたら、両部隊の演出の記録を数え直す（部隊 ID を使い直した部隊が同じ相手と交戦しても前の数が混ざらない。
+	-- 交戦の損害は次の部隊の間隔から出るので、知らせが後の再開に回っても間に合う）
+	ButaiService.kosenStarted:Connect(function(a: string, b: string)
+		zensenRecords[a] = nil
+		zensenRecords[b] = nil
 	end)
 
 	-- 個体が倒れたら、部隊の兵数を1減らす（部隊 ID を別の軍の部隊が使い直していたら減らさない）
@@ -822,6 +1007,7 @@ function GeninKotaiService.start()
 		if next ~= "Battle" then
 			table.clear(kotai)
 			table.clear(kotaiGun)
+			table.clear(zensenRecords)
 			forgetRequests("戦闘のフェーズが終わった")
 			lastPlan = nil
 		end
