@@ -31,7 +31,8 @@
 --   済んでいるとき（敵軍の出ている数 ≤ 今の求めで決めた敵軍の目標）の1部隊だけ。目標が 0 になったら（部隊が離れたら）、
 --   部隊がいなくなったら取り消し、足りたら外す。メンバーが1人も重ならないまとまりへ移ったら 0 から積み直す。
 --   返却を求めている味方軍の部隊がいるまとまりでは、敵軍を補充しない
--- - 目標より多い個体は、出撃メンバーから遠い個体から部隊へ戻す（視界の中の個体は戻さないので、返せない間は味方軍が待つ）。
+-- - 目標より多い個体は、出撃メンバーから遠い個体から部隊へ戻す。味方軍の枠を空けるために敵軍を戻す分は、視界の外の個体
+--   だけを戻す（遠くても視界の中の個体は消さないので、返せない間は味方軍が待つ）。
 --   味方軍の部隊と、どのまとまりにも入らない敵軍の部隊は部隊ごとに戻す。まとまりに入る敵軍は、まとまりごとに
 --   「敵軍の部隊の出ている数の合計 − 目標の合計」を、まとまりの敵軍の全部隊の個体から遠い順に戻す（returnExcess。
 --   ある部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返す。目標より多い部隊と少ない部隊は残ってよい）
@@ -39,7 +40,8 @@
 --   区画の中、地面の上）に出す（GeninKotai.fill）。まとまりの枠の残り（味方軍は、まとまりの味方軍の目標の残りも）と、
 --   MaxKotai の残りと、1回の判断の MaxPerTick 体を超えない。撃破などで空いた枠は、待っている味方軍に先に回る
 -- - 出し入れする位置は、出撃メンバーの視界の外に限る（CameraViewService。#81）。ただし、出撃メンバー全員から
---   PopDistance より遠い位置なら、視界の中でも出し入れする（実体化圏の縁の遠くで、目立たないため）。
+--   PopDistance より遠い位置なら、視界の中でも出し入れする（実体化圏の縁の遠くで、目立たないため。GeninKotai.canPop）。
+--   味方軍の枠を空けるために敵軍の個体を戻すときだけは、遠くても視界の中では戻さない（GeninKotai.canReclaim）。
 --   倒れたメンバーも、体が残っている間はカメラが戦場を映しているので、視界にも遠さの判定にも入れる。
 --   出せる位置が無ければ、次の判断まで見送る（視界の中の出し入れの保留）
 -- - 体の色は、出撃したステージの軍のクランの色（味方軍はストーリーのクラン、敵軍は敵軍のクラン。Stages.clanOf）
@@ -219,21 +221,27 @@ local function watchersOf(): { KotaiHaibun.Member }
 	return points
 end
 
--- 出し入れしてよい位置か。戦場を見ているメンバー（watchers）全員から PopDistance より遠いか、誰の視界にもかからない
-local function popSafe(position: Vector3, watchers: { KotaiHaibun.Member }): boolean
-	local near = false
+-- 戦場を見ているメンバー（watchers）全員から PopDistance より遠いか
+local function farFromAll(position: Vector3, watchers: { KotaiHaibun.Member }): boolean
 	for _, point in watchers do
 		local dx, dz = point.x - position.X, point.z - position.Z
 		if dx * dx + dz * dz <= Config.GeninKotai.PopDistance * Config.GeninKotai.PopDistance then
-			near = true
-			break
+			return false
 		end
 	end
-	if not near then
-		return true
-	end
-	-- 視界は倒れているメンバーのカメラも含めて見る
-	return not CameraViewService.seenByAny(StageService.getMembers(), position, Config.GeninKotai.ViewMargin)
+	return true
+end
+
+-- 出撃メンバーの誰かの視界にかかるか。視界は倒れているメンバーのカメラも含めて見る
+local function seenByAnyone(position: Vector3): boolean
+	return CameraViewService.seenByAny(StageService.getMembers(), position, Config.GeninKotai.ViewMargin)
+end
+
+-- 出し入れしてよい位置か（GeninKotai.canPop）。戦場を見ているメンバー全員から PopDistance より遠いか、誰の視界にもかからない。
+-- 遠ければ視界を確かめない
+local function popSafe(position: Vector3, watchers: { KotaiHaibun.Member }): boolean
+	local far = farFromAll(position, watchers)
+	return far or GeninKotai.canPop(seenByAnyone(position), far)
 end
 
 local function nearestDistance(position: Vector3, points: { KotaiHaibun.Member }): number
@@ -481,10 +489,13 @@ local function logStopped(plan: GeninKotai.WakuPlan, stopped: { boolean })
 	stoppedGroups = current
 end
 
--- 目標より多い個体を部隊へ戻す。視界の外か、戦場を見ているメンバー全員から PopDistance より遠い個体だけを戻す（force なし）。
--- - 味方軍の部隊と、どのまとまりにも入らない敵軍の部隊（目標 0）は、部隊ごとに遠い個体から戻す
+-- 目標より多い個体を部隊へ戻す（force なし）。
+-- - 味方軍の部隊と、どのまとまりにも入らない敵軍の部隊（目標 0）は、部隊ごとに遠い個体から、出し入れの決まり（popSafe。
+--   視界の外か、戦場を見ているメンバー全員から PopDistance より遠い個体）で戻す
 -- - まとまりに入る敵軍は、まとまりごとに「敵軍の部隊の出ている数の合計 − 目標の合計」を、まとまりの敵軍の全部隊の個体から
---   遠い順に戻す（GeninKotai.pickReturns）。部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
+--   遠い順に戻す。そのうち味方軍の枠を空ける分（GeninKotai.returnCounts の reclaim）は視界の外の個体だけを戻し、遠くても
+--   視界の中の個体は消さない（戻せない分は、空きが出るまで味方軍が待つ）。味方軍によらない分（normal。まとまりの枠が減った
+--   など）は popSafe で戻す（GeninKotai.pickGroupReturns）。部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
 local function returnExcess(
 	butaiList: { Butai.Butai },
 	plan: GeninKotai.WakuPlan,
@@ -534,10 +545,20 @@ local function returnExcess(
 			-- 倒れかけ（体力 0 で、倒れたことを知らせる前）の個体は数に入っているが、すぐに表から外れるので戻さない。
 			-- その分を戻す数から引く（見送った数にも混ぜない）
 			local dying = present - #candidates
-			local count = math.max(excess - dying, 0)
-			local picked = GeninKotai.pickReturns(candidates, count, function(candidate): boolean
-				return popSafe(candidate.item.position, watchers)
-			end)
+			-- 味方軍によらない分（normal）は出し入れの決まりで、味方軍の枠を空ける分（reclaim）は視界の外の個体だけを戻す
+			local normal, reclaim = GeninKotai.returnCounts(plan, teki, index, present, dying)
+			local count = normal + reclaim
+			local picked, reclaimed = GeninKotai.pickGroupReturns(
+				candidates,
+				normal,
+				reclaim,
+				function(candidate): boolean
+					return seenByAnyone(candidate.item.position)
+				end,
+				function(candidate): boolean
+					return farFromAll(candidate.item.position, watchers)
+				end
+			)
 			local removedOf: { [string]: number } = {}
 			local removed = 0
 			for _, candidate in picked do
@@ -565,9 +586,14 @@ local function returnExcess(
 				)
 			end
 			if removed < count then
+				-- 味方軍の枠を空ける分で戻せなかった数（遠くても視界の中の個体は消さない）
+				local reclaimKept = reclaim - reclaimed
+				local detail = if reclaimKept > 0
+					then `。味方軍の枠を空ける分 {reclaimKept} 体は、遠くても視界の中の個体を消さない`
+					else ""
 				log(
 					`まとまり（{key}）の敵軍の個体 {count - removed} 体は視界の中なので、戻すのを見送った`
-						.. `（敵軍の枠 {quota}）`
+						.. `（敵軍の枠 {quota}{detail}）`
 				)
 			end
 		end

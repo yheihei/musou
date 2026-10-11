@@ -842,8 +842,12 @@ test(
 	end
 )
 
--- 判断を進める小さな模擬。GeninKotaiService の tick と同じ順に、計画・返却の求め・戻す・出すを進める。
--- seen の部隊は、個体と周りが出撃メンバーの視界の中（PopDistance 以内）で、戻すことも出すこともできない
+-- 判断を進める小さな模擬。GeninKotaiService の tick と同じ順に、計画・返却の求め・戻す・出すを進め、
+-- 出し入れしてよいか・味方軍の枠のために戻してよいかは、サービスと同じ GeninKotai の関数（canPop・returnCounts・
+-- pickGroupReturns）で決める。
+-- - seen の部隊は、個体と周りが出撃メンバーの視界の中で、メンバーから PopDistance 以内（戻すことも出すこともできない）
+-- - farSeen の部隊は、視界の中だが、メンバー全員から PopDistance より遠い（出し入れの決まりでは出し入れできるが、
+--   味方軍の枠を空けるためには戻さない）
 
 type SimButai = { id: string, gun: Gun.Gun, x: number, z: number, heisu: number, present: number }
 
@@ -851,11 +855,39 @@ type Sim = {
 	members: { KotaiHaibun.Member },
 	butai: { SimButai },
 	seen: { [string]: boolean },
+	farSeen: { [string]: boolean },
 	requests: GeninKotai.Requests,
 }
 
+-- 1回の判断で、まとまりの敵軍の個体を戻したときの様子（模擬の確かめ用）
+type SimReturn = {
+	normal: number,
+	reclaim: number,
+	-- 戻した数と、そのうち reclaim で戻した数
+	picked: number,
+	reclaimed: number,
+	-- 戻した個体のうち、視界の中（seen か farSeen）の個体の数と、視界の中で近い（seen）個体の数
+	onScreen: number,
+	near: number,
+}
+
 local function newSim(members: { KotaiHaibun.Member }, butai: { SimButai }): Sim
-	return { members = members, butai = butai, seen = {}, requests = { counts = {}, members = {} } }
+	return { members = members, butai = butai, seen = {}, farSeen = {}, requests = { counts = {}, members = {} } }
+end
+
+-- 部隊の個体と周りが、出撃メンバーの視界にかかるか
+local function simSeen(sim: Sim, id: string): boolean
+	return sim.seen[id] == true or sim.farSeen[id] == true
+end
+
+-- 部隊の個体と周りが、メンバー全員から PopDistance より遠いか（視界の外の部隊は、遠さによらず出し入れできる）
+local function simFar(sim: Sim, id: string): boolean
+	return not sim.seen[id]
+end
+
+-- 出し入れしてよいか（サービスの popSafe と同じ決まり）
+local function simCanPop(sim: Sim, id: string): boolean
+	return GeninKotai.canPop(simSeen(sim, id), simFar(sim, id))
 end
 
 local function simButai(sim: Sim, id: string): SimButai
@@ -875,8 +907,8 @@ local function simTotal(sim: Sim): number
 	return total
 end
 
--- 1回の判断。判断の後の計画と、まとまりごとの補充の停止を返す
-local function simStep(sim: Sim): (GeninKotai.WakuPlan, { boolean })
+-- 1回の判断。判断の後の計画と、まとまりごとの補充の停止と、まとまりごとの敵軍の個体を戻した様子を返す
+local function simStep(sim: Sim): (GeninKotai.WakuPlan, { boolean }, { SimReturn })
 	local states: { GeninKotai.ButaiState } = {}
 	local present: { [string]: number } = {}
 	for _, entry in sim.butai do
@@ -887,56 +919,67 @@ local function simStep(sim: Sim): (GeninKotai.WakuPlan, { boolean })
 		present[entry.id] = entry.present
 	end
 	local plan = GeninKotai.planWaku(states, sim.members, CAP, RATE, PARAMS)
-	-- 出せる位置は、視界の中の部隊には無い
+	-- 出せる位置は、出し入れしてよい部隊にだけある（視界の中で近い部隊には無い）
 	sim.requests = GeninKotai.updateRequests(plan, present, sim.requests, function(id: string): boolean
-		return not sim.seen[id]
+		return simCanPop(sim, id)
 	end, STEP)
 	local requests = sim.requests.counts
 	local tekiPlan = GeninKotai.tekiTargets(plan, GeninKotai.heldOf(plan, present, requests))
-	-- 目標より多い個体を、視界の外なら戻す（視界の中の個体は戻さない）。味方軍の部隊と、まとまりに入らない敵軍の部隊は
-	-- 部隊ごと。まとまりに入る敵軍は、まとまりの全部隊の個体を遠い順に並べて戻す（サービスの returnExcess と同じ）。
+	-- 目標より多い個体を戻す（サービスの returnExcess と同じ）。味方軍の部隊と、まとまりに入らない敵軍の部隊は、部隊ごとに
+	-- 出し入れの決まり（canPop）で戻す。まとまりに入る敵軍は、まとまりの全部隊の個体を遠い順に並べ、味方軍によらない分は
+	-- canPop で、味方軍の枠を空ける分は視界の外の個体だけを戻す（returnCounts・pickGroupReturns）。
 	-- 模擬の個体は、部隊の位置にいるとみなす
 	for _, entry in sim.butai do
 		if entry.gun == "Mikatagun" or plan.groupOf[entry.id] == nil then
 			local target = if entry.gun == "Mikatagun" then plan.mikataTargets[entry.id] else tekiPlan.targets[entry.id]
-			if entry.present > target and not sim.seen[entry.id] then
+			if entry.present > target and simCanPop(sim, entry.id) then
 				entry.present = target
 			end
 		end
 	end
-	for _, group in plan.groups do
-		local groupPresent, groupTarget = 0, 0
+	local returns: { SimReturn } = {}
+	for index, group in plan.groups do
+		local groupPresent = 0
 		local candidates: { GeninKotai.ReturnCandidate<SimButai> } = {}
 		for _, id in group.tekiButai do
 			local entry = simButai(sim, id)
 			groupPresent += entry.present
-			groupTarget += tekiPlan.targets[id]
 			for _ = 1, entry.present do
 				table.insert(candidates, { item = entry, butai = id, distance = plan.distances[id] })
 			end
 		end
-		if groupPresent > groupTarget then
-			local picked = GeninKotai.pickReturns(candidates, groupPresent - groupTarget, function(candidate): boolean
-				return not sim.seen[candidate.butai]
-			end)
-			for _, candidate in picked do
-				candidate.item.present -= 1
+		local normal, reclaim = GeninKotai.returnCounts(plan, tekiPlan, index, groupPresent, 0)
+		local picked, reclaimed = GeninKotai.pickGroupReturns(candidates, normal, reclaim, function(candidate): boolean
+			return simSeen(sim, candidate.butai)
+		end, function(candidate): boolean
+			return simFar(sim, candidate.butai)
+		end)
+		local report: SimReturn =
+			{ normal = normal, reclaim = reclaim, picked = #picked, reclaimed = reclaimed, onScreen = 0, near = 0 }
+		for _, candidate in picked do
+			candidate.item.present -= 1
+			if simSeen(sim, candidate.butai) then
+				report.onScreen += 1
+			end
+			if sim.seen[candidate.butai] then
+				report.near += 1
 			end
 		end
+		returns[index] = report
 	end
 	local after: { [string]: number } = {}
 	for _, entry in sim.butai do
 		after[entry.id] = entry.present
 	end
 	GeninKotai.fill(plan, tekiPlan, after, requests, math.min(MAX_PER_TICK, CAP - simTotal(sim)), function(id, want)
-		if sim.seen[id] then
+		if not simCanPop(sim, id) then
 			return 0
 		end
 		simButai(sim, id).present += want
 		return want
 	end)
 	expect(simTotal(sim) <= CAP).toBe(true)
-	return plan, GeninKotai.hojuStopped(plan, requests)
+	return plan, GeninKotai.hojuStopped(plan, requests), returns
 end
 
 local function simKill(sim: Sim, id: string, count: number)
@@ -1310,7 +1353,8 @@ test(
 )
 
 test(
-	"模擬: どんな場面でも、出ている総数は 40 以下で、視界の中の部隊の個体は判断で増えも減りもせず、求めも持たない",
+	"模擬: どんな場面でも、出ている総数は 40 以下で、視界の中の近い部隊の個体は判断で増えも減りもせず、求めも持たず、"
+		.. "味方軍の枠を空けるためには視界の中の個体を戻さない",
 	function()
 		local nextNumber = random(91)
 		for _ = 1, 60 do
@@ -1337,6 +1381,9 @@ test(
 					if nextNumber(5) < 1 then
 						sim.seen[entry.id] = not sim.seen[entry.id]
 					end
+					if nextNumber(5) < 1 then
+						sim.farSeen[entry.id] = not sim.farSeen[entry.id]
+					end
 					if nextNumber(10) < 1 then
 						entry.x, entry.z = nextNumber(400), nextNumber(400)
 					end
@@ -1346,7 +1393,14 @@ test(
 				end
 				local before = presentOf(sim)
 				-- simStep は、判断の後の総数が 40 以下かも確かめる
-				simStep(sim)
+				local _, _, returns = simStep(sim)
+				for _, report in returns do
+					-- 視界の中で近い個体は戻さない。視界の中の遠い個体を戻すのは、味方軍によらない分（normal）だけ
+					expect(report.near).toBe(0)
+					expect(report.reclaimed <= report.reclaim).toBe(true)
+					expect(report.picked - report.reclaimed <= report.normal).toBe(true)
+					expect(report.onScreen <= report.picked - report.reclaimed).toBe(true)
+				end
 				for _, entry in sim.butai do
 					if sim.seen[entry.id] then
 						expect(entry.present).toBe(before[entry.id])
@@ -1356,6 +1410,218 @@ test(
 				end
 			end
 		end
+	end
+)
+
+-- 枠の返却で、遠くても視界の中の敵軍の個体を消さない（#82 の承認済みの仕様。canPop・canReclaim・returnCounts・pickGroupReturns）
+
+test(
+	"出し入れの決まりは、視界の外か遠ければよく、味方軍の枠のための返却は視界の外だけ",
+	function()
+		expect(GeninKotai.canPop(false, false)).toBe(true)
+		expect(GeninKotai.canPop(false, true)).toBe(true)
+		expect(GeninKotai.canPop(true, true)).toBe(true)
+		expect(GeninKotai.canPop(true, false)).toBe(false)
+		expect(GeninKotai.canReclaim(false)).toBe(true)
+		-- 遠くても視界の中なら、味方軍の枠のためには戻さない
+		expect(GeninKotai.canReclaim(true)).toBe(false)
+	end
+)
+
+-- 1人の近くに味方軍の部隊 M と敵軍の部隊 T がいるまとまり。M の出ている数と返却の求め、T の出ている数で計画を作る
+local function reclaimPlan(mikataPresent: number, request: number?): (GeninKotai.WakuPlan, GeninKotai.TekiPlan)
+	local plan = planOf({ mikata("M", 0, 60, 40, mikataPresent), teki("T", 0, -110, 60) })
+	local held = GeninKotai.heldOf(plan, { M = mikataPresent }, { M = request })
+	return plan, GeninKotai.tekiTargets(plan, held)
+end
+
+test(
+	"戻す数は、味方軍によらない分（normal）と、味方軍の枠を空ける分（reclaim）に分け、倒れかけは normal から先に引く",
+	function()
+		-- 味方軍が押さえていなければ、枠 40 を超えた分だけが normal
+		local plan, tekiPlan = reclaimPlan(0, nil)
+		expect(tekiPlan.targets.T).toBe(40)
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 40, 0) }).toEqual({ 0, 0 })
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 45, 0) }).toEqual({ 5, 0 })
+		-- 返却の求め 2 で敵軍の目標が 38 になった分は reclaim
+		plan, tekiPlan = reclaimPlan(0, 2)
+		expect(tekiPlan.targets.T).toBe(38)
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 40, 0) }).toEqual({ 0, 2 })
+		-- 両方が重なれば、枠を超えた分が normal、残りが reclaim
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 45, 0) }).toEqual({ 5, 2 })
+		-- 倒れかけ 3 体は normal から先に引く
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 45, 3) }).toEqual({ 2, 2 })
+		-- normal を超える倒れかけは reclaim を減らす
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 41, 2) }).toEqual({ 0, 1 })
+		-- 目標以下なら戻さない。まとまりが無ければ 0
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 1, 30, 0) }).toEqual({ 0, 0 })
+		expect({ GeninKotai.returnCounts(plan, tekiPlan, 2, 40, 0) }).toEqual({ 0, 0 })
+	end
+)
+
+-- 視界と遠さを添えた候補。seen は視界の中、far はメンバー全員から PopDistance より遠い
+type Looked = { label: string, seen: boolean, far: boolean }
+
+local function lookedOf(
+	label: string,
+	distance: number,
+	seen: boolean,
+	far: boolean
+): GeninKotai.ReturnCandidate<Looked>
+	return { item = { label = label, seen = seen, far = far }, butai = "T", distance = distance }
+end
+
+local function labelsOf(picked: { GeninKotai.ReturnCandidate<Looked> }): { string }
+	local labels = {}
+	for _, candidate in picked do
+		table.insert(labels, candidate.item.label)
+	end
+	return labels
+end
+
+test(
+	"味方軍の枠を空ける分は、遠くても視界の中の個体を選ばず、視界の外の個体から遠い順に選ぶ。味方軍によらない分は遠ければ視界の中でも選ぶ",
+	function()
+		local candidates = {
+			lookedOf("遠い視界の中", 110, true, true),
+			lookedOf("視界の外60", 60, false, false),
+			lookedOf("近い視界の中", 20, true, false),
+			lookedOf("視界の外10", 10, false, false),
+		}
+		local seenCalls, farCalls = 0, 0
+		local function isSeen(candidate: GeninKotai.ReturnCandidate<Looked>): boolean
+			seenCalls += 1
+			return candidate.item.seen
+		end
+		local function isFar(candidate: GeninKotai.ReturnCandidate<Looked>): boolean
+			farCalls += 1
+			return candidate.item.far
+		end
+		-- 味方軍の枠を空ける分だけ。一番遠い個体は視界の中なので選ばない（直す前は、遠いので選んでいた）
+		local picked, reclaimed = GeninKotai.pickGroupReturns(candidates, 0, 2, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "視界の外60", "視界の外10" })
+		expect(reclaimed).toBe(2)
+		-- 視界の外の個体が足りなければ、選べる分だけ（残りは味方軍が待つ）
+		picked, reclaimed = GeninKotai.pickGroupReturns(candidates, 0, 3, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "視界の外60", "視界の外10" })
+		expect(reclaimed).toBe(2)
+		-- 味方軍によらない分だけなら、出し入れの決まりで、遠い視界の中の個体から選ぶ
+		picked, reclaimed = GeninKotai.pickGroupReturns(candidates, 2, 0, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "遠い視界の中", "視界の外60" })
+		expect(reclaimed).toBe(0)
+		-- 両方なら、味方軍の枠を空ける分を先に視界の外から選び、味方軍によらない分に遠い視界の中の個体を回す
+		picked, reclaimed = GeninKotai.pickGroupReturns(candidates, 1, 1, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "遠い視界の中", "視界の外60" })
+		expect(reclaimed).toBe(1)
+		picked, reclaimed = GeninKotai.pickGroupReturns(candidates, 1, 3, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "遠い視界の中", "視界の外60", "視界の外10" })
+		expect(reclaimed).toBe(2)
+		-- 近い視界の中の個体は、どちらでも選ばない
+		picked = GeninKotai.pickGroupReturns(candidates, 4, 0, isSeen, isFar)
+		expect(labelsOf(picked)).toEqual({ "遠い視界の中", "視界の外60", "視界の外10" })
+		-- 視界は候補ごとに1回だけ確かめ、遠さは視界の中の候補にだけ確かめる
+		seenCalls, farCalls = 0, 0
+		GeninKotai.pickGroupReturns(candidates, 4, 4, isSeen, isFar)
+		expect(seenCalls).toBe(4)
+		expect(farCalls).toBe(2)
+		expect(#GeninKotai.pickGroupReturns(candidates, 0, 0, isSeen, isFar)).toBe(0)
+	end
+)
+
+test(
+	"模擬: 味方軍が来ても、遠く（PopDistance より先）で視界の中の敵軍の個体は枠のために消さず、視界の外になってから2体ずつ返す",
+	function()
+		-- T はメンバーから 110 先で、視界の中（遠いので、出し入れの決まりでは出せる）
+		local sim = newSim(ONE, {
+			{ id = "M", gun = "Mikatagun", x = 0, z = 400, heisu = 40, present = 0 },
+			{ id = "T", gun = "Tekigun", x = 0, z = -110, heisu = 60, present = 0 },
+		})
+		sim.farSeen.T = true
+		for _ = 1, 5 do
+			simStep(sim)
+		end
+		expect(presentOf(sim)).toEqual({ M = 0, T = 40 })
+		-- 味方軍の部隊が近づき、視界の外に出せるので、枠の返却を求める
+		simButai(sim, "M").z = 60
+		for _ = 1, 6 do
+			local _, stopped, returns = simStep(sim)
+			-- 求めは 2 のまま。敵軍の補充を止めて待ち、遠い視界の中の T は消さない
+			expect(sim.requests.counts.M).toBe(2)
+			expect(stopped).toEqual({ true })
+			expect(returns[1].reclaim).toBe(2)
+			expect(returns[1].normal).toBe(0)
+			expect(returns[1].picked).toBe(0)
+		end
+		expect(presentOf(sim)).toEqual({ M = 0, T = 40 })
+		-- T が視界の外になれば、2体ずつ返して味方軍を出す
+		sim.farSeen.T = false
+		local history = {}
+		for _ = 1, 6 do
+			simStep(sim)
+			table.insert(history, presentOf(sim))
+		end
+		expect(history).toEqual({
+			{ M = 2, T = 38 },
+			{ M = 4, T = 36 },
+			{ M = 6, T = 34 },
+			{ M = 8, T = 32 },
+			{ M = 10, T = 30 },
+			{ M = 10, T = 30 },
+		})
+		expect(sim.requests.counts.M).toBe(nil)
+	end
+)
+
+test(
+	"模擬: 味方軍によらない返却（まとまりの枠が減った分）は、今までどおり遠ければ視界の中でも戻し、近い視界の中は戻さない",
+	function()
+		local function run(farSeen: boolean): { [string]: number }
+			local sim = newSim({ { id = "A", x = 0, z = 0 } }, {
+				{ id = "TA", gun = "Tekigun", x = 0, z = -110, heisu = 60, present = 0 },
+				{ id = "TB", gun = "Tekigun", x = 500, z = -110, heisu = 60, present = 0 },
+			})
+			for _ = 1, 5 do
+				simStep(sim)
+			end
+			expect(presentOf(sim)).toEqual({ TA = 40, TB = 0 })
+			-- 離れた2人目が来て取り分が 20 ずつになる。TA の 20 体は味方軍によらない返却
+			table.insert(sim.members, { id = "B", x = 500, z = 0 })
+			if farSeen then
+				sim.farSeen.TA = true
+			else
+				sim.seen.TA = true
+			end
+			local _, _, returns = simStep(sim)
+			expect(returns[1].normal + returns[2].normal).toBe(20)
+			expect(returns[1].reclaim + returns[2].reclaim).toBe(0)
+			return presentOf(sim)
+		end
+		-- 遠い視界の中の TA は、出し入れの決まりで1回の判断で 20 体戻る
+		expect(run(true).TA).toBe(20)
+		-- 近い視界の中なら戻さない
+		expect(run(false).TA).toBe(40)
+	end
+)
+
+test(
+	"サービスの returnExcess と popSafe は、この決まりの関数（returnCounts・pickGroupReturns・canPop）で決めている",
+	function()
+		-- 実サービス（GeninKotaiService.luau）が、ここで確かめた関数を通して個体を戻していることを確かめる。
+		-- 味方軍の枠のための返却に、遠ければ視界の中でも戻す popSafe を直接使っていた不具合を防ぐ
+		local source = testkit.readFile("src/server/Services/GeninKotaiService.luau") :: string
+		expect(source ~= nil).toBe(true)
+		local function bodyOf(name: string): string
+			local start = string.find(source, `local function {name}(`, 1, true)
+			expect(start ~= nil).toBe(true)
+			local finish = string.find(source, "\nlocal function ", (start :: number) + 1, true) or #source
+			return string.sub(source, start :: number, finish)
+		end
+		local returnExcess = bodyOf("returnExcess")
+		expect(string.find(returnExcess, "GeninKotai.returnCounts(", 1, true) ~= nil).toBe(true)
+		expect(string.find(returnExcess, "GeninKotai.pickGroupReturns(", 1, true) ~= nil).toBe(true)
+		expect(string.find(returnExcess, "GeninKotai.pickReturns(", 1, true)).toBe(nil)
+		expect(string.find(returnExcess, "popSafe(candidate", 1, true)).toBe(nil)
+		expect(string.find(bodyOf("popSafe"), "GeninKotai.canPop(", 1, true) ~= nil).toBe(true)
 	end
 )
 

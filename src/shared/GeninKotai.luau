@@ -39,9 +39,11 @@
 -- - 目標が 0 になったら（部隊が離れたら）取り消し、足りたら外す。前のまとまりとメンバーが1人も重ならないまとまりへ移ったら
 --   0 から積み直す（sharesMember。移った先の敵軍に、前のまとまりで積んだ数を一度に返させない）
 -- - h は、味方軍の部隊ごとの max(出ている数, min(目標, 出ている数 + 返却の求め)) の合計。求めが増えると敵軍の枠が減る
--- - 敵軍の個体は、まとまりごとにまとめて戻す。戻す数は、まとまりの敵軍の部隊の出ている数の合計 − 目標の合計。
---   まとまりの敵軍の全部隊の個体を出撃メンバーから遠い順に並べ、視界の外の個体だけを戻す（pickReturns。
---   視界の中の個体は戻さない）。片方の部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
+-- - 敵軍の個体は、まとまりごとにまとめて戻す。戻す数は、まとまりの敵軍の部隊の出ている数の合計 − 目標の合計で、
+--   味方軍によらない分（normal。まとまりの枠が減ったなど）と、味方軍の枠を空ける分（reclaim。h のために減った分）に分ける
+--   （returnCounts）。まとまりの敵軍の全部隊の個体を出撃メンバーから遠い順に並べ、reclaim は視界の外の個体だけから
+--   （canReclaim。遠くても視界の中の個体は消さない）、normal は出し入れの決まり（canPop。視界の外か、全員から PopDistance
+--   より遠い）で戻す（pickGroupReturns）。片方の部隊の個体がすべて視界の中でも、ほかの部隊の視界の外の個体から返せる
 -- - 敵軍の部隊ごとの目標は、出す側（fill の足りない数）にだけ使う。戻した結果、目標より多い部隊と少ない部隊が
 --   残ってよい（まとまりの予算で出しすぎない）。味方軍の部隊と、どのまとまりにも入らない部隊は、部隊ごとに戻す
 -- - 返却を求めている（今出せる）味方軍の部隊がいるまとまりでは、敵軍の補充を止める。空いた枠は待っている味方軍に先に回す
@@ -457,7 +459,8 @@ end
 export type ReturnCandidate<T> = { item: T, butai: string, distance: number }
 
 -- 戻す個体を、出撃メンバーから遠い順に count 体まで選ぶ（同じ距離なら部隊 ID の順、同じ部隊なら渡した順）。
--- canReturn が false の候補（視界の中で、メンバーから PopDistance 以内の個体）は飛ばして、次に遠い候補を見る。
+-- canReturn が false の候補（戻してはいけない個体。決まりは pickGroupReturns の canPop と canReclaim）は飛ばして、
+-- 次に遠い候補を見る。
 -- 戻せる候補が足りなければ、戻せる分だけを選ぶ。count 体を選び終えたら canReturn を呼ばない。選んだ候補を遠い順に返す
 function GeninKotai.pickReturns<T>(
 	candidates: { ReturnCandidate<T> },
@@ -488,6 +491,114 @@ function GeninKotai.pickReturns<T>(
 		end
 	end
 	return picked
+end
+
+-- 出し入れしてよい位置か（出す・目標より多い個体を戻す、の決まり。#81）。誰の視界にもかからないか（seen が false）、
+-- 戦場を見ているメンバー全員から PopDistance より遠い（far）なら出し入れしてよい（遠い位置は実体化圏の縁で目立たないので、
+-- 視界の中でもよい）。GeninKotaiService の popSafe はこの決まりで決める
+function GeninKotai.canPop(seen: boolean, far: boolean): boolean
+	return far or not seen
+end
+
+-- 味方軍の枠を空けるために、敵軍の個体を部隊へ戻してよいか（#82）。視界の外の個体だけ。遠くても視界の中の個体は消さず、
+-- 戻せる個体が無ければ、空きが出るまで味方軍が待つ
+function GeninKotai.canReclaim(seen: boolean): boolean
+	return not seen
+end
+
+-- まとまり index の敵軍の個体を部隊へ戻す数の内訳。present はまとまりの敵軍の部隊の出ている数の合計（倒れかけの個体を含む）、
+-- dying はそのうちの倒れかけの個体の数（すぐに表から外れるので戻さない）。
+-- - normal: 味方軍が何も押さえていないとき（h = 0）の敵軍の目標の合計（枠 Q を兵数の比で分けた数の合計）より多い分。
+--   まとまりの枠が減った・部隊がまとまりから外れたなど、味方軍によらず戻す数で、出し入れの決まり（canPop）で戻す
+-- - reclaim: 味方軍が押さえている数 h の分だけ減った敵軍の目標の分。味方軍の枠を空けるために戻す数で、視界の外の個体だけを戻す
+--   （canReclaim）
+-- 倒れかけの分は normal から先に引く。normal + reclaim は max(出ている数 − 倒れかけ − 敵軍の目標の合計, 0)
+function GeninKotai.returnCounts(
+	plan: WakuPlan,
+	teki: TekiPlan,
+	index: number,
+	present: number,
+	dying: number
+): (number, number)
+	local group = plan.groups[index]
+	if not group then
+		return 0, 0
+	end
+	local heisuList = {}
+	local target = 0
+	for _, id in group.tekiButai do
+		table.insert(heisuList, plan.heisuOf[id])
+		target += teki.targets[id] or 0
+	end
+	-- 味方軍が押さえていないときの敵軍の目標の合計（tekiTargets と同じ分け方で、枠 Q をそのまま分けた合計）
+	local free = 0
+	for _, share in KotaiHaibun.split(heisuList, heisuList, group.quota) do
+		free += share
+	end
+	local alive = present - math.max(dying, 0)
+	local total = math.max(alive - target, 0)
+	local normal = math.min(math.max(alive - free, 0), total)
+	return normal, total - normal
+end
+
+-- まとまりの敵軍の個体から、部隊へ戻す個体を選ぶ（returnCounts の内訳で）。候補は出撃メンバーから遠い順に見る（pickReturns）。
+-- - reclaim 体は、視界の外の候補（canReclaim）だけから選ぶ。遠くても視界の中の個体は、味方軍の枠のためには消さない
+-- - normal 体は、残りの候補のうち、出し入れしてよい候補（canPop）から選ぶ
+-- reclaim を先に選ぶ（どちらにも使える視界の外の候補を normal に先に取られ、reclaim に視界の中の候補しか残らないのを防ぐ）。
+-- isSeen と isFar は候補ごとの視界と遠さで、呼ぶ側が決める（見る必要のある候補にだけ、1回ずつ呼ぶ）。
+-- 選んだ候補を遠い順に返し、そのうち reclaim で選んだ数を添える
+function GeninKotai.pickGroupReturns<T>(
+	candidates: { ReturnCandidate<T> },
+	normal: number,
+	reclaim: number,
+	isSeen: (ReturnCandidate<T>) -> boolean,
+	isFar: (ReturnCandidate<T>) -> boolean
+): ({ ReturnCandidate<T> }, number)
+	local seenOf: { [ReturnCandidate<T>]: boolean } = {}
+	local function seen(candidate: ReturnCandidate<T>): boolean
+		local cached = seenOf[candidate]
+		if cached == nil then
+			cached = isSeen(candidate)
+			seenOf[candidate] = cached
+		end
+		return cached
+	end
+	local reclaimed = GeninKotai.pickReturns(candidates, reclaim, function(candidate): boolean
+		return GeninKotai.canReclaim(seen(candidate))
+	end)
+	local taken: { [ReturnCandidate<T>]: boolean } = {}
+	for _, candidate in reclaimed do
+		taken[candidate] = true
+	end
+	local rest: { ReturnCandidate<T> } = {}
+	for _, candidate in candidates do
+		if not taken[candidate] then
+			table.insert(rest, candidate)
+		end
+	end
+	local normals = GeninKotai.pickReturns(rest, normal, function(candidate): boolean
+		-- 視界の外なら遠さを見ない
+		local isSeenNow = seen(candidate)
+		return GeninKotai.canPop(isSeenNow, isSeenNow and isFar(candidate))
+	end)
+	local order: { [ReturnCandidate<T>]: number } = {}
+	for index, candidate in candidates do
+		order[candidate] = index
+	end
+	local picked: { ReturnCandidate<T> } = table.clone(reclaimed)
+	for _, candidate in normals do
+		table.insert(picked, candidate)
+	end
+	table.sort(picked, function(a, b)
+		if a.distance ~= b.distance then
+			return a.distance > b.distance
+		end
+		if a.butai ~= b.butai then
+			return a.butai < b.butai
+		end
+		return order[a] < order[b]
+	end)
+	return picked, #reclaimed
 end
 
 type Need = { id: string, group: number, mikata: boolean, missing: number }
