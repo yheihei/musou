@@ -36,9 +36,11 @@
 
 ## Git
 
-- 基本は `main` で作業し、`main` へ直接 commit・push する。PR は作らない
+- すべて `main` で作業し、`main` へ直接 commit・通常 push する。作業用ブランチは作らない。PR は作らない
+- 流れは、必要なローカルの確認（stylua → selene → lune → rojo build）→ 日本語の commit → `main` へ通常 push → 該当 SHA の CI の確認。CI が失敗したら `main` で直し、成功するまで続ける
+- `main` への commit・通常 push に、追加の承認は要らない
 - `main` のブランチ保護を越える push の警告（Bypassed rule violations）は承知の上なので、そのまま push してよい
-- 依頼がなければ作業用ブランチを新設せず、既存の作業ブランチも勝手に切り替えない
+- 既存の作業ブランチは勝手に切り替えない
 - commit message は日本語。関連 issue がある場合は `#issue番号` を含める
 - 無関係な既存差分を巻き込まない
 - 公開・配信、force push、支払い、認証・権限変更、復元不能な削除は別承認
