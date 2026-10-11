@@ -217,3 +217,37 @@ test("上限と先読みの数と budget は整数に切り捨て、負の数は
 	expect(KotaiPool.shortage(other, 3.7)).toBe(1)
 	expect(KotaiPool.shortage(other, -1)).toBe(0)
 end)
+
+test(
+	"遅れて届く飛び道具は、判定を出したときと届いたときで体を出した回の印が違えば当てない（技と型）",
+	function()
+		-- 体を使い回すので、飛び道具の判定を出してから届くまでに、同じ体が部隊へ戻って別の場所に出し直されることがある。
+		-- 遅らせて当てる実サービス（プレイヤーの技と、上忍・首領の型）が、判定を出したときの印（EnemyService.useOf）を覚え、
+		-- 届いたときに照合していることを確かめる。印は体を出すたびに増やす
+		for _, path in { "src/server/Services/CombatService.luau", "src/server/Services/JoninKotaiService.luau" } do
+			local source = testkit.readFile(path) :: string
+			expect(source ~= nil).toBe(true)
+			local count = 0
+			local from = 1
+			while true do
+				local start = string.find(source, "task.delay(target.delay,", from, true)
+				if not start then
+					break
+				end
+				count += 1
+				local before = string.sub(source, math.max(start - 120, 1), start)
+				expect(string.find(before, "local use = EnemyService.useOf(target.ref)", 1, true) ~= nil).toBe(true)
+				local after = string.sub(source, start, start + 120)
+				expect(string.find(after, "if EnemyService.useOf(target.ref) == use then", 1, true) ~= nil).toBe(true)
+				from = start + 1
+			end
+			-- 遅らせる当たりは飛び道具（target.delay）の1か所だけ
+			expect(count).toBe(1)
+		end
+		local enemyService = testkit.readFile("src/server/Services/EnemyService.luau") :: string
+		expect(string.find(enemyService, "rig.uses += 1", 1, true) ~= nil).toBe(true)
+		expect(string.find(enemyService, "return if rig and enemies[ref] then rig.uses else nil", 1, true) ~= nil).toBe(
+			true
+		)
+	end
+)

@@ -99,6 +99,7 @@
 -- - 出撃したら、そのステージの両軍の体を先読みの数（Prewarm）まで作ってプールに置く。1フレームに PrewarmPerFrame 体ずつ作る。
 --   ひな形は起動時に作ってあるので、複製するだけで待たない。そのステージで使わないひな形のプールの体は壊す
 -- - 窓口の DumpGeninPool で、ひな形ごとの作った数・取り出した数・返した数・壊した数・今プールにある数を確かめる
+-- - 窓口の RecycleEnemy で、生きている体を1体プールへ返し、同じ体をすぐ出し直す（遅れて届く飛び道具が当たらないことの確認用）
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -1937,6 +1938,45 @@ function EnemyService.start()
 				end
 			end
 			return `生きている敵 {tostring(enemyName)} はいない`
+		end
+	)
+
+	DebugCommand.register(
+		"RecycleEnemy",
+		"<敵の名前> [x] [z]",
+		"体を名前（DumpEnemies の name）で1体選び、倒さずにプールへ返して、同じ体をすぐ (x, z)（省くと今の位置）に出し直す。"
+			.. "部隊の下忍の個体は同じ部隊の個体として、窓口で出した敵は窓口で出した敵として出す（兵数と撃破数は変わらない）。"
+			.. "体を出した回の印（useOf）が変わるので、出し直す前に判定を出した飛び道具は、届いても当たらない（確認用）",
+		function(enemyName, xValue, zValue)
+			local found: Enemy? = nil
+			for model, enemy in enemies do
+				if model.Name == enemyName and enemy.humanoid.Health > 0 then
+					found = enemy
+					break
+				end
+			end
+			if not found then
+				return `生きている敵 {tostring(enemyName)} はいない`
+			end
+			local enemy = found :: Enemy
+			local model = enemy.model
+			local before = (rigs[model] :: Rig).uses
+			local position = enemy.root.Position
+			local x = if xValue ~= nil then DebugCommand.toNumber(xValue, "x") else position.X
+			local z = if zValue ~= nil then DebugCommand.toNumber(zValue, "z") else position.Z
+			removeEnemy(enemy)
+			local spawned = spawnEnemy(enemy.kind, enemy.gun, x, z, enemy.butai, enemy.color)
+			if not spawned then
+				return `{enemyName} をプールへ返したが、地面が見つからず出し直せなかった`
+			end
+			local at = spawned:GetPivot().Position
+			local where = string.format("(%.1f, %.1f, %.1f)", at.X, at.Y, at.Z)
+			if spawned ~= model then
+				-- プールが上限で埋まっていて返した体を壊したときは、別の体を出す
+				return `{enemyName} をプールへ返し、別の体 {spawned.Name} を {where} に出した`
+			end
+			local after = (rigs[model] :: Rig).uses
+			return `{enemyName} をプールへ返し、同じ体を {spawned.Name} として {where} に出し直した（uses {before}→{after}）`
 		end
 	)
 
