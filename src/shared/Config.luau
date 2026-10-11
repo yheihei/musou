@@ -327,6 +327,16 @@ export type ZensenSection = {
 	AggroRange: number,
 }
 
+-- 下忍の個体のモーションの再生。待機と移動を選ぶ間隔と速さ、移動のモーションの速さ、モーションを重ねて移る秒数
+export type GeninMotionSection = {
+	Interval: number,
+	MoveThreshold: number,
+	IdleDelay: number,
+	RunSpeed: number,
+	LocomotionFade: number,
+	ActionFade: number,
+}
+
 export type ButaiSection = {
 	-- 部隊の開始時の兵数。ステージ ID と部隊 ID（Haichi.luau の構成）で引く
 	Heisu: { [string]: { [string]: number } },
@@ -580,6 +590,7 @@ export type Config = {
 	Kata: KataSection,
 	Kosen: KosenSection,
 	Zensen: ZensenSection,
+	GeninMotion: GeninMotionSection,
 	Butai: ButaiSection,
 	Hoshin: HoshinSection,
 	Kyoten: KyotenSection,
@@ -1913,6 +1924,22 @@ local Config: Config = {
 		-- 交戦中の敵軍の個体は、この距離（スタッド。個体の位置から測る）までのプレイヤーを狙う（攻撃トークンに従う）。
 		-- 追ってくる個体からこの距離より離れると、前線へ戻る。攻撃トークンを受け取れる距離（KogekiToken 節の Range）以下にする
 		AggroRange = 15,
+	},
+
+	-- 下忍の個体のモーションの再生（#88）。モーションの ID は Motions.luau の Genin にあり、EnemyService が個体の Animator で流す。
+	-- 待機と移動は体の水平の速さで選び、攻撃と被弾の反応はその上に重ねる
+	GeninMotion = {
+		Interval = 0.1, -- 待機と移動のモーションを、体の水平の速さで選び直す間隔（秒）
+		MoveThreshold = 1, -- 体の水平の速さ（スタッド/秒）がこれを超えたら移動のモーションにする（Roblox 標準の Animate は 0.75）
+		-- 移動のモーションの体が止まってから、待機のモーションに移るまでの秒数。考える間隔（EnemyAI 節の AITickInterval）ごとの
+		-- 歩き直しの間の短い止まりで、走りを流し直さないよう、考える間隔より長くする
+		IdleDelay = 0.3,
+		-- 移動のモーション（Ninja パックの走り）を等速で流したときに、足の運びが合う歩く速さ（スタッド/秒）。歩く速さとこの値の
+		-- 比の速さで流す（下忍の歩く速さ 12 なら 0.75 倍）。Roblox 標準の Animate が移動の速さを割る値 16 から始め、
+		-- 足が滑って見えたら合わせる
+		RunSpeed = 16,
+		LocomotionFade = 0.2, -- 待機と移動のモーションを切り替えるときに、重ねて移る秒数（Roblox 標準の Animate と同じ）
+		ActionFade = 0.1, -- 攻撃と被弾の反応のモーションを始めるときと止めるときに、重ねて移る秒数
 	},
 
 	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にあり、移動の計算は Butai.luau にある

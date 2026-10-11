@@ -17,6 +17,10 @@
 --   倒れている間か起き上がる途中で倒されても、倒れたまま残る
 -- - 奈落に落ちたら、個体の onFell を呼ぶ（無ければ体力を 0 にしてモデルを消す）
 -- - 反応の最中は、近づくことも攻撃することもしない（busy で確かめる）
+-- - 飛んでいる間の状態には、飛ばした攻撃の反応（吹き飛びか打ち上げ）を持たせる。空中でののけぞりで浮かせ直したときは、
+--   前の飛び方を引き継ぐ
+-- - 反応の状態を入れ替えたら（のけぞる・飛ぶ・倒れる・起き上がる・終わる）、個体の onStateChanged を呼ぶ
+--   （下忍の個体は、被弾の反応のモーションを流す。#88）
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -39,6 +43,8 @@ export type State = {
 	trajectory: Trajectory.Trajectory?,
 	-- 吹き飛びか打ち上げを受けた時刻（os.clock）。面に沿って滑らせても変えない
 	flightStartedAt: number?,
+	-- 飛んでいる間の、飛ばした攻撃の反応（Knockback か Launch）。空中でののけぞりで浮かせ直したときは、前の飛び方を引き継ぐ
+	reaction: Config.Reaction?,
 }
 
 -- 反応を受ける個体
@@ -62,6 +68,8 @@ export type Body = {
 	groundY: number?,
 	-- 奈落に落ちたときに呼ぶ。nil なら体力を 0 にしてモデルを消す
 	onFell: (() -> ())?,
+	-- 反応の状態を入れ替えたときに、新しい状態（反応が終わったら nil）と前の状態で呼ぶ。nil なら呼ばない
+	onStateChanged: ((state: State?, previous: State?) -> ())?,
 }
 
 -- 攻撃を当てたときの反応の中身
@@ -80,6 +88,7 @@ export type Options = {
 	scale: number?,
 	flinchScale: number?,
 	onFell: (() -> ())?,
+	onStateChanged: ((state: State?, previous: State?) -> ())?,
 }
 
 local Hanno = {}
@@ -127,7 +136,19 @@ function Hanno.newBody(model: Model, humanoid: Humanoid, root: BasePart, options
 		facing = root.CFrame.Rotation,
 		groundY = nil,
 		onFell = o.onFell,
+		onStateChanged = o.onStateChanged,
 	}
+end
+
+-- 反応の状態を state に入れ替え、個体の onStateChanged に知らせる。知らせた先が失敗しても反応を進められるよう、
+-- 別のスレッドで呼ぶ（すぐに呼ばれる）
+local function setState(body: Body, state: State?)
+	local previous = body.state
+	body.state = state
+	local onStateChanged = body.onStateChanged
+	if onStateChanged then
+		task.spawn(onStateChanged, state, previous)
+	end
 end
 
 -- 歩くのをやめさせる
@@ -168,7 +189,7 @@ end
 
 -- 倒された個体を倒れたまま残し、消えるのを待つ
 local function stayDown(body: Body, now: number)
-	body.state = { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil }
+	setState(body, { kind = "Down", startedAt = now, untilTime = math.huge, trajectory = nil })
 	reacting[body] = nil
 end
 
@@ -179,7 +200,7 @@ local function land(body: Body, x: number, groundY: number, z: number, now: numb
 		stayDown(body, now)
 		return
 	end
-	body.state = { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil }
+	setState(body, { kind = "Down", startedAt = now, untilTime = now + Config.EnemyReaction.Down, trajectory = nil })
 end
 
 -- 足の下（HumanoidRootPart の中心から立っているときの高さまで）に床（上を向いた面）があれば着地させ、true を返す。
@@ -293,9 +314,12 @@ local function update(body: Body, now: number, excluded: { Instance })
 		local position = body.root.Position
 		local groundY = body.groundY or position.Y
 		body.root.CFrame = CFrame.new(position.X, groundY + body.standHeight, position.Z) * body.facing
-		body.state = { kind = "GetUp", startedAt = now, untilTime = now + Config.EnemyReaction.GetUp, trajectory = nil }
+		setState(
+			body,
+			{ kind = "GetUp", startedAt = now, untilTime = now + Config.EnemyReaction.GetUp, trajectory = nil }
+		)
 	elseif state.kind == "GetUp" and now >= state.untilTime then
-		body.state = nil
+		setState(body, nil)
 		reacting[body] = nil
 		release(body)
 	end
@@ -316,25 +340,33 @@ local function onHeartbeat()
 		local ok, err = pcall(update, body, now, excluded)
 		if not ok then
 			reacting[body] = nil
-			body.state = nil
+			setState(body, nil)
 			release(body)
 			warn(`Hanno: {body.model.Name} の反応を進められなかった: {err}`)
 		end
 	end
 end
 
--- position から初速 velocity で飛ばす
-local function startFlight(body: Body, velocity: vector, position: Vector3, attackOrigin: Vector3, now: number)
+-- position から初速 velocity で飛ばす。reaction は飛ばした攻撃の反応（吹き飛びか打ち上げ）
+local function startFlight(
+	body: Body,
+	velocity: vector,
+	position: Vector3,
+	attackOrigin: Vector3,
+	now: number,
+	reaction: Config.Reaction
+)
 	body.facing = facingToward(body, attackOrigin)
 	anchor(body)
-	body.state = {
+	body.root.CFrame = CFrame.new(position) * body.facing
+	setState(body, {
 		kind = "Air",
 		startedAt = now,
 		untilTime = math.huge,
 		trajectory = Trajectory.new(position, velocity),
 		flightStartedAt = now,
-	}
-	body.root.CFrame = CFrame.new(position) * body.facing
+		reaction = reaction,
+	})
 	reacting[body] = true
 	if not heartbeat then
 		heartbeat = RunService.Heartbeat:Connect(onHeartbeat)
@@ -354,7 +386,12 @@ function Hanno.react(body: Body, hit: Hit, now: number, noFlinch: boolean?)
 		local from = if lying
 			then Vector3.new(position.X, (body.groundY or position.Y) + body.standHeight, position.Z)
 			else position
-		startFlight(body, velocity, from, hit.origin, now)
+		-- 空中でののけぞりで浮かせ直すときは、前の飛び方（吹き飛びか打ち上げ）を引き継ぐ
+		local reaction = hit.reaction
+		if airborne and reaction == "Flinch" and state and state.reaction then
+			reaction = state.reaction
+		end
+		startFlight(body, velocity, from, hit.origin, now, reaction)
 		return
 	end
 	if hit.reaction ~= "Flinch" or noFlinch or body.humanoid.Health <= 0 then
@@ -365,8 +402,8 @@ function Hanno.react(body: Body, hit: Hit, now: number, noFlinch: boolean?)
 	end
 	local seconds = params.Flinch * body.flinchScale
 	if seconds > 0 then
-		body.state = { kind = "Flinch", startedAt = now, untilTime = now + seconds, trajectory = nil }
 		Hanno.stopWalking(body)
+		setState(body, { kind = "Flinch", startedAt = now, untilTime = now + seconds, trajectory = nil })
 	end
 end
 
@@ -379,7 +416,7 @@ function Hanno.busy(body: Body, now: number): boolean
 	if state.kind ~= "Flinch" or now < state.untilTime then
 		return true
 	end
-	body.state = nil
+	setState(body, nil)
 	return false
 end
 
