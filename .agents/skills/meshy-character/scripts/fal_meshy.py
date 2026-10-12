@@ -94,13 +94,19 @@ def files_in(node, path: str = ""):
                 yield from files_in(v, f"{path}.{k}" if path else k)
     elif isinstance(node, list):
         for i, v in enumerate(node):
-            yield from files_in(v, f"{path}.{i}")
+            # モーションは渡した順でなく ID で名前を付ける（rig.animations.id92.animation_fbx.fbx）
+            label = f"id{v['action_id']}" if isinstance(v, dict) and "action_id" in v else str(i)
+            yield from files_in(v, f"{path}.{label}")
 
 
 def save(result: dict, out: Path, stage: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{stage}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2))
+    seen = set()
     for name, url, file_name in files_in(result):
+        if url in seen:
+            continue
+        seen.add(url)
         suffix = Path(file_name or url.split("?")[0]).suffix
         target = out / f"{stage}.{name}{suffix}"
         urllib.request.urlretrieve(url, target)

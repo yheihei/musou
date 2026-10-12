@@ -28,7 +28,7 @@ mkdir -p "$WORK"
 
 ## 1. 元の絵を取る
 
-NINJAMCP の `get_character_image` を `style = 2d` で呼び、`$WORK/source.png` に保存する（顔グラフィックと同じ。`assets/faces/prompt.md`）。
+NINJAMCP の `get_character_image` を `style = 2d` で呼び、`$WORK/source.png`（jpg のままでもよい）に保存する（顔グラフィックと同じ。`assets/faces/prompt.md`）。
 NINJAMCP に無いキャラクター（NPC など）は、設定の文章から先に1枚の全身の絵を作る。
 
 ## 2. 三面図を作る
@@ -73,6 +73,11 @@ Read で3枚を開いて目で見る。次のどれかに当たれば、その1�
 - 腕が水平でない、指が開いている、手に物を持っている
 - 服の色や髪型が元の絵と違う、背景が白でない、影や文字がある
 
+作り直さずに使ってよいもの
+
+- 側面図が左右どちら向きでも、正面図の左右非対称な飾り（結び目など）と見える側が合っていればよい
+- 背面図で結び目などが左右逆になったときは、背面図を左右反転して使う（`sips -f horizontal back.png`）。費用はかからない
+
 ## 3. モデルを作る
 
 ```bash
@@ -82,7 +87,7 @@ python3 "$SKILL/scripts/fal_meshy.py" model --front "$WORK/front.png" --side "$W
 
 - 窓口は `meshy/v7.1/multi-image-to-3d`。画像は最大4枚で、正面・側面・背面の順に渡す
 - テクスチャ付き、三角形、Tポーズ。`model_type: lowpoly` は Meshy 7.1 では使えない
-- 三角形数は Roblox の上限（メッシュ1つあたり2万）の内側で決める
+- 三角形数は Roblox の上限（メッシュ1つあたり2万）の内側で決める。指定は目安で、少し超える（刃で 10000 → 10,367）
 
 | 対象 | `--polycount` |
 |---|---|
@@ -106,7 +111,7 @@ python3 "$SKILL/scripts/fal_meshy.py" rig --out "$WORK" --height 1.7 --anims 0,4
 - 窓口は `fal-ai/meshy/rigging/multi-animation`。`model.json` のモデルの GLB を読み、ヒューマノイドのリグを入れる
 - 1回で付けられるモーションは10個まで。歩きと走り（`basic_animations`）は別に付いてくる
 - モーションの ID（0〜696）は Meshy のライブラリの表から選ぶ（https://docs.meshy.ai/en/api/animation-library）。名前と種類で探し、選んだ ID と名前を issue に残す
-- できたもの: `rig.rigged_character_fbx.fbx`（本体）、`rig.animations.<番号>.*.fbx`（モーションごと）、`rig.basic_animations.*`
+- できたもの: `rig.rigged_character_fbx.fbx`（Studio に取り込む本体）、`rig.animations.id<モーション ID>.animation_fbx.fbx`（モーションごと）、`rig.basic_animations.*`（歩きと走り）
 - リグが入らないときは、腕と胴が離れていない三面図が多い。2 に戻って作り直す
 
 ## 5. Studio に取り込む（人の手が要る）
@@ -131,6 +136,10 @@ Claude が `execute_luau` で整えること（取り込んだ後）
 記事の手順は `Humanoid` の無い、`AnimationController` で動かすモデルまで。上忍・首領・NPC はこれで足りる。
 操作キャラクターにする（R15 にする）方法は #139 で決める。決まったら、この skill に手順を足す。
 Meshy のモーションを R15 で再生できるかは #16 で確かめる。
+
+## 実績
+
+- 2026-10-12 刃: 三面図（fal の Nano Banana、作り直し0回、背面図は左右反転）→ 1万三角形 → リグとモーション3つ。合わせて約6分。モデルの崩れなし
 
 ## 記録
 

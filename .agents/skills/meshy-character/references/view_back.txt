@@ -6,3 +6,4 @@ Draw the same character seen from directly BEHIND.
 - Same clean 3D anime-style render and soft shading as the front view.
 - Plain pure white background. No ground shadow, no props, no text, no border.
 - No weapons or items on the back. Remove large decorative knots or bows on the back. Keep loose cloth short and tucked in.
+- Asymmetric details (knots, ties, ornaments) keep their side on the body: an item on the viewer's left in the front view appears on the viewer's right from behind.

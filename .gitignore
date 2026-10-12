@@ -20,3 +20,6 @@ DevPackages/
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Python
+__pycache__/
