@@ -1,0 +1,8 @@
+The first attached image is the FRONT view of a character for a 3D game model. The second is the original illustration.
+Draw the same character seen exactly from its LEFT side (a 90-degree profile).
+
+- Same T-pose as the front view: the left arm points straight toward the camera and hides the right arm, both arms horizontal.
+- Same height, same vertical position and the same framing as the front view, so head and feet line up with it.
+- Keep the costume, hair and colors consistent with the front view and the illustration.
+- Same clean 3D anime-style render and soft shading as the front view.
+- Plain pure white background. No ground shadow, no props, no text, no border. No weapons or items on the back.

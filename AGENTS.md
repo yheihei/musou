@@ -36,6 +36,11 @@
 - Studio で直接編集した内容は Git に残らない。必ず `src/` を編集する
 - マップ（ロビー・区画・地形・建物・目印）はプレースで管理し、Git に残らない。`default.project.json` の Workspace に足さない。目印の形式は ADR 0006
 
+## Skill
+
+- プロジェクトの Skill は `.agents/skills/`。`.claude/skills` はそこへのシンボリックリンクなので、編集は実体側で行う
+- キャラクターの 3D モデルを作るときは `meshy-character`（三面図 → fal の Meshy → リグとモーション）
+
 ## Git
 
 - すべて `main` で作業し、`main` へ直接 commit・通常 push する。作業用ブランチは作らない。PR は作らない

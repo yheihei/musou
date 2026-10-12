@@ -1,0 +1,10 @@
+Using the attached character illustration, draw the same character as a full-body FRONT view for building a 3D game model.
+
+- Keep the face, hairstyle, costume design and colors exactly as in the illustration.
+- Clean 3D anime-style game character render with soft, even shading. Not a flat drawing, not photoreal.
+- Strict front view, facing the camera, standing straight, feet flat and slightly apart.
+- T-pose: both arms stretched out horizontally to the sides, palms down, fingers together.
+- The whole body from the top of the head to the soles of the feet is visible, centered, with a small margin on every side.
+- Plain pure white background. No ground shadow, no props, no text, no border.
+- Remove anything held in the hands and any weapon (swords, shuriken, staffs). Remove items carried on the back.
+- Shorten or tuck in long loose cloth (scarf ends, sashes, long sleeves) so the arms, legs and torso outline stay clearly separated.

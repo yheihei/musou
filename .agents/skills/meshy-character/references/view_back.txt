@@ -1,0 +1,8 @@
+The first attached image is the FRONT view of a character for a 3D game model. The second is the original illustration.
+Draw the same character seen from directly BEHIND.
+
+- Same pose (T-pose, arms horizontal), same size, same position in the frame and same framing as the front view, so the two images line up when overlaid.
+- Keep the costume, hair and colors consistent with the front view and the illustration. Invent the back side plausibly where the illustration does not show it.
+- Same clean 3D anime-style render and soft shading as the front view.
+- Plain pure white background. No ground shadow, no props, no text, no border.
+- No weapons or items on the back. Remove large decorative knots or bows on the back. Keep loose cloth short and tucked in.
