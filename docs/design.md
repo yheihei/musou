@@ -434,6 +434,7 @@ M3 で足す画面。
 - `meshy/v7.1/image-to-3d` は `model_type: lowpoly` を受け付けない（2026-10-12 に 422 で確認）。ローポリは `model_type: standard` と `target_polycount` で作る（1万三角形・テクスチャなしで約1分）
 - 自動リグはテクスチャ付きのメッシュが前提
 - fal はクレジットの前払い制。`FAL_KEY` は開発者が発行して設定する
+- Claude Code と Codex からは fal の MCP（`https://mcp.fal.ai/mcp-relay`、OAuth でサインイン）で呼ぶ。サーバー側に承認の仕組みがないので、生成の前に `get_model_schema` で入力を、`get_pricing` で費用を確かめ、開発者の了承を取ってから `run_model`・`submit_job` を使う
 - 開発者の Mac では `FAL_KEY` をキーチェーン（サービス名 `FAL_KEY`）に置き、`~/.zshrc` で読む。Remote Control などシェルの設定を読まずに起動した Claude からは、`zsh -ic '...'` の中で使う
 - fal 経由の生成物の所有権は規約に明記がない。本番のキャラクターに使う前に fal へ確認する
 
