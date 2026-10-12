@@ -18,8 +18,10 @@
 - 作業の最初に `lsof -nP -iTCP:34872` で ESTABLISHED を確かめる（接続済みなら、保存した時点で Edit に同期される）
 - Connect は人間が Studio で押す（プラグインは自動では接続しない）
 - 確認は、Rojo で同期したプレースのテストプレイ（`start_stop_play`）で行う。Rojo が接続していなければ確認を残し、手順を issue に書く
-- 確認用コマンドは、`execute_luau`（Server）で `ServerStorage.DebugCommand` の Attribute `Request` に命令を書いて呼び、次の呼び出しで `Response` を読む（README「テスト用のサーバーコマンド」）
-- `execute_luau` からは、窓口の `Invoke`、Remote の送信、スクリプトの付け替えができない（2026-10-02 から Capabilities で拒否）
+- 確認用コマンドは、`execute_luau`（Server）から `ServerStorage.DebugCommand:Invoke` で呼ぶ（README「テスト用のサーバーコマンド」）
+- `Invoke` が拒否されたときは、Attribute `Request` に命令を書いて呼び、次の呼び出しで `Response` を読む
+- 窓口の `Invoke` は 2026-10-02 に Capabilities で拒否されたが、10-10 と 10-12 は通った
+- `execute_luau` からは、Remote の送信とスクリプトの付け替えができない（2026-10-02 から Capabilities で拒否）
 - 編集中のプレース（Edit）にスクリプトを書き込まない（Team Create のため、クラウドに保存される）
 - `list_roblox_studios` の name が null なら、プレースは開いていない（スタート画面）
 

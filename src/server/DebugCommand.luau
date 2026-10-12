@@ -6,7 +6,8 @@
 --   game.ServerStorage.DebugCommand:Invoke("SetOugiGauge", "Player1", 100)
 --   game.ServerStorage.DebugCommand:Invoke("Help")
 --
--- Studio MCP の execute_luau は Invoke を呼べない（Capabilities で拒否される）ので、Studio では Attribute の入口も設ける。
+-- Studio MCP の execute_luau からの Invoke は Capabilities で拒否されることがある（2026-10-02 は拒否、10-10 から通る）ので、
+-- Studio では Attribute の入口も設ける。
 -- ServerStorage.DebugCommand の Attribute の Request に、JSON で {"id": 任意の文字列, "args": [コマンド名, 引数...]} を書くと、
 -- サーバーが窓口を呼び、結果を Attribute の Response に {"id": 同じ id, "results": [結果の文字列...]} で書く。
 -- 命令は1つずつ書き、Response の id が変わってから次を書く（続けて書くと前の命令を読み落とす）

@@ -107,8 +107,8 @@ print(DebugCommand:Invoke("SetOugiGauge", "Player1", 100))
 - コマンドが失敗したときは、エラーを投げずに失敗の内容を文字列で返す
 - プレイヤーは名前（`Player.Name`）で指定する。Studio のテストプレイでは自分のユーザー名になる
 
-Studio MCP の `execute_luau` は `Invoke` を呼べない（2026-10-02 から Capabilities で拒否される）。
-そのため Studio では、`ServerStorage.DebugCommand` の Attribute `Request` に命令を書くと、サーバーが窓口を呼んで結果を `Response` に書く。
+Studio MCP の `execute_luau`（Server）からも `Invoke` で呼べる（2026-10-02 は Capabilities で拒否されたが、10-10 と 10-12 は通った）。
+拒否されたときのために、Studio では `ServerStorage.DebugCommand` の Attribute `Request` に命令を書くと、サーバーが窓口を呼んで結果を `Response` に書く入口も残してある。
 
 ```lua
 -- execute_luau（Server）の1回目で命令を書く
