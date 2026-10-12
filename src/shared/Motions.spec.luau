@@ -303,3 +303,116 @@ test(
 		expect(Motions.geninLocomotionMode("Down")).toBe("None")
 	end
 )
+
+test(
+	"取得元は、武器種の行動の項目と段・奥義・下忍の攻撃と被弾の反応をすべて持つ",
+	function()
+		for bukishu, motions in Motions.Bukishu :: any do
+			local sources = Motions.MeshySources.Bukishu[bukishu]
+			expect(sources ~= nil).toBe(true)
+			for item, value in motions do
+				local source = (sources :: any)[item]
+				if type(value) == "table" then
+					expect(#source).toBe(#value)
+				else
+					expect(type(source)).toBe("table")
+					expect(type(source.clip)).toBe("number")
+				end
+			end
+		end
+		local ougi: { [string]: boolean } = {}
+		for id in Motions.Ougi do
+			ougi[id] = true
+		end
+		local ougiSources: { [string]: boolean } = {}
+		for id in Motions.MeshySources.Ougi do
+			ougiSources[id] = true
+		end
+		expect(ougiSources).toEqual(ougi)
+		local genin: { [string]: boolean } = {}
+		for _, item in Motions.GENIN_ITEMS do
+			if not Motions.isGeninLocomotion(item) then
+				genin[item] = true
+			end
+		end
+		local geninSources: { [string]: boolean } = {}
+		for item in Motions.MeshySources.Genin do
+			geninSources[item] = true
+		end
+		expect(geninSources).toEqual(genin)
+	end
+)
+
+test("取得元の項目は、武器種の項目と段・奥義・下忍の数だけ並ぶ", function()
+	local expected = 0
+	for _, motions in Motions.Bukishu :: any do
+		for _, value in motions do
+			expected += if type(value) == "table" then #value else 1
+		end
+	end
+	for _ in Motions.Ougi do
+		expected += 1
+	end
+	expected += #Motions.GENIN_ITEMS - 2
+	expect(#Motions.meshySlots()).toBe(expected)
+	expect(#Motions.meshySlots("Shuriken")).toBe(19)
+	expect(#Motions.meshySlots("Katana")).toBe(19)
+	expect(#Motions.meshySlots("Ougi")).toBe(4)
+	expect(#Motions.meshySlots("Genin")).toBe(6)
+	expect(#Motions.meshySlots("Bow")).toBe(0)
+end)
+
+test("取得元のクリップは一覧にあり、区間はクリップの長さの中に収まる", function()
+	for _, slot in Motions.meshySlots() do
+		local source = slot.source
+		local clip = Motions.MeshyClips[source.clip]
+		expect(clip ~= nil).toBe(true)
+		expect(source.clip >= 0 and source.clip <= 696 and source.clip == math.floor(source.clip)).toBe(true)
+		expect(source.from >= 0).toBe(true)
+		expect(source.from < source.to).toBe(true)
+		expect(source.to <= (clip :: Motions.MeshyClip).length).toBe(true)
+	end
+end)
+
+test("一覧のクリップは、どれも取得元の項目で使う", function()
+	local listed = {}
+	for id in Motions.MeshyClips do
+		table.insert(listed, id)
+	end
+	table.sort(listed)
+	expect(Motions.meshyClipIds()).toEqual(listed)
+end)
+
+test(
+	"同じクリップを使う項目には、同じ ID を入れる（0 はまだ公開していない）",
+	function()
+		local byClip: { [number]: number } = {}
+		for _, slot in Motions.meshySlots() do
+			if slot.id > 0 then
+				local seen = byClip[slot.source.clip]
+				if seen then
+					expect(slot.id).toBe(seen)
+				end
+				byClip[slot.source.clip] = slot.id
+			end
+		end
+	end
+)
+
+test("取得元の項目は、今入っている ID と名前を持つ", function()
+	withMotion(Motions.Bukishu.Katana.Attack, 2, 777, function()
+		withMotion(Motions.Genin :: any, "Down", 888, function()
+			local katana = Motions.meshySlots("Katana")
+			expect(Motions.meshySlotLabel(katana[1])).toBe("Katana Attack 1")
+			expect(katana[2].id).toBe(777)
+			expect(katana[2].source.clip).toBe(97)
+			expect(Motions.meshySlotLabel(katana[13])).toBe("Katana JumpAttack")
+			local genin = Motions.meshySlots("Genin")
+			expect(Motions.meshySlotLabel(genin[5])).toBe("Genin Down")
+			expect(genin[5].id).toBe(888)
+		end)
+	end)
+	local ougi = Motions.meshySlots("Ougi")
+	expect(Motions.meshySlotLabel(ougi[1])).toBe("Ougi Katon")
+	expect(ougi[1].id).toBe(Motions.Ougi.Katon)
+end)

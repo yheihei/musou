@@ -21,6 +21,8 @@
 -- - 窓口の SetTouchControls で、スマホの戦闘の操作ボタンを出すかを Player の Attribute の TouchControls に書く
 -- - 窓口の SetScreenSize で、本人の画面の配置に使う画面の大きさを Player の Attribute（SmallScreen.SIZE_ATTRIBUTE）に書く
 --   （Studio でスマホの小さい画面の配置を確かめる用。デバイスエミュレーターを使わずに、安全な範囲の左上にその大きさで並ぶ）
+-- - 窓口の DumpMotions で、モーションの取得元（Motions.luau の MeshySources。Meshy のクリップと区間）と、
+--   項目ごとに入っている ID を確かめる（#67・#68・#120・#121・#88。Roblox へ公開するクリップの一覧にもなる）
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -31,6 +33,7 @@ local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
+local Motions = require(ReplicatedStorage.Shared.Motions)
 local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local TouchControls = require(ReplicatedStorage.Shared.TouchControls)
@@ -476,6 +479,72 @@ local function registerDebugCommands()
 			player:SetAttribute(SmallScreen.SIZE_ATTRIBUTE, Vector2.new(w, h))
 			local kind = if SmallScreen.isSmall(w, h) then "小さい画面" else "大きい画面"
 			return `{player.Name} の画面の大きさを {w}x{h}（{kind}）にした`
+		end
+	)
+	DebugCommand.register(
+		"DumpMotions",
+		"[Shuriken|Katana|Ougi|Genin]",
+		"モーションの取得元（Motions.luau の MeshySources）を JSON で返す。引数なしなら、Roblox へ公開する Meshy のクリップごとに"
+			.. "番号・名前・長さ（秒）・使う項目（slots）・項目に入っている ID（ids。0 は除く）を並べ、ID の入ったクリップの数（published）を添える。"
+			.. "武器種・Ougi・Genin を渡すと、その項目ごとに入っている ID（0 はまだ公開していない）・クリップ・区間（from〜to 秒）を並べ、"
+			.. "ID の入っていない項目の数（pending）を添える",
+		function(group)
+			if group == nil or group == "" then
+				local byClip: { [number]: { slots: { string }, ids: { [number]: boolean } } } = {}
+				for _, slot in Motions.meshySlots() do
+					local entry = byClip[slot.source.clip]
+					if not entry then
+						entry = { slots = {}, ids = {} }
+						byClip[slot.source.clip] = entry
+					end
+					table.insert(entry.slots, Motions.meshySlotLabel(slot))
+					if slot.id > 0 then
+						entry.ids[slot.id] = true
+					end
+				end
+				local clips = {}
+				local published = 0
+				for _, clipId in Motions.meshyClipIds() do
+					local clip = Motions.MeshyClips[clipId]
+					local ids = {}
+					for id in byClip[clipId].ids do
+						table.insert(ids, id)
+					end
+					table.sort(ids)
+					if #ids > 0 then
+						published += 1
+					end
+					table.insert(clips, {
+						clip = clipId,
+						name = if clip then clip.name else nil,
+						length = if clip then clip.length else nil,
+						slots = byClip[clipId].slots,
+						ids = ids,
+					})
+				end
+				return HttpService:JSONEncode({ total = #clips, published = published, clips = clips })
+			end
+			local slots = Motions.meshySlots(group)
+			if #slots == 0 then
+				error(`Shuriken・Katana・Ougi・Genin のどれかで指定する（{tostring(group)}）`, 0)
+			end
+			local list = {}
+			local pending = 0
+			for _, slot in slots do
+				local clip = Motions.MeshyClips[slot.source.clip]
+				if slot.id <= 0 then
+					pending += 1
+				end
+				table.insert(list, {
+					slot = Motions.meshySlotLabel(slot),
+					id = slot.id,
+					clip = slot.source.clip,
+					name = if clip then clip.name else nil,
+					from = slot.source.from,
+					to = slot.source.to,
+				})
+			end
+			return HttpService:JSONEncode({ group = group, total = #list, pending = pending, slots = list })
 		end
 	)
 end

@@ -111,6 +111,8 @@ python3 "$SKILL/scripts/fal_meshy.py" rig --out "$WORK" --height 1.7 --anims 0,4
 - 窓口は `fal-ai/meshy/rigging/multi-animation`。`model.json` のモデルの GLB を読み、ヒューマノイドのリグを入れる
 - 1回で付けられるモーションは10個まで。歩きと走り（`basic_animations`）は別に付いてくる
 - モーションの ID（0〜696）は Meshy のライブラリの表から選ぶ（https://docs.meshy.ai/en/api/animation-library）。名前と種類で探し、選んだ ID と名前を issue に残す
+- ライブラリの表の各行のプレビュー（`https://cdn.meshy.ai/webapp-assets/feature-demo/animation/preview/biped/<名前>.gif`）を ffmpeg でコマに分けて並べると、動きを見比べて選べる
+- musou の行動に使うクリップと区間は `src/shared/Motions.luau` の `MeshyClips`・`MeshySources` に書く。クリップの長さは応答の GLB のアニメーションの長さを読む
 - できたもの: `rig.rigged_character_fbx.fbx`（Studio に取り込む本体）、`rig.animations.id<モーション ID>.animation_fbx.fbx`（モーションごと）、`rig.basic_animations.*`（歩きと走り）
 - リグが入らないときは、腕と胴が離れていない三面図が多い。2 に戻って作り直す
 
@@ -129,7 +131,8 @@ Claude が `execute_luau` で整えること（取り込んだ後）
 - FBX はそのままだと巨大なので、`Model:ScaleTo()` で縮める。記事の値は 0.038。高さを測り、R15 と同じくらい（約5スタッド）にそろえる
 - `MeshPart` は `CanCollide`・`CanTouch` を false
 - 不要な `InitialPoses` フォルダを消す。明るすぎるときは `SurfaceAppearance` の `Color` を 190, 190, 190 にする
-- 公開したモーションの ID は `src/shared/Motions.luau` に入れる
+- モーションはクリップを切らずに丸ごと公開する（行動に使う区間は `MeshySources` に置き、コードで切り出す）
+- 公開したモーションの ID は `src/shared/Motions.luau` の、そのクリップを使う項目すべてに入れる（窓口の `DumpMotions` で項目を確かめる）
 
 ## 6. 操作キャラクターにするとき
 
@@ -140,6 +143,7 @@ Meshy のモーションを R15 で再生できるかは #16 で確かめる。
 ## 実績
 
 - 2026-10-12 刃: 三面図（fal の Nano Banana、作り直し0回、背面図は左右反転）→ 1万三角形 → リグとモーション3つ。合わせて約6分。モデルの崩れなし
+- 2026-10-13 刃のリグに、手裏剣セット・刀セット・奥義・下忍のモーション 39 本（10 本ずつ4回、1回 $0.08、各2〜3分）。作業用の場所は `characters/jin/motions/`
 
 ## 記録
 

@@ -11,6 +11,8 @@
 -- - 下忍のモーションは、サーバーの EnemyService が下忍の個体に再生する（#88）。待機と移動は体の速さで選び（geninLocomotionOf）、
 --   被弾の反応は反応（Hanno）の状態から引く（geninReactionOf）
 -- - 攻撃判定のタイミングと移動量は Config.luau に置く。モーションを差し替えても判定は変わらない
+-- - 攻撃・ガード・被弾・奥義と下忍の攻撃・被弾の反応のモーションの取得元（Meshy のモーションライブラリのクリップと区間）は
+--   MeshySources に置く（#67・#68・#120・#121・#88）。窓口の DumpMotions で、公開するクリップと項目ごとの ID を確かめる
 
 local Characters = require("./Characters")
 
@@ -66,6 +68,50 @@ export type GeninPriority = "Idle" | "Movement" | "Action" | "Action2"
 
 -- 下忍の待機と移動のモーションの流し方。体の速さで選ぶ・待機にする・流さない
 export type GeninLocomotionMode = "Speed" | "Idle" | "None"
+
+-- Meshy のモーションライブラリのクリップ。表の鍵は Meshy の番号（action_id、0〜696）。length はクリップの長さ（秒）
+export type MeshyClip = {
+	name: string,
+	length: number,
+}
+
+-- 項目に使う Meshy のクリップの番号と、行動に合う区間（クリップの頭からの秒）
+export type MeshySource = {
+	clip: number,
+	from: number,
+	to: number,
+}
+
+-- 武器種1つぶんの取得元（BukishuMotions と同じ項目）
+export type BukishuSources = {
+	Attack: { MeshySource },
+	ChargeKogeki: { MeshySource },
+	JumpAttack: MeshySource,
+	Guard: MeshySource,
+	GuardHit: MeshySource,
+	KinkyuKaihi: MeshySource,
+	Flinch: MeshySource,
+	Down: MeshySource,
+	GetUp: MeshySource,
+}
+
+export type MeshySourceSection = {
+	Bukishu: { [string]: BukishuSources },
+	-- 奥義の ID（Motions.Ougi と同じ）ごと
+	Ougi: { [string]: MeshySource },
+	-- 下忍の項目（待機と移動を除く）ごと
+	Genin: { [string]: MeshySource },
+}
+
+-- 取得元の項目1つ。group は武器種（Shuriken・Katana）か Ougi か Genin、item は行動・奥義・下忍の項目の名前、
+-- step は通常攻撃とチャージ攻撃の段。id は今入っている Roblox のアニメーション ID（0 はまだ公開していない）
+export type MeshySlot = {
+	group: string,
+	item: string,
+	step: number?,
+	source: MeshySource,
+	id: number,
+}
 
 local Motions = {}
 
@@ -166,6 +212,138 @@ local GENIN_PRIORITIES: { [string]: GeninPriority } = {
 	Down = "Action2",
 	GetUp = "Action2",
 }
+
+-- 使う Meshy のモーションライブラリのクリップ。名前と長さは、fal の rigging/multi-animation の応答の GLB から読んだ値（2026-10-13）
+Motions.MeshyClips = {
+	[3] = { name = "Arise", length = 1.867 },
+	[4] = { name = "Attack", length = 2.833 },
+	[7] = { name = "BeHit_FlyUp", length = 1.533 },
+	[91] = { name = "Double_Blade_Spin", length = 5.7 },
+	[97] = { name = "Left_Slash", length = 3.2 },
+	[99] = { name = "Reaping_Swing", length = 5.933 },
+	[102] = { name = "Sword_Judgment", length = 4.367 },
+	[105] = { name = "Triple_Combo_Attack", length = 4.367 },
+	[125] = { name = "Charged_Spell_Cast", length = 2.7 },
+	[127] = { name = "Charged_Ground_Slam", length = 3.033 },
+	[128] = { name = "Heavy_Hammer_Swing", length = 1.867 },
+	[132] = { name = "mage_soell_cast_3", length = 3.367 },
+	[133] = { name = "mage_soell_cast_4", length = 2.233 },
+	[138] = { name = "Block1", length = 3.5 },
+	[140] = { name = "Block3", length = 1.533 },
+	[148] = { name = "Sword_Parry_Backward", length = 1.367 },
+	[149] = { name = "Two_Handed_Parry", length = 1.367 },
+	[157] = { name = "Stand_Dodge_1", length = 1.3 },
+	[178] = { name = "Hit_Reaction", length = 1.667 },
+	[179] = { name = "Hit_Reaction_1", length = 1.233 },
+	[182] = { name = "Shot_and_Blown_Back", length = 2.7 },
+	[189] = { name = "dying_backwards", length = 2.233 },
+	[190] = { name = "Knock_Down_1", length = 3.3 },
+	[200] = { name = "Punch_Combo_1", length = 2.233 },
+	[202] = { name = "Weapon_Combo_1", length = 3.533 },
+	[206] = { name = "Spartan_Kick", length = 1.433 },
+	[216] = { name = "Lunge_Spin_Kick", length = 1.667 },
+	[218] = { name = "Step_in_High_Kick", length = 1.333 },
+	[219] = { name = "Right_Hand_Sword_Slash", length = 1.533 },
+	[221] = { name = "Charged_Upward_Slash", length = 3.2 },
+	[238] = { name = "Axe_Spin_Attack", length = 2.533 },
+	[240] = { name = "Thrust_Slash", length = 3.033 },
+	[241] = { name = "Weapon_Combo_2", length = 4.533 },
+	[242] = { name = "Charged_Slash", length = 2.233 },
+	[384] = { name = "Quick_Step_and_Spin_Dodge", length = 1.2 },
+	[393] = { name = "baseball_pitching", length = 4 },
+	[397] = { name = "360_Power_Spin_Jump", length = 3.067 },
+	[422] = { name = "Rising_Flying_Kick", length = 1.533 },
+	[508] = { name = "Dive_Down_and_Land_2", length = 3.1 },
+} :: { [number]: MeshyClip }
+
+local function meshy(clip: number, from: number, to: number): MeshySource
+	return { clip = clip, from = from, to = to }
+end
+
+-- 項目ごとの取得元（Meshy のクリップと区間）。区間は Meshy のプレビューを見て決めた目安で、公開したモーションを Studio で見て詰める。
+-- - クリップは fal で刃のモデルにリグを入れて付けた。Meshy のリグの動きを R15 で流す経路は #16 で決める
+-- - Roblox へはクリップを切らずに丸ごと公開し、同じクリップを使う項目には同じ ID を入れる。区間はコードで切り出して流す
+--   （ID が入ったら再生に組み込む。今の MotionController・JoninKotaiService・EnemyService は区間を使わず丸ごと流す）
+-- - 下忍の待機と移動は Ninja パックなので、ここには無い
+Motions.MeshySources = {
+	Bukishu = {
+		-- 手裏剣セット（刃・酉花）。#67（攻撃）・#120（防御・被弾）
+		Shuriken = {
+			Attack = {
+				meshy(219, 0.15, 1), -- 斬り払い。右手で踏み込んで斬る
+				meshy(240, 1.3, 2.2), -- 斬り返し。振り返りながら逆手で払う後半
+				meshy(393, 1, 2.4), -- 手裏剣を1枚投げる。振りかぶってから投げ終えるまで
+				meshy(216, 0.4, 1.4), -- 回し蹴り
+				meshy(133, 0.3, 1.3), -- 手裏剣を3枚、扇に投げる。踏み込んで腕を横に払う
+				meshy(397, 0.6, 2.1), -- 宙返りして周りを斬る。屈んで跳び、回って着地する
+			},
+			ChargeKogeki = {
+				meshy(206, 0.2, 1.1), -- C1 踏み込んで蹴り飛ばす（前蹴り）
+				meshy(218, 0.1, 1), -- C2 蹴り上げて打ち上げる
+				meshy(422, 0, 1.2), -- C3 跳び上がって蹴る
+				meshy(127, 1.2, 2.4), -- C4 煙玉を地面に叩きつける。腕を上げてから膝をついて叩く
+				meshy(238, 0.2, 1.6), -- C5 回って八方へ撒く
+				meshy(200, 0.2, 1.9), -- C6 手裏剣の雨。両手を交互に前へ突き出す
+			},
+			JumpAttack = meshy(508, 0.3, 1.5), -- 急降下して着地する。着地の構えまで
+			Guard = meshy(138, 0, 3.5), -- 両腕を上げた構え（くり返す）
+			GuardHit = meshy(140, 0.4, 1.1), -- 構えたまま受けてのけぞる
+			KinkyuKaihi = meshy(384, 0, 1.2), -- 素早く踏み出して回る（向きを変えずに方向へ動くので転がらない）
+			Flinch = meshy(179, 0, 0.8),
+			Down = meshy(190, 0.5, 2.4), -- 蹴られて仰向けに倒れる
+			GetUp = meshy(3, 0, 1.867), -- 仰向けから起き上がる
+		},
+		-- 刀セット（石舟斎・金鬼）。#68（攻撃）・#121（防御・被弾）
+		Katana = {
+			Attack = {
+				meshy(97, 0.3, 1.4), -- 袈裟斬り。振りかぶって斜めに斬り下ろす
+				meshy(97, 1.9, 2.8), -- 逆袈裟。同じクリップの斬り返し
+				meshy(99, 3.3, 4.3), -- 横薙ぎ。クリップの終わりの横の払い
+				meshy(240, 0.1, 0.9), -- 踏み込んで突く。同じクリップの前半の突き
+				meshy(105, 1.2, 2.2), -- 回転斬り。跳んで回って斬る
+				meshy(4, 0.3, 1.7), -- 唐竹割り。両手で振りかぶって真下へ斬る
+			},
+			ChargeKogeki = {
+				meshy(242, 0.2, 1.7), -- C1 溜めてから斬る
+				meshy(221, 0.3, 2), -- C2 屈んで溜めてから斬り上げる
+				meshy(102, 0.3, 2), -- C3 跳び上がってから斬り下ろして着地する
+				meshy(91, 0.3, 1.9), -- C4 跳んで回る回転斬り
+				meshy(241, 0.4, 4), -- C5 乱れ斬りの後に斬り払う
+				meshy(128, 0, 1.867), -- C6 大上段から地面まで振り下ろす
+			},
+			JumpAttack = meshy(102, 0.9, 1.9), -- 落ちながら斬り下ろして着地する（C3 と同じクリップの後半）
+			Guard = meshy(149, 0, 1.367), -- 両手で刀を横に構える（くり返す）
+			GuardHit = meshy(148, 0, 1.367),
+			KinkyuKaihi = meshy(157, 0, 1.3), -- 横へ踏み出してかわす
+			Flinch = meshy(178, 0, 0.9),
+			Down = meshy(189, 0.3, 2.2), -- 後ろへ倒れて仰向けになる
+			GetUp = meshy(3, 0, 1.867),
+		},
+	},
+	-- 奥義。#120（火遁・毒手裏剣）・#121（無刀取り・金遁）
+	Ougi = {
+		Katon = meshy(132, 0.6, 2.6), -- 踏み込んで両手を前へ突き出したまま保つ（炎を吐く間）
+		PoisonShuriken = meshy(91, 1.5, 4.9), -- 屈んで回りながら刃を振り回す後半（12 方向へ撒く）
+		MutoDori = meshy(202, 0.2, 3.2), -- 斬って蹴り上げ、膝をついて叩きつける
+		Kinton = meshy(125, 0, 2.7), -- 屈んで溜めてから両腕を上げる（地面から刃が出る）
+	},
+	-- 下忍（#88）。被弾の反応は反応の状態の間だけ流れる（のけぞり 0.35 秒、ダウン 1 秒、起き上がり 0.5 秒）
+	Genin = {
+		Attack = meshy(219, 0, 1.533), -- 右手で踏み込んで斬る（攻撃の間隔 1.5 秒に収まる長さ）
+		Flinch = meshy(179, 0, 0.6),
+		Knockback = meshy(182, 0.6, 2), -- 後ろへ飛ばされて落ちる
+		Launch = meshy(7, 0, 1), -- 打ち上げられて回る
+		Down = meshy(189, 1.4, 2.233), -- 仰向けに倒れている終わりの部分
+		GetUp = meshy(3, 0, 1.867),
+	},
+} :: MeshySourceSection
+
+-- 取得元を並べる順。武器種の項目、奥義、下忍の項目（待機と移動を除く）
+local MESHY_BUKISHU = { "Shuriken", "Katana" }
+local BUKISHU_ITEMS =
+	{ "Attack", "ChargeKogeki", "JumpAttack", "Guard", "GuardHit", "KinkyuKaihi", "Flinch", "Down", "GetUp" }
+local MESHY_OUGI = { "Katon", "PoisonShuriken", "MutoDori", "Kinton" }
+local MESHY_GENIN = { "Attack", "Flinch", "Knockback", "Launch", "Down", "GetUp" }
 
 -- 行動のモーションの ID。通常攻撃とチャージ攻撃は step（段か C の番号）で引く。無ければ 0
 function Motions.actionOf(bukishu: string, action: string, step: number?): number
@@ -361,6 +539,61 @@ function Motions.geninLocomotionMode(kind: string?): GeninLocomotionMode
 		return "None"
 	end
 	return "Idle"
+end
+
+-- 取得元の項目を、武器種（MESHY_BUKISHU の順）の行動の項目と段、奥義、下忍の項目の順に並べて返す。
+-- group（武器種の名前・Ougi・Genin）を渡すとその項目だけにする（知らない名前なら空）。id は今の一覧（Bukishu・Ougi・Genin）の ID
+function Motions.meshySlots(group: string?): { MeshySlot }
+	local slots: { MeshySlot } = {}
+	local function add(slotGroup: string, item: string, step: number?, source: MeshySource?, id: number)
+		if source and (group == nil or group == slotGroup) then
+			table.insert(slots, { group = slotGroup, item = item, step = step, source = source, id = id })
+		end
+	end
+	for _, bukishu in MESHY_BUKISHU do
+		local sources = Motions.MeshySources.Bukishu[bukishu]
+		if not sources then
+			continue
+		end
+		for _, item in BUKISHU_ITEMS do
+			local value = (sources :: any)[item]
+			if type(value) == "table" and value.clip == nil then
+				-- 通常攻撃とチャージ攻撃は段ごと
+				for step, source in value do
+					add(bukishu, item, step, source, Motions.actionOf(bukishu, item, step))
+				end
+			else
+				add(bukishu, item, nil, value, Motions.actionOf(bukishu, item))
+			end
+		end
+	end
+	for _, ougi in MESHY_OUGI do
+		add("Ougi", ougi, nil, Motions.MeshySources.Ougi[ougi], Motions.Ougi[ougi] or 0)
+	end
+	for _, item in MESHY_GENIN do
+		add("Genin", item, nil, Motions.MeshySources.Genin[item], Motions.geninIdOf(item))
+	end
+	return slots
+end
+
+-- 取得元の項目の名前（"Shuriken Attack 1"・"Ougi Katon"・"Genin Down"）
+function Motions.meshySlotLabel(slot: MeshySlot): string
+	local label = `{slot.group} {slot.item}`
+	return if slot.step then `{label} {slot.step}` else label
+end
+
+-- 取得元で使う Meshy のクリップの番号を、重なりなく小さい順に返す（Roblox へ公開するクリップの一覧）
+function Motions.meshyClipIds(): { number }
+	local found: { [number]: boolean } = {}
+	for _, slot in Motions.meshySlots() do
+		found[slot.source.clip] = true
+	end
+	local ids = {}
+	for id in found do
+		table.insert(ids, id)
+	end
+	table.sort(ids)
+	return ids
 end
 
 return Motions
