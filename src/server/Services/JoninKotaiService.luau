@@ -911,7 +911,8 @@ local function registerDebugCommands()
 		"DumpJoninKotai",
 		"",
 		"出ている上忍と首領の個体（軍・体力・反応の状態・倒れて消えるのを待つか・位置・一番近いメンバーまでの距離・"
-			.. "狙っている相手・出している型・最後に当てた型の結果）を JSON で返す",
+			.. "狙っている相手・出している型・型のモーションを流している間はその ID と位置（秒）と速さ（motion）・"
+			.. "最後に当てた型の結果）を JSON で返す",
 		function()
 			local points = memberPoints()
 			local list = {}
@@ -919,6 +920,14 @@ local function registerDebugCommands()
 				local position = kotai.root.Position
 				local distance = Jittaikaken.nearestDistance({ x = position.X, z = position.Z }, points)
 				local lastHit = kotai.lastHit
+				local track = if kotai.run then kotai.run.track else nil
+				local motion = if track and track.IsPlaying
+					then {
+						id = tonumber(string.match(track.Animation.AnimationId, "%d+")),
+						position = math.floor(track.TimePosition * 100 + 0.5) / 100,
+						speed = math.floor(track.Speed * 100 + 0.5) / 100,
+					}
+					else nil
 				table.insert(list, {
 					id = id,
 					gun = kotai.gun,
@@ -930,6 +939,7 @@ local function registerDebugCommands()
 					distance = if distance then round(distance) else nil,
 					target = if kotai.target then kotai.target.Name else nil,
 					kata = if kotai.run then kotai.run.id else nil,
+					motion = motion,
 					lastHit = if lastHit
 						then {
 							kata = lastHit.kata,

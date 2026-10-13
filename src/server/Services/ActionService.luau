@@ -24,7 +24,8 @@
 -- - 窓口の DumpMotions で、モーションの取得元（Motions.luau の MeshySources。Meshy のクリップと区間）と、
 --   項目ごとに入っている ID を確かめる（#67・#68・#120・#121・#88。Roblox へ公開するクリップの一覧にもなる）
 -- - 窓口の SetMotion で、武器種の行動と奥義のモーションの項目の ID と区間を差し替える（MotionPlayer.setTests。
---   自分の行動を流すクライアントと、型で流用する上忍と首領の個体のどちらにも効く。区間の再生を Studio で試す用）
+--   自分の行動を流すクライアントと、型で流用する上忍と首領の個体のどちらにも効く。区間の再生を Studio で試す用）。
+--   DumpMotionPlay で、キャラクターに流れている行動のモーション（クライアントから複製されたトラック）の位置と速さを確かめる
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -601,6 +602,39 @@ local function registerDebugCommands()
 			end
 			local range = if test.from then `区間 {test.from}〜{test.to} 秒` else "丸ごと"
 			return `行動のモーション {label} を {id} にした（{range}。差し替え {count} 件）`
+		end
+	)
+	DebugCommand.register(
+		"DumpMotionPlay",
+		"<プレイヤー名>",
+		"プレイヤーのキャラクターの今の行動（action・step・duration 秒）と、流れている行動のモーション（優先度が Action か Action2 の"
+			.. "トラック。クライアントで流したものが複製される）の ID・位置（position 秒）・速さ（speed。区間の終わりの姿で残しているときは 0）を"
+			.. " JSON で返す（区間の再生の確認用）",
+		function(name)
+			local player = DebugCommand.findPlayer(name)
+			local character = player.Character
+			local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
+			local animator = if humanoid then humanoid:FindFirstChildOfClass("Animator") else nil
+			if not character or not animator then
+				error(`{player.Name} のキャラクターが出ていない`, 0)
+			end
+			local tracks = {}
+			for _, playing in (animator :: Animator):GetPlayingAnimationTracks() do
+				local priority = playing.Priority
+				if priority == Enum.AnimationPriority.Action or priority == Enum.AnimationPriority.Action2 then
+					table.insert(tracks, {
+						id = tonumber(string.match(playing.Animation.AnimationId, "%d+")),
+						position = round2(playing.TimePosition),
+						speed = round2(playing.Speed),
+					})
+				end
+			end
+			return HttpService:JSONEncode({
+				action = character:GetAttribute("Action"),
+				step = character:GetAttribute("ActionStep"),
+				duration = character:GetAttribute("ActionDuration"),
+				tracks = tracks,
+			})
 		end
 	)
 end
