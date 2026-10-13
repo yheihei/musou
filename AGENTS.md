@@ -20,8 +20,9 @@
 - 確認は、Rojo で同期したプレースのテストプレイ（`start_stop_play`）で行う。Rojo が接続していなければ確認を残し、手順を issue に書く
 - 確認用コマンドは、`execute_luau`（Server）から `ServerStorage.DebugCommand:Invoke` で呼ぶ（README「テスト用のサーバーコマンド」）
 - `Invoke` が拒否されたときは、Attribute `Request` に命令を書いて呼び、次の呼び出しで `Response` を読む
-- 窓口の `Invoke` は 2026-10-02 に Capabilities で拒否されたが、10-10 と 10-12 は通った
-- `execute_luau` からは、Remote の送信とスクリプトの付け替えができない（2026-10-02 から Capabilities で拒否）
+- 窓口の `Invoke` は 2026-10-02 に Capabilities で拒否されたが、10-10・10-12・10-14 は通った
+- `execute_luau` からは、スクリプトの付け替えができない（2026-10-02 から Capabilities で拒否）
+- Remote の送信も 2026-10-02 に拒否されたが、10-14 は Client からの `FireServer` が通った
 - 編集中のプレース（Edit）にスクリプトを書き込まない（Team Create のため、クラウドに保存される）
 - `list_roblox_studios` の name が null なら、プレースは開いていない（スタート画面）
 
