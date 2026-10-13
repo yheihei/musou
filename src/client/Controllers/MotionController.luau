@@ -8,11 +8,14 @@
 -- - ID が 0 の行動は再生しない。前の行動のモーションは止め、待機と移動のモーションに戻す
 -- - 行動のモーションは、待機と移動（Animate の Idle・Movement）より上の優先度で重ねる
 -- - サーバーが行動を始めてから届くまでの遅れの分だけ、モーションを進めた位置から再生する
+-- - 取得元の区間（Motions.sourceForAction）を行動の長さに合わせて流し、区間の終わりの姿で次の行動まで残す（MotionPlayer）。
+--   ガードはくり返す。窓口の SetMotion で差し替えた項目は、差し替えの ID と区間で流す
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Characters = require(ReplicatedStorage.Shared.Characters)
+local MotionPlayer = require(ReplicatedStorage.Shared.MotionPlayer)
 local Motions = require(ReplicatedStorage.Shared.Motions)
 
 local MotionController = {}
@@ -62,18 +65,6 @@ local function numberAttribute(instance: Instance, name: string): number?
 	return if type(value) == "number" then value else nil
 end
 
--- 行動の長さに合わせて速さを決め、行動を始めてからの経過の分だけ進める
-local function fit(track: AnimationTrack, duration: number?, startedAt: number?)
-	local speed = Motions.playbackSpeed(track.Length, duration)
-	track:AdjustSpeed(speed)
-	if track.Length > 0 and not track.Looped and startedAt then
-		local elapsed = workspace:GetServerTimeNow() - startedAt
-		if elapsed > 0 then
-			track.TimePosition = math.min(elapsed * speed, track.Length)
-		end
-	end
-end
-
 -- キャラクターの今の行動のモーションを再生する。待機に戻ったか、モーションの無い行動なら止める
 local function play(rig: Rig)
 	local character = rig.character
@@ -81,8 +72,16 @@ local function play(rig: Rig)
 	rig.current = nil
 	local action = character:GetAttribute("Action")
 	local motionId = 0
+	local source: Motions.MeshySource? = nil
 	if type(action) == "string" then
-		motionId = Motions.forAction(characterIdOf(character), action, numberAttribute(character, "ActionStep"))
+		local characterId = characterIdOf(character)
+		local step = numberAttribute(character, "ActionStep")
+		motionId, source = Motions.withTest(
+			MotionPlayer.tests(),
+			Motions.actionLabelOf(characterId, action, step),
+			Motions.forAction(characterId, action, step),
+			Motions.sourceForAction(characterId, action, step)
+		)
 	end
 	if previous then
 		previous:Stop(FADE_TIME)
@@ -92,21 +91,19 @@ local function play(rig: Rig)
 	end
 
 	local track = trackOf(rig, motionId)
-	local duration = numberAttribute(character, "ActionDuration")
 	local startedAt = numberAttribute(character, "ActionStartedAt")
+	local looped = Motions.isLooped(action)
 	track.Priority = PRIORITIES[Motions.priorityOf(action)]
-	track.Looped = Motions.isLooped(action)
-	track:Play(FADE_TIME)
-	fit(track, duration, startedAt)
+	MotionPlayer.play(track, {
+		source = source,
+		duration = numberAttribute(character, "ActionDuration"),
+		fade = FADE_TIME,
+		looped = looped,
+		-- 区間の終わりの姿で、次の行動（待機に戻るときも ActionStartedAt が変わる）まで残す
+		hold = not looped,
+		elapsed = if startedAt then workspace:GetServerTimeNow() - startedAt else nil,
+	})
 	rig.current = track
-	-- まだ読み込めておらず長さが分からなければ、分かった時点で合わせ直す
-	if track.Length <= 0 then
-		track:GetPropertyChangedSignal("Length"):Once(function()
-			if rig.current == track then
-				fit(track, duration, startedAt)
-			end
-		end)
-	end
 end
 
 local function watch(character: Model)

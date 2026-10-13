@@ -219,8 +219,10 @@ test(
 			expect(Motions.Genin.Attack).toBe(507770239)
 			expect(Motions.geninIdOf("Attack")).toBe(507770239)
 		end)
+		Motions.GeninTests.Attack = nil
 		expect(Motions.setGeninId("Jump", 1)).toBe(false)
 		expect((Motions.Genin :: any).Jump).toBe(nil)
+		expect(Motions.GeninTests.Jump).toBe(nil)
 	end
 )
 
@@ -416,3 +418,182 @@ test("取得元の項目は、今入っている ID と名前を持つ", functio
 	expect(Motions.meshySlotLabel(ougi[1])).toBe("Ougi Katon")
 	expect(ougi[1].id).toBe(Motions.Ougi.Katon)
 end)
+
+-- 区間 segment の値を、小数のずれを許して比べる
+local function expectSegment(segment: Motions.Segment, start: number, stop: number, speed: number, whole: boolean)
+	expect(math.abs(segment.start - start) < 1e-9).toBe(true)
+	expect(math.abs(segment.stop - stop) < 1e-9).toBe(true)
+	expect(math.abs(segment.speed - speed) < 1e-9).toBe(true)
+	expect(segment.whole).toBe(whole)
+end
+
+local function meshy(from: number, to: number): Motions.MeshySource
+	return { clip = 0, from = from, to = to }
+end
+
+test(
+	"区間は取得元の頭から終わりまでで、区間の長さを行動の長さで割った速さで流す",
+	function()
+		expectSegment(Motions.segmentOf(meshy(0.3, 1.4), 3.2, 0.55), 0.3, 1.4, 2, false)
+		expectSegment(Motions.segmentOf(meshy(1.9, 2.8), 3.2, 0.45), 1.9, 2.8, 2, false)
+		-- 行動の長さが分からないときと、終わりの無い行動は等速
+		expectSegment(Motions.segmentOf(meshy(1.4, 2), 2.7, nil), 1.4, 2, 1, false)
+		expectSegment(Motions.segmentOf(meshy(1.4, 2), 2.7, math.huge), 1.4, 2, 1, false)
+	end
+)
+
+test("取得元の無い項目と、クリップの頭から終わりまでの区間は丸ごと流す", function()
+	expectSegment(Motions.segmentOf(nil, 2, 0.5), 0, 2, 4, true)
+	expectSegment(Motions.segmentOf(meshy(0, 1.867), 1.867, 0.5), 0, 1.867, 1.867 / 0.5, true)
+	-- 取得元の長さ（GLB）と公開したトラックの長さが少しずれていても、端は端にそろえる
+	expectSegment(Motions.segmentOf(meshy(0.03, 1.867), 1.9, nil), 0, 1.9, 1, true)
+	expectSegment(Motions.segmentOf(meshy(1.4, 2.233), 2.2667, nil), 1.4, 2.2667, 1, false)
+end)
+
+test("区間はトラックの長さに収め、長さが 0 になる区間は丸ごとにする", function()
+	expectSegment(Motions.segmentOf(meshy(0.5, 4), 2, nil), 0.5, 2, 1, false)
+	expectSegment(Motions.segmentOf(meshy(3, 4), 2, 1), 0, 2, 2, true)
+	expectSegment(Motions.segmentOf(meshy(1, 1), 2, nil), 0, 2, 1, true)
+end)
+
+test("長さの分からないトラックは、丸ごとの等速にしておく", function()
+	expectSegment(Motions.segmentOf(meshy(0.3, 1.4), 0, 0.5), 0, 0, 1, true)
+end)
+
+test(
+	"流し始めてからの位置は、区間の頭から速さの分だけ進み、区間の終わりで止まる",
+	function()
+		local segment = Motions.segmentOf(meshy(0.3, 1.4), 3.2, 0.55)
+		expect(Motions.segmentPosition(segment, 0)).toBe(0.3)
+		expect(math.abs(Motions.segmentPosition(segment, 0.25) - 0.8) < 1e-9).toBe(true)
+		expect(Motions.segmentPosition(segment, 1)).toBe(1.4)
+		expect(Motions.segmentPosition(segment, -0.2)).toBe(0.3)
+	end
+)
+
+test(
+	"行動の取得元は、行動のモーションと同じ項目（武器種の項目と段、奥義）を引く",
+	function()
+		local shuriken = Motions.MeshySources.Bukishu.Shuriken
+		local katana = Motions.MeshySources.Bukishu.Katana
+		expect(Motions.sourceForAction("Jin", "Attack", 3)).toBe(shuriken.Attack[3])
+		expect(Motions.sourceForAction("Torika", "ChargeKogeki", 6)).toBe(shuriken.ChargeKogeki[6])
+		expect(Motions.sourceForAction("KanaOni", "Guard")).toBe(katana.Guard)
+		expect(Motions.sourceForAction("Sekishusai", "Attack")).toBe(katana.Attack[1])
+		expect(Motions.sourceForAction("Jin", "Ougi")).toBe(Motions.MeshySources.Ougi.Katon)
+		expect(Motions.sourceForAction("KanaOni", "Ougi")).toBe(Motions.MeshySources.Ougi.Kinton)
+	end
+)
+
+test(
+	"取得元の無い行動・段と、武器種の無いキャラクターと、定義に無いキャラクターの取得元は nil",
+	function()
+		expect(Motions.sourceForAction("Jin", "Jump")).toBe(nil)
+		expect(Motions.sourceForAction("Jin", "Attack", 7)).toBe(nil)
+		expect(Motions.sourceForAction("Hayate", "Attack", 1)).toBe(nil)
+		expect(Motions.sourceForAction("Hayate", "Ougi")).toBe(nil)
+		expect(Motions.sourceForAction("Nobody", "Attack", 1)).toBe(nil)
+		expect(Motions.sourceOf("Bow", "Attack", 1)).toBe(nil)
+	end
+)
+
+test(
+	"型の取得元は、型が流用する武器種の行動の項目（武器種の無い NPC は刀セット）を引く",
+	function()
+		local katana = Motions.MeshySources.Bukishu.Katana
+		expect(Motions.sourceForKata("ShikenShuryo", "Daichiwari")).toBe(katana.ChargeKogeki[6])
+		expect(Motions.sourceForKata("Hayate", "Kesagiri")).toBe(katana.Attack[1])
+		expect(Motions.sourceForKata("Jin", "Shurikenuchi")).toBe(Motions.MeshySources.Bukishu.Shuriken.Attack[3])
+		expect(Motions.sourceForKata("ShikenJonin1", "Nai")).toBe(nil)
+	end
+)
+
+test("行動と型の項目の名前は、取得元の項目の名前と同じ形", function()
+	expect(Motions.actionLabelOf("Jin", "Attack", 1)).toBe("Shuriken Attack 1")
+	expect(Motions.actionLabelOf("Sekishusai", "ChargeKogeki", 5)).toBe("Katana ChargeKogeki 5")
+	expect(Motions.actionLabelOf("KanaOni", "Guard")).toBe("Katana Guard")
+	expect(Motions.actionLabelOf("Torika", "Ougi")).toBe("Ougi PoisonShuriken")
+	expect(Motions.actionLabelOf("Jin", "Attack")).toBe("Shuriken Attack 1")
+	expect(Motions.actionLabelOf("Jin", "Attack", 7)).toBe(nil)
+	expect(Motions.actionLabelOf("Jin", "Jump")).toBe(nil)
+	expect(Motions.actionLabelOf("Hayate", "Attack", 1)).toBe(nil)
+	expect(Motions.actionLabelOf("Nobody", "Ougi")).toBe(nil)
+	expect(Motions.kataLabelOf("ShikenJonin2", "Senpu")).toBe("Katana ChargeKogeki 4")
+	expect(Motions.kataLabelOf("Torika", "Kesagiri")).toBe("Shuriken Attack 1")
+	expect(Motions.kataLabelOf("ShikenJonin2", "Nai")).toBe(nil)
+end)
+
+test(
+	"操作キャラクターの行動の項目の名前は、どれも取得元の項目にあり、窓口で差し替えられる",
+	function()
+		local labels: { [string]: boolean } = {}
+		for _, slot in Motions.meshySlots() do
+			labels[Motions.meshySlotLabel(slot)] = true
+		end
+		for _, character in Characters.definitions do
+			if not character.playable then
+				continue
+			end
+			for action, value in Motions.Bukishu[character.bukishu :: string] :: any do
+				local steps = if type(value) == "table" then #value else 1
+				for step = 1, steps do
+					local label = Motions.actionLabelOf(character.id, action, step)
+					expect(label ~= nil and labels[label :: string] == true).toBe(true)
+					expect(Motions.isTestLabel(label)).toBe(true)
+				end
+			end
+			local ougi = Motions.actionLabelOf(character.id, "Ougi")
+			expect(ougi ~= nil and labels[ougi :: string] == true).toBe(true)
+		end
+		expect(Motions.isTestLabel("Genin Down")).toBe(false)
+		expect(Motions.isTestLabel("Shuriken Attack 7")).toBe(false)
+		expect(Motions.isTestLabel(3)).toBe(false)
+	end
+)
+
+test(
+	"窓口の差し替えは、差し替えた項目だけ ID と区間（区間が無ければ丸ごと）を置き換える",
+	function()
+		local source = Motions.MeshySources.Bukishu.Shuriken.Attack[1]
+		local tests: { [string]: Motions.MotionTest } = {
+			["Shuriken Attack 1"] = { id = 507770239, from = 0.5, to = 1.2 },
+			["Ougi Katon"] = { id = 507770453 },
+		}
+		local id, replaced = Motions.withTest(tests, "Shuriken Attack 1", 0, source)
+		expect(id).toBe(507770239)
+		expect(replaced).toEqual({ clip = 0, from = 0.5, to = 1.2 })
+		local ougiId, ougiSource = Motions.withTest(tests, "Ougi Katon", 0, Motions.MeshySources.Ougi.Katon)
+		expect(ougiId).toBe(507770453)
+		expect(ougiSource).toBe(nil)
+		local keptId, kept = Motions.withTest(tests, "Shuriken Attack 2", 12, source)
+		expect(keptId).toBe(12)
+		expect(kept).toBe(source)
+		local noneId, none = Motions.withTest(nil, "Shuriken Attack 1", 34, source)
+		expect(noneId).toBe(34)
+		expect(none).toBe(source)
+		local unlabeledId = Motions.withTest(tests, nil, 56, nil)
+		expect(unlabeledId).toBe(56)
+	end
+)
+
+test(
+	"下忍の取得元は項目の区間で、窓口で差し替えた項目は差し替えの区間（無ければ丸ごと）",
+	function()
+		expect(Motions.geninSourceOf("Down")).toBe(Motions.MeshySources.Genin.Down)
+		expect(Motions.geninSourceOf("Idle")).toBe(nil)
+		expect(Motions.geninSourceOf("Run")).toBe(nil)
+		expect(Motions.geninSourceOf("Jump")).toBe(nil)
+		withMotion(Motions.Genin :: any, "Flinch", Motions.Genin.Flinch, function()
+			withMotion(Motions.Genin :: any, "Down", Motions.Genin.Down, function()
+				expect(Motions.setGeninId("Flinch", 507770453)).toBe(true)
+				expect(Motions.geninSourceOf("Flinch")).toBe(nil)
+				expect(Motions.setGeninId("Down", 507770239, meshy(0.5, 1))).toBe(true)
+				expect(Motions.geninSourceOf("Down")).toEqual(meshy(0.5, 1))
+				expect(Motions.geninSourceOf("Knockback")).toBe(Motions.MeshySources.Genin.Knockback)
+			end)
+		end)
+		Motions.GeninTests.Flinch = nil
+		Motions.GeninTests.Down = nil
+		expect(Motions.geninSourceOf("Flinch")).toBe(Motions.MeshySources.Genin.Flinch)
+	end
+)

@@ -23,6 +23,8 @@
 --   （Studio でスマホの小さい画面の配置を確かめる用。デバイスエミュレーターを使わずに、安全な範囲の左上にその大きさで並ぶ）
 -- - 窓口の DumpMotions で、モーションの取得元（Motions.luau の MeshySources。Meshy のクリップと区間）と、
 --   項目ごとに入っている ID を確かめる（#67・#68・#120・#121・#88。Roblox へ公開するクリップの一覧にもなる）
+-- - 窓口の SetMotion で、武器種の行動と奥義のモーションの項目の ID と区間を差し替える（MotionPlayer.setTests。
+--   自分の行動を流すクライアントと、型で流用する上忍と首領の個体のどちらにも効く。区間の再生を Studio で試す用）
 
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
@@ -33,6 +35,7 @@ local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
+local MotionPlayer = require(ReplicatedStorage.Shared.MotionPlayer)
 local Motions = require(ReplicatedStorage.Shared.Motions)
 local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
@@ -89,6 +92,9 @@ type Received = {
 
 -- 受け取った行動（古い順）
 local received: { [Player]: { Received } } = {}
+
+-- 窓口の SetMotion で差し替えた行動のモーション（項目の名前ごと）。MotionPlayer.setTests でクライアントにも渡す
+local motionTests: { [string]: Motions.MotionTest } = {}
 
 -- 被弾の反応の行動。入力からは始めず、interrupt と続き（Next）で始める
 local REACTIONS: { [string]: ActionState.Timeline } = {
@@ -545,6 +551,56 @@ local function registerDebugCommands()
 				})
 			end
 			return HttpService:JSONEncode({ group = group, total = #list, pending = pending, slots = list })
+		end
+	)
+	DebugCommand.register(
+		"SetMotion",
+		"<項目> <アニメーション ID|0> [区間の頭（秒） 区間の終わり（秒）] | off",
+		"武器種の行動と奥義のモーションの項目（DumpMotions の slot の名前。Shuriken Attack 1・Katana Guard・Ougi Katon など）の"
+			.. "アニメーション ID を差し替える。区間を渡せばその区間を、渡さなければ丸ごとを、行動（上忍と首領は型）の長さに合わせて流す。"
+			.. "0 にするとその項目は流さない。off ですべての差し替えを消す。自分の行動（クライアント）と、その項目を流用する"
+			.. "上忍と首領の型のどちらにも、次に流すときから効く。差し替えはサーバーを止めるまで続き、Motions.luau は変わらない"
+			.. "（Studio で区間の再生を試す用。確認用）",
+		function(label, value, from, to)
+			if type(label) == "string" and string.lower(label) == "off" then
+				local count = 0
+				for _ in motionTests do
+					count += 1
+				end
+				table.clear(motionTests)
+				MotionPlayer.setTests(motionTests)
+				return `行動のモーションの差し替えを {count} 件消した`
+			end
+			if type(label) ~= "string" or not Motions.isTestLabel(label) then
+				error(
+					`項目は DumpMotions の slot の名前（Shuriken Attack 1・Katana Guard・Ougi Katon など。下忍は SetGeninMotion）で指定する（{tostring(
+						label
+					)}）`,
+					0
+				)
+			end
+			local id = DebugCommand.toNumber(value, "アニメーション ID")
+			if id < 0 or id ~= math.floor(id) then
+				error(`アニメーション ID は 0 以上の整数で指定する（{tostring(value)}）`, 0)
+			end
+			local test: Motions.MotionTest = { id = id }
+			if from ~= nil or to ~= nil then
+				local head = DebugCommand.toNumber(from, "区間の頭")
+				local tail = DebugCommand.toNumber(to, "区間の終わり")
+				if head < 0 or tail <= head then
+					error(`区間は 0 以上で、終わりを頭より後ろにする（{head}〜{tail}）`, 0)
+				end
+				test.from = head
+				test.to = tail
+			end
+			motionTests[label] = test
+			MotionPlayer.setTests(motionTests)
+			local count = 0
+			for _ in motionTests do
+				count += 1
+			end
+			local range = if test.from then `区間 {test.from}〜{test.to} 秒` else "丸ごと"
+			return `行動のモーション {label} を {id} にした（{range}。差し替え {count} 件）`
 		end
 	)
 end

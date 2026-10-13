@@ -39,7 +39,9 @@
 --   威力は 型の倍率 × 攻撃（支配エリアと秘計の補正込み）で、防御の軽減・無敵・ガードは窓口が決める。後隙の間も動かない
 -- - 型の時間は攻撃の速さで割る。型を出し終えたら、Interval 秒（に乱数の秒数を足した後）に次の型を選ぶ
 -- - 型の最中に吹き飛びか打ち上げを受けたら、型をやめる。のけぞりの攻撃（通常攻撃）ではのけぞらず、型を続ける
--- - 型のモーションは、武器種の行動のモーションを流用し（Motions.forKata）、個体の Animator で再生する（ID が 0 なら再生しない）
+-- - 型のモーションは、武器種の行動のモーションを流用し（Motions.forKata）、個体の Animator で再生する（ID が 0 なら再生しない）。
+--   その項目の取得元の区間（Motions.sourceForKata）を型の長さに合わせて流し、区間の終わりで止める（MotionPlayer）。
+--   窓口の SetMotion で差し替えた武器種の項目は、差し替えの ID と区間で流す
 -- - 敵軍の上忍と首領が考えるたびに、setHikeiDecider で登録した秘計の判断を呼ぶ。個体として出ていない上忍と首領にも呼ぶ
 -- - 窓口の SetJoninAI false で戦いと秘計の判断を止める（個体は戻る位置へ戻る）。UseKata で型を1回出させる
 
@@ -57,6 +59,7 @@ local Hoshin = require(ReplicatedStorage.Shared.Hoshin)
 local Jittaikaken = require(ReplicatedStorage.Shared.Jittaikaken)
 local Jonin = require(ReplicatedStorage.Shared.Jonin)
 local Kata = require(ReplicatedStorage.Shared.Kata)
+local MotionPlayer = require(ReplicatedStorage.Shared.MotionPlayer)
 local Motions = require(ReplicatedStorage.Shared.Motions)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
@@ -533,10 +536,15 @@ local function faceToward(kotai: Kotai, position: Vector3, threshold: number?)
 	kotai.root.CFrame = CFrame.lookAt(here, here + look)
 end
 
--- 型のモーションを個体に再生する。武器種の行動のモーションを流用し（Motions.forKata）、型の長さ duration に合わせた速さにする。
--- モーションの無い型（ID が 0）は再生しない
+-- 型のモーションを個体に再生する。武器種の行動のモーションを流用し（Motions.forKata）、その項目の区間を
+-- 型の長さ duration に合わせた速さで流して、区間の終わりで止める。モーションの無い型（ID が 0）は再生しない
 local function playMotion(kotai: Kotai, kataId: string, duration: number): AnimationTrack?
-	local motionId = Motions.forKata(kotai.id, kataId)
+	local motionId, source = Motions.withTest(
+		MotionPlayer.tests(),
+		Motions.kataLabelOf(kotai.id, kataId),
+		Motions.forKata(kotai.id, kataId),
+		Motions.sourceForKata(kotai.id, kataId)
+	)
 	if motionId <= 0 then
 		return nil
 	end
@@ -556,17 +564,14 @@ local function playMotion(kotai: Kotai, kataId: string, duration: number): Anima
 	end
 	local playing = track :: AnimationTrack
 	playing.Priority = Enum.AnimationPriority.Action
-	playing.Looped = false
-	playing:Play(MOTION_FADE_TIME)
-	playing:AdjustSpeed(Motions.playbackSpeed(playing.Length, duration))
-	-- まだ読み込めておらず長さが分からなければ、分かった時点で合わせ直す
-	if playing.Length <= 0 then
-		playing:GetPropertyChangedSignal("Length"):Once(function()
-			if playing.IsPlaying then
-				playing:AdjustSpeed(Motions.playbackSpeed(playing.Length, duration))
-			end
-		end)
-	end
+	-- 型を終えても（finishRun）トラックは止めないので、区間の終わりで止める
+	MotionPlayer.play(playing, {
+		source = source,
+		duration = duration,
+		fade = MOTION_FADE_TIME,
+		looped = false,
+		hold = false,
+	})
 	return playing
 end
 

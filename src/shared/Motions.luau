@@ -13,6 +13,8 @@
 -- - 攻撃判定のタイミングと移動量は Config.luau に置く。モーションを差し替えても判定は変わらない
 -- - 攻撃・ガード・被弾・奥義と下忍の攻撃・被弾の反応のモーションの取得元（Meshy のモーションライブラリのクリップと区間）は
 --   MeshySources に置く（#67・#68・#120・#121・#88）。窓口の DumpMotions で、公開するクリップと項目ごとの ID を確かめる
+-- - クリップは切らずに丸ごと公開し、項目の区間だけを流す（segmentOf）。流すのは MotionPlayer.luau で、
+--   MotionController・JoninKotaiService・EnemyService が使う
 
 local Characters = require("./Characters")
 
@@ -111,6 +113,22 @@ export type MeshySlot = {
 	step: number?,
 	source: MeshySource,
 	id: number,
+}
+
+-- 区間で流すときの、流し始めの位置（start）と止める位置（stop。どちらもクリップの頭からの秒）と、その間を流す速さ（speed）。
+-- whole はクリップを頭から終わりまで丸ごと流すとき
+export type Segment = {
+	start: number,
+	stop: number,
+	speed: number,
+	whole: boolean,
+}
+
+-- 窓口の SetMotion で差し替えた行動のモーション1つ。from と to があればその区間を流し、無ければ丸ごと流す
+export type MotionTest = {
+	id: number,
+	from: number?,
+	to: number?,
 }
 
 local Motions = {}
@@ -263,7 +281,9 @@ end
 -- 項目ごとの取得元（Meshy のクリップと区間）。区間は Meshy のプレビューを見て決めた目安で、公開したモーションを Studio で見て詰める。
 -- - クリップは fal で刃のモデルにリグを入れて付けた。Meshy のリグの動きを R15 で流す経路は #16 で決める
 -- - Roblox へはクリップを切らずに丸ごと公開し、同じクリップを使う項目には同じ ID を入れる。区間はコードで切り出して流す
---   （ID が入ったら再生に組み込む。今の MotionController・JoninKotaiService・EnemyService は区間を使わず丸ごと流す）
+--   （MotionPlayer.luau。項目の ID が入れば、その項目の区間を行動の長さに合わせて流す）
+-- - 項目に入れる ID は、ここのクリップを丸ごと公開したものにする。切って公開したものや別のモーションを入れるときは、
+--   区間もその長さに合わせて直す（丸ごと流すなら from 0、to にそのモーションの長さ）
 -- - 下忍の待機と移動は Ninja パックなので、ここには無い
 Motions.MeshySources = {
 	Bukishu = {
@@ -383,6 +403,12 @@ function Motions.forAction(characterId: string, action: string, step: number?): 
 	return Motions.actionOf(character.bukishu, action, step)
 end
 
+-- 上忍か首領の型のモーションを引く武器種。キャラクターの武器種（無ければ KATA_BUKISHU）
+local function kataBukishuOf(characterId: string): string
+	local character = Characters.get(characterId)
+	return if character and character.bukishu then character.bukishu else Motions.KATA_BUKISHU
+end
+
 -- 上忍か首領の型で再生するモーションの ID。キャラクターの武器種（無ければ KATA_BUKISHU）の行動の項目から、
 -- 型の行動と段で引く。項目の無い型は 0
 function Motions.forKata(characterId: string, kataId: string): number
@@ -390,9 +416,103 @@ function Motions.forKata(characterId: string, kataId: string): number
 	if not entry then
 		return 0
 	end
+	return Motions.actionOf(kataBukishuOf(characterId), entry.action, entry.step)
+end
+
+-- 武器種の行動の項目の取得元（区間）。通常攻撃とチャージ攻撃は step（段か C の番号。省くと1）で引く。無ければ nil
+function Motions.sourceOf(bukishu: string, action: string, step: number?): MeshySource?
+	local sources = Motions.MeshySources.Bukishu[bukishu]
+	local value = if sources then (sources :: any)[action] else nil
+	if type(value) ~= "table" then
+		return nil
+	end
+	if value.clip == nil then
+		return value[step or 1]
+	end
+	return value
+end
+
+-- キャラクターの行動のモーションの取得元。forAction と同じ項目（奥義はキャラクターの奥義、ほかは武器種の項目）を引く。無ければ nil
+function Motions.sourceForAction(characterId: string, action: string, step: number?): MeshySource?
 	local character = Characters.get(characterId)
-	local bukishu = if character and character.bukishu then character.bukishu else Motions.KATA_BUKISHU
-	return Motions.actionOf(bukishu, entry.action, entry.step)
+	if not character then
+		return nil
+	end
+	if action == "Ougi" then
+		return if character.ougi then Motions.MeshySources.Ougi[character.ougi] else nil
+	end
+	if not character.bukishu then
+		return nil
+	end
+	return Motions.sourceOf(character.bukishu, action, step)
+end
+
+-- 上忍か首領の型のモーションの取得元。forKata と同じ項目（流用する武器種の行動の項目）を引く。無ければ nil
+function Motions.sourceForKata(characterId: string, kataId: string): MeshySource?
+	local entry = Motions.Kata[kataId]
+	if not entry then
+		return nil
+	end
+	return Motions.sourceOf(kataBukishuOf(characterId), entry.action, entry.step)
+end
+
+-- 武器種の行動の項目の名前（取得元の項目の名前と同じ。"Shuriken Attack 1"・"Katana Guard"）。
+-- 通常攻撃とチャージ攻撃は段（省くと1）を付ける。項目が無ければ nil
+function Motions.labelOf(bukishu: string, action: string, step: number?): string?
+	local sources = Motions.MeshySources.Bukishu[bukishu]
+	local value = if sources then (sources :: any)[action] else nil
+	if type(value) ~= "table" then
+		return nil
+	end
+	if value.clip == nil then
+		local index = step or 1
+		return if value[index] then `{bukishu} {action} {index}` else nil
+	end
+	return `{bukishu} {action}`
+end
+
+-- キャラクターの行動の項目の名前。奥義は "Ougi <奥義の ID>"、ほかは武器種の項目の名前（labelOf）。項目が無ければ nil
+function Motions.actionLabelOf(characterId: string, action: string, step: number?): string?
+	local character = Characters.get(characterId)
+	if not character then
+		return nil
+	end
+	if action == "Ougi" then
+		local ougi = character.ougi
+		return if ougi and Motions.MeshySources.Ougi[ougi] then `Ougi {ougi}` else nil
+	end
+	if not character.bukishu then
+		return nil
+	end
+	return Motions.labelOf(character.bukishu, action, step)
+end
+
+-- 上忍か首領の型が流用する、武器種の行動の項目の名前。項目の無い型は nil
+function Motions.kataLabelOf(characterId: string, kataId: string): string?
+	local entry = Motions.Kata[kataId]
+	if not entry then
+		return nil
+	end
+	return Motions.labelOf(kataBukishuOf(characterId), entry.action, entry.step)
+end
+
+-- 窓口の SetMotion で差し替えた行動のモーション tests（項目の名前ごと）を、項目 label の ID id と取得元 source に当てる。
+-- 差し替えた項目なら差し替えの ID と区間（from と to が無ければ丸ごとの nil）を返し、ほかの項目はそのまま返す
+function Motions.withTest(
+	tests: { [string]: MotionTest }?,
+	label: string?,
+	id: number,
+	source: MeshySource?
+): (number, MeshySource?)
+	local test = if tests and label then tests[label] else nil
+	if not test then
+		return id, source
+	end
+	local from, to = test.from, test.to
+	if from and to then
+		return test.id, { clip = 0, from = from, to = to }
+	end
+	return test.id, nil
 end
 
 -- キャラクターが行動で使うモーションの ID を、重なりなく小さい順に返す（読み込みの先回りに使う）
@@ -443,6 +563,45 @@ function Motions.playbackSpeed(length: number, duration: number?): number
 	return length / duration
 end
 
+-- 区間の端（クリップの頭と終わり）とみなす幅（秒）。取得元の長さ（Meshy の GLB から読んだ値）と、
+-- Roblox に公開したトラックの長さのずれを吸収する
+local SEGMENT_EDGE = 0.05
+
+-- 長さ length（秒）のトラックを、取得元の区間 source（nil は丸ごと）で、長さ duration（秒）の行動に合わせて流すときの区間と速さ。
+-- 区間はトラックの長さに収め、端から SEGMENT_EDGE 以内はクリップの端にそろえる。区間の長さが 0 になれば丸ごとにする。
+-- 速さは区間の長さを行動の長さで割ったもの（playbackSpeed。行動の長さが分からないときと終わりの無い行動は等速）。
+-- 長さの分からないトラック（読み込みの前）は丸ごとの等速とし、長さが分かってから決め直す
+function Motions.segmentOf(source: MeshySource?, length: number, duration: number?): Segment
+	if length <= 0 then
+		return { start = 0, stop = 0, speed = 1, whole = true }
+	end
+	local start, stop = 0, length
+	if source then
+		start = math.clamp(source.from, 0, length)
+		stop = math.clamp(source.to, start, length)
+		if start <= SEGMENT_EDGE then
+			start = 0
+		end
+		if stop >= length - SEGMENT_EDGE then
+			stop = length
+		end
+		if stop <= start then
+			start, stop = 0, length
+		end
+	end
+	return {
+		start = start,
+		stop = stop,
+		speed = Motions.playbackSpeed(stop - start, duration),
+		whole = start == 0 and stop == length,
+	}
+end
+
+-- 区間 segment を流し始めてから elapsed 秒（実時間）たった位置（クリップの頭からの秒）。区間の頭から速さの分だけ進め、終わりで止める
+function Motions.segmentPosition(segment: Segment, elapsed: number): number
+	return math.min(segment.start + math.max(elapsed, 0) * segment.speed, segment.stop)
+end
+
 -- 下忍のモーションの項目か
 function Motions.isGeninItem(item: unknown): boolean
 	return type(item) == "string" and table.find(Motions.GENIN_ITEMS, item) ~= nil
@@ -457,13 +616,29 @@ function Motions.geninIdOf(item: string): number
 	return if type(id) == "number" then id else 0
 end
 
--- 下忍のモーションの項目の ID を差し替える（窓口の SetGeninMotion。サーバーを止めるまで続く）。項目でなければ false
-function Motions.setGeninId(item: string, id: number): boolean
+-- 窓口の SetGeninMotion で差し替えた下忍の項目の区間（項目ごと）。false は丸ごと流す。
+-- 差し替えていない項目は取得元（MeshySources.Genin）の区間で流す
+Motions.GeninTests = {} :: { [string]: MeshySource | false }
+
+-- 下忍のモーションの項目の ID を差し替える（窓口の SetGeninMotion。サーバーを止めるまで続く）。
+-- 差し替えた項目は区間 source（省くと丸ごと）で流す。項目でなければ false
+function Motions.setGeninId(item: string, id: number, source: MeshySource?): boolean
 	if not Motions.isGeninItem(item) then
 		return false
 	end
 	(Motions.Genin :: any)[item] = id
+	Motions.GeninTests[item] = if source then source else false
 	return true
+end
+
+-- 下忍のモーションの項目の取得元（区間）。窓口で差し替えた項目は差し替えの区間（丸ごとなら nil）。
+-- 待機と移動（Ninja パック）と、項目でなければ nil
+function Motions.geninSourceOf(item: string): MeshySource?
+	local test = Motions.GeninTests[item]
+	if test ~= nil then
+		return if test then test else nil
+	end
+	return Motions.MeshySources.Genin[item]
 end
 
 -- 下忍のモーションの項目を重ねる優先度
@@ -580,6 +755,19 @@ end
 function Motions.meshySlotLabel(slot: MeshySlot): string
 	local label = `{slot.group} {slot.item}`
 	return if slot.step then `{label} {slot.step}` else label
+end
+
+-- 窓口の SetMotion で差し替えられる項目の名前か。武器種の行動の項目と奥義（下忍の項目は SetGeninMotion で差し替える）
+function Motions.isTestLabel(label: unknown): boolean
+	if type(label) ~= "string" then
+		return false
+	end
+	for _, slot in Motions.meshySlots() do
+		if slot.group ~= "Genin" and Motions.meshySlotLabel(slot) == label then
+			return true
+		end
+	end
+	return false
 end
 
 -- 取得元で使う Meshy のクリップの番号を、重なりなく小さい順に返す（Roblox へ公開するクリップの一覧）

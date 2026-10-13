@@ -45,12 +45,14 @@
 -- - 攻撃（Attack）は、プレイヤーを攻撃したときと前線の攻撃の動作で1回流す
 -- - 被弾の反応（Flinch・Knockback・Launch・Down・GetUp）は、反応（Hanno）の状態が変わったとき（onStateChanged）に、
 --   攻撃より上の優先度で1回流す。前の反応のモーションと攻撃のモーションは止め、反応が終わったら止める
+-- - 攻撃と被弾の反応は、項目の取得元の区間（Motions.geninSourceOf）を等速で流す（MotionPlayer）。攻撃は区間の終わりで止め、
+--   被弾の反応は区間の終わりの姿で、反応が終わるまで残す（倒れている間はダウンの終わりの姿のまま）
 -- - 飛んでいる間と倒れている間と倒れた後は、待機と移動を止める。倒れたら攻撃も止める（被弾の反応は続ける）。
 --   体をプールへ返すときは、すべて止める（使い回した体は、何も流れていない状態から出る）
 -- - 読み込んだトラックは、体ごと・項目ごとに覚えて使い回す（プールをまたいでも残し、体を壊したら手放す）。
 --   ID が変わっていたら読み込み直す
--- - 窓口の SetGeninMotion で ID を差し替え（サーバーを止めるまで続く）、DumpGeninMotion で ID と、項目ごとに
---   流している体の数を確かめる
+-- - 窓口の SetGeninMotion で ID を差し替え（サーバーを止めるまで続く。区間を渡さなければ丸ごと流す）、DumpGeninMotion で
+--   ID と区間と、項目ごとに流している体の数と流している位置を確かめる
 --
 -- 倒れたとき
 -- - プレイヤーが倒した体は、撃破数を足し、gekiha で種類・軍（倒れた体の軍）・倒れた位置・倒したプレイヤー・部隊 ID を知らせる
@@ -115,6 +117,7 @@ local Gun = require(ReplicatedStorage.Shared.Gun)
 local HitShape = require(ReplicatedStorage.Shared.HitShape)
 local KogekiToken = require(ReplicatedStorage.Shared.KogekiToken)
 local KotaiPool = require(ReplicatedStorage.Shared.KotaiPool)
+local MotionPlayer = require(ReplicatedStorage.Shared.MotionPlayer)
 local Motions = require(ReplicatedStorage.Shared.Motions)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
 local Stages = require(ReplicatedStorage.Shared.Stages)
@@ -702,14 +705,18 @@ local function playAttack(enemy: Enemy): boolean
 		return false
 	end
 	track.Priority = MOTION_PRIORITIES[Motions.geninPriorityOf("Attack")]
-	track.Looped = false
-	track:Play(Config.GeninMotion.ActionFade)
+	MotionPlayer.play(track, {
+		source = Motions.geninSourceOf("Attack"),
+		fade = Config.GeninMotion.ActionFade,
+		looped = false,
+		hold = false,
+	})
 	rig.motion.attackTrack = track
 	return true
 end
 
 -- 被弾の反応のモーション item を、攻撃より上の優先度で1回流す（nil なら止める）。前の反応のモーションは止め、
--- 反応を始めたら攻撃のモーションも止める。ID が 0 の項目は流さない
+-- 反応を始めたら攻撃のモーションも止める。区間の終わりの姿で、次の反応か反応の終わりまで残す。ID が 0 の項目は流さない
 local function playReaction(rig: Rig, item: string?)
 	local motion = rig.motion
 	local fade = Config.GeninMotion.ActionFade
@@ -731,8 +738,12 @@ local function playReaction(rig: Rig, item: string?)
 		return
 	end
 	track.Priority = MOTION_PRIORITIES[Motions.geninPriorityOf(item)]
-	track.Looped = false
-	track:Play(fade)
+	MotionPlayer.play(track, {
+		source = Motions.geninSourceOf(item),
+		fade = fade,
+		looped = false,
+		hold = true,
+	})
 	motion.reactionTrack = track
 end
 
@@ -1773,11 +1784,12 @@ function EnemyService.start()
 	local geninItems = table.concat(Motions.GENIN_ITEMS, "・")
 	DebugCommand.register(
 		"SetGeninMotion",
-		"<項目> <アニメーション ID|0>",
+		"<項目> <アニメーション ID|0> [区間の頭（秒） 区間の終わり（秒）]",
 		`下忍のモーションの項目（{geninItems}）のアニメーション ID を差し替える。0 にするとその項目は流さない。`
+			.. "攻撃と被弾の反応は、区間を渡せばその区間を流し、渡さなければ丸ごと流す（待機と移動は区間を使わない）。"
 			.. "差し替えはサーバーを止めるまで続き、Motions.luau は変わらない。待機と移動は流している体もすぐ流し直し、"
 			.. "攻撃と被弾の反応は次に流すときから使う（Studio で候補のモーションを試す用。確認用）",
-		function(item, value)
+		function(item, value, from, to)
 			if type(item) ~= "string" or not Motions.isGeninItem(item) then
 				error(`項目は {geninItems} のどれかで指定する（{tostring(item)}）`, 0)
 			end
@@ -1785,8 +1797,17 @@ function EnemyService.start()
 			if id < 0 or id ~= math.floor(id) then
 				error(`アニメーション ID は 0 以上の整数で指定する（{tostring(value)}）`, 0)
 			end
+			local source: Motions.MeshySource? = nil
+			if from ~= nil or to ~= nil then
+				local head = DebugCommand.toNumber(from, "区間の頭")
+				local tail = DebugCommand.toNumber(to, "区間の終わり")
+				if head < 0 or tail <= head then
+					error(`区間は 0 以上で、終わりを頭より後ろにする（{head}〜{tail}）`, 0)
+				end
+				source = { clip = 0, from = head, to = tail }
+			end
 			local previous = Motions.geninIdOf(item)
-			Motions.setGeninId(item, id)
+			Motions.setGeninId(item, id, source)
 			if Motions.isGeninLocomotion(item) then
 				-- その項目を流している体は、新しい ID で流し直す（0 なら止める）
 				for model in enemies do
@@ -1796,13 +1817,16 @@ function EnemyService.start()
 					end
 				end
 			end
-			return `下忍のモーション {item} を {id} にした（前は {previous}）`
+			local range = if source then `区間 {source.from}〜{source.to} 秒` else "丸ごと"
+			return `下忍のモーション {item} を {id} にした（前は {previous}、{range}）`
 		end
 	)
 	DebugCommand.register(
 		"DumpGeninMotion",
 		"",
 		"下忍のモーションの項目ごとの ID（ids。0 は流さない）と、その項目を今流している下忍の体の数（playing）を JSON で返す。"
+			.. "攻撃と被弾の反応の項目ごとの区間（segments。from〜to 秒か whole）と、流している体の1体目のトラックの位置と速さ"
+			.. "（sample。position 秒・speed。区間の終わりの姿で残しているときは speed 0）・"
 			.. "出ている下忍の体の数（bodies。倒れた姿を見せている体も入る）・そのうち生きている数（alive）・"
 			.. "待機と移動を止めている数（locomotionStopped。倒れた後・飛んでいる間・倒れている間）・"
 			.. "プールにある下忍の体の数（pooled）とそのうち何かを流している数（pooledPlaying。0 になる）・"
@@ -1810,9 +1834,15 @@ function EnemyService.start()
 		function()
 			local ids: { [string]: number } = {}
 			local playing: { [string]: number } = {}
+			local segments: { [string]: any } = {}
+			local sample: { [string]: any } = {}
 			for _, item in Motions.GENIN_ITEMS do
 				ids[item] = Motions.geninIdOf(item)
 				playing[item] = 0
+				if not Motions.isGeninLocomotion(item) then
+					local source = Motions.geninSourceOf(item)
+					segments[item] = if source then { from = source.from, to = source.to } else "whole"
+				end
 			end
 			local bodies, alive, stopped, pooled, pooledPlaying = 0, 0, 0, 0, 0
 			for model, rig in rigs do
@@ -1822,10 +1852,17 @@ function EnemyService.start()
 				local enemy = enemies[model] or corpses[model]
 				local busy = false
 				for item, loaded in rig.motion.tracks do
-					if loaded.track.IsPlaying then
+					local track = loaded.track
+					if track.IsPlaying then
 						busy = true
 						if enemy then
 							playing[item] = (playing[item] or 0) + 1
+							if sample[item] == nil and not Motions.isGeninLocomotion(item) then
+								sample[item] = {
+									position = math.floor(track.TimePosition * 100 + 0.5) / 100,
+									speed = math.floor(track.Speed * 100 + 0.5) / 100,
+								}
+							end
 						end
 					end
 				end
@@ -1847,6 +1884,8 @@ function EnemyService.start()
 			return HttpService:JSONEncode({
 				ids = ids,
 				playing = playing,
+				segments = segments,
+				sample = sample,
 				bodies = bodies,
 				alive = alive,
 				locomotionStopped = stopped,
