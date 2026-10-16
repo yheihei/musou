@@ -4,6 +4,7 @@ musou の遊びと作り方の決定事項をまとめる。
 用語の定義は [CONTEXT.md](../CONTEXT.md)、後から変えにくい判断の理由は [docs/adr/](adr/) にある。
 数値は目安で、実際の値は `src/shared/Config.luau` に置いて調整する。
 
+体験の優先順位と PM・開発・本人の判断範囲は [PM 方針](pm-policy.md) に従う。
 マーケティング判断の入口は [軍配相談メモ](marketing.md)。
 
 ## 概要
