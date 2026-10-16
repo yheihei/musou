@@ -12,7 +12,7 @@ Meshy の出力（`~/musou-work`）は Git に入れないので、`Jin.luau` �
 Git で持つかは #141 で決める。
 
 ```bash
-python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb > kensho/meshy-rig/server/MeshyRig/Jin.luau
+python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb > kensho/meshy-rig/server/MeshyRig/Jin.luau
 ```
 
 ```bash
@@ -30,7 +30,7 @@ rojo build kensho/meshy-rig/meshy-rig.project.json -o ~/musou-work/meshy-rig/mes
 | 場所 | 中身 |
 |---|---|
 | `ServerStorage.MeshyRig` | 往路・復路・関節の対応づけ・見本の再生の道具 |
-| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と攻撃のクリップ（id004、2.83 秒、10 コマ/秒） |
+| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と、クリップ7本（刃の攻撃 id004、下忍の6項目 id219・id179・id182・id007・id189・id003。10 コマ/秒） |
 | `ServerScriptService.MeshyRigDemo` | テストプレイを始めると見本を流す |
 | Workspace | 床と出現地点だけ |
 
@@ -49,6 +49,7 @@ Studio のメニューの「ファイル」→「ファイルから開く」で 
 |---|---|
 | `print(require(game.ServerStorage.MeshyRig).orai())` | 6 秒ほどで「往路（R15 のモーションを JinBones で流す…）」。待機は差の最大 33 度、走りは 27 度（10/16 の値） |
 | `print(require(game.ServerStorage.MeshyRig).fukuro())` | 3 秒ほどで「復路（id004_Attack を R15 で流す…）」。差の最大 46 度、刃の骨の手足は最大 107 度動く |
+| `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182"))` | 「復路（id182_Shot_and_Blown_Back を R15 で流す…）」。R15 が後ろへ吹き飛ばされて倒れる。クリップ名は `Jin` の7本のどれか |
 | `print(require(game.ServerStorage.MeshyRig).map(workspace.MeshyRigCheck.JinBones))` | 「JinBones の関節を 22/22 対応づけた（足りない骨: なし）」と「体の正面は、根元の部品 Root の -Z から 2 度」 |
 | `print(require(game.ServerStorage.MeshyRig).clear())` | 「MeshyRigCheck を片づけた」。刃の骨と R15 が消える |
 
@@ -85,6 +86,24 @@ musou のテストプレイの中で、刃の GLB から骨 24 本を組んで�
 | 公開 | `KeyframeSequenceProvider:RegisterKeyframeSequence` の一時 ID でも、`AnimationRigData` があれば移る。確かめるだけなら公開は要らない |
 | 混ぜて流す | 待機（R15）の上に、骨の名前のクリップを Action で重ねると、そのクリップの骨だけが上書きされる |
 | 止めたとき | トラックを止めても骨の姿勢は残る。次のトラックが流れると戻る |
+
+### 下忍の6項目（`Motions.luau` の `MeshySources.Genin`）
+
+同じ形で、刃の骨で取った下忍のクリップを、`MeshySources.Genin` の区間の中の5つの時刻で R15 と比べた。
+
+| 項目 | クリップ | 区間（秒） | 骨の手足の動きの最大 | 差の平均 / 最大 | 腰の移動（刃の骨 / R15） |
+|---|---|---|---|---|---|
+| Attack | 219 Right_Hand_Sword_Slash | 0〜1.533 | 141 度 | 3〜39 / 45 度 | 0.69 / 1.05 スタッド |
+| Flinch | 179 Hit_Reaction_1 | 0〜0.6 | 101 度 | 5〜31 / 36 度 | 0.33 / 0.51 スタッド |
+| Knockback | 182 Shot_and_Blown_Back | 0.6〜2 | 168 度 | 2〜25 / 36 度 | 11.34 / 17.15 スタッド |
+| Launch | 7 BeHit_FlyUp | 0〜1 | 131 度 | 4〜30 / 48 度 | 2.99 / 4.53 スタッド |
+| Down | 189 dying_backwards | 1.4〜2.2 | 26 度 | 5〜28 / 29 度 | 3.12 / 4.71 スタッド |
+| GetUp | 3 Arise | 0〜1.867 | 143 度 | 4〜27 / 57 度 | 2.13 / 3.23 スタッド |
+
+6本とも R15 に移った。
+腰の移動（クリップの中で体が動く分）も R15 に移り、脚の長さの比で約 1.5 倍になる。
+吹き飛びは R15 で 17 スタッド後ろへ動く。
+ゲームでは吹き飛びと打ち上げの軌道をサーバーが決める（#99）ので、公開するクリップは腰の水平の移動を抜く必要がある。
 
 ゲームで流すには、`AnimationRigData` を付けたクリップを公開して ID を入れる。
 公開は開発者のアカウントで行う。

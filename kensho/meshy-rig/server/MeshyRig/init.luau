@@ -6,6 +6,7 @@
 --   print(MeshyRig.demo())               -- 合成した刃の骨と R15 を並べ、往路と復路を 6 秒ずつ交互に流す
 --   print(MeshyRig.orai())               -- 往路。R15 のモーション（Ninja の待機と走り）を刃の骨で流し、手足の向きを R15 と比べる
 --   print(MeshyRig.fukuro())             -- 復路。刃の攻撃（Meshy のクリップ id004）を R15 で流し、手足の向きを刃の骨と比べる
+--   print(MeshyRig.fukuro(nil, "id219"))  -- 復路を Jin.luau のほかのクリップで（下忍の6項目は 219・179・182・007・189・003）
 --   print(MeshyRig.map(workspace.Jin))   -- 取り込んだモデルの 22 関節を、骨の名前で HumanoidRigDescription に対応づける
 --   print(MeshyRig.orai(workspace.Jin))  -- 取り込んだモデルで往路
 --   print(MeshyRig.fukuro(workspace.Jin))  -- 取り込んだモデルで復路（クリップ編集で読み込んだクリップを使う）
@@ -534,8 +535,9 @@ end
 
 -- 復路。Meshy のクリップを骨のモデルでそのまま流し、AnimationRigData を付けた同じクリップを R15 で流して比べる
 -- sequence を渡さなければ、クリップ編集で読み込んだクリップ（MeshyRig.savedClip）を使う。それも無ければ Jin.luau の id004（刃の攻撃）
+-- sequence に文字列を渡すと、Jin.luau のその名前のクリップ（"id219" など）を使う
 -- Jin.luau の値は GLB の休息の姿勢からの差なので、取り込んだ FBX の骨の向きが GLB と違うと崩れる（見た目で確かめる）
-function MeshyRig.fukuro(target: Model?, sequence: KeyframeSequence?): string
+function MeshyRig.fukuro(target: Model?, sequence: (KeyframeSequence | string)?): string
 	-- 見本の再生を止める（測っている間にモーションが切り替わらないように）
 	state.demoToken += 1
 	local r15 = findOrBuild("R15", MeshyRig.buildR15)
@@ -543,7 +545,9 @@ function MeshyRig.fukuro(target: Model?, sequence: KeyframeSequence?): string
 	if not subject:FindFirstChildOfClass("HumanoidRigDescription") then
 		MeshyRig.map(subject)
 	end
-	local source = sequence or MeshyRig.savedClip(subject) or clipToKeyframeSequence("id004")
+	local source = if type(sequence) == "string"
+		then clipToKeyframeSequence(sequence)
+		else (sequence :: KeyframeSequence?) or MeshyRig.savedClip(subject) or clipToKeyframeSequence("id004")
 	local plain = withoutRigData(source)
 	local rigged = withoutRigData(source)
 	rigDataFor(subject).Parent = rigged
