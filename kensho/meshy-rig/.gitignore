@@ -1,0 +1,2 @@
+# GLB から作るデータ。Meshy の出力（~/musou-work）は Git に入れない（Git で持つかは #141 で決める）
+server/MeshyRig/Jin.luau

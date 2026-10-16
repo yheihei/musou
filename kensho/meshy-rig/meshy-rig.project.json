@@ -1,0 +1,47 @@
+{
+  "name": "musou-meshy-rig",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "MeshyRig": {
+        "$path": "server/MeshyRig"
+      }
+    },
+    "ServerScriptService": {
+      "MeshyRigDemo": {
+        "$path": "server/Demo.server.luau"
+      }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "EnableMouseLockOption": false,
+        "LoadCharacterAppearance": false
+      }
+    },
+    "Workspace": {
+      "Floor": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Locked": true,
+          "Size": [256, 4, 256],
+          "Position": [0, -2, 0],
+          "Material": "SmoothPlastic",
+          "Color": [0.64, 0.64, 0.64],
+          "TopSurface": "Smooth",
+          "BottomSurface": "Smooth"
+        }
+      },
+      "SpawnLocation": {
+        "$className": "SpawnLocation",
+        "$properties": {
+          "Anchored": true,
+          "Size": [6, 1, 6],
+          "Position": [0, 0.5, 0],
+          "Neutral": true,
+          "Duration": 0
+        }
+      }
+    }
+  }
+}

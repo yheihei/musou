@@ -443,6 +443,7 @@ M3 で足す画面。
 
 - Meshy のリグで作ったモーションを R15 で再生する、またはその逆は、Adaptive Animation で仕様上は可能だが成功例がない
 - M1 の最初に1本ずつ往復で検証する。失敗したら Blender の Rokoko Retarget で R15 に移す経路に切り替える
+- 2026-10-16 に、刃の GLB から組んだ骨（スキンのメッシュなし）で往復とも再生できた。骨のモデルに `HumanoidRigDescription` を付けると R15 のモーションが移り、Meshy のクリップに `AnimationRigData` を付けると R15 に移る。取り込んだ FBX での確認が残る（#16、検証用のプレースは `kensho/meshy-rig`）
 
 ### 本番キャラクターの作り方（M2）
 
