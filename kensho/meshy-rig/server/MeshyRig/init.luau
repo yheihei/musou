@@ -10,6 +10,8 @@
 --   print(MeshyRig.map(workspace.Jin))   -- 取り込んだモデルの 22 関節を、骨の名前で HumanoidRigDescription に対応づける
 --   print(MeshyRig.orai(workspace.Jin))  -- 取り込んだモデルで往路
 --   print(MeshyRig.fukuro(workspace.Jin))  -- 取り込んだモデルで復路（クリップ編集で読み込んだクリップを使う）
+--   print(MeshyRig.hikaku("Knockback"))  -- #88。下忍の項目を、原本と腰の移動を抜いた版の R15 で、ゲームの体の扱いと時間どおりに比べる
+--   print(MeshyRig.hikaku("Down", nil, { Down = "pose" }))  -- 抜き方を差し替えて比べる（xz・all・pose）
 --   print(MeshyRig.clear())
 --
 -- 分かっていること（2026-10-16、musou のテストプレイで合成した骨で確かめた）
@@ -610,6 +612,488 @@ function MeshyRig.demo(): string
 		end
 	end)
 	return "左に刃の骨（青い棒、白い棒が顔の正面）、右に R15 を出し、往路と復路を 6 秒ずつ交互に流す（止めるのは MeshyRig.clear()）"
+end
+
+-- ===== 下忍の6項目の比較（#88。原本と、腰の移動を抜いた版を、ゲームの体の扱いと時間どおりに流す）=====
+-- PM判断（2026-10-17）: 吹き飛び・打ち上げは腰の移動を全軸、ダウン・起き上がり・攻撃・のけぞりは水平だけ抜く。原本を残して比べる。
+-- 確かめること: 二重移動（腰が根元の部品から離れる）、床への沈み・浮き、二重回転（倒れた体がさらに回る）。
+-- 区間は musou の Motions.luau（MeshySources.Genin）、反応の秒数・軌道は Config.luau の EnemyReaction 節と Trajectory.luau を、
+-- meshy-rig.project.json で ReplicatedStorage.Shared に入れた src/shared から引く（ゲームと同じ定義）
+
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local GameConfig = require(Shared:WaitForChild("Config")) :: any
+local GameMotions = require(Shared:WaitForChild("Motions")) :: any
+local GameTrajectory = require(Shared:WaitForChild("Trajectory")) :: any
+
+-- 下忍の6項目。clip は Jin.luau のクリップ、remove は腰の移動を抜く軸、flow はゲームでの体の扱い（Hanno）。
+-- Air は手裏剣セットのチャージ攻撃（charge 段目）の吹き飛ばす強さで飛ばし、着地したら倒れて起き上がる
+MeshyRig.GENIN = {
+	Attack = { clip = "id219", remove = "xz", flow = "Stand" },
+	Flinch = { clip = "id179", remove = "xz", flow = "Flinch" },
+	Knockback = { clip = "id182", remove = "all", flow = "Air", reaction = "Knockback", charge = 1 },
+	Launch = { clip = "id007", remove = "all", flow = "Air", reaction = "Launch", charge = 2 },
+	Down = { clip = "id189", remove = "xz", flow = "Down" },
+	GetUp = { clip = "id003", remove = "xz", flow = "Down" },
+} :: { [string]: any }
+
+-- 比べる場所の原点。床の上の面の高さがこの Y（Floor の上の面）。ほかのプレースで試すときは、床を置いてから差し替える
+MeshyRig.ORIGIN = Vector3.zero
+-- 倒れた体の根元の部品の高さ（EnemyService の LIE_HEIGHT と下忍の Scale 1）
+local LIE_HEIGHT = 1
+-- Hanno が着地を確かめる光線を、立っているときの高さより長くする分
+local BELOW_MARGIN = 0.1
+-- 二重移動とみなす腰の水平のずれ、沈む・浮くとみなす床からの高さ、二重回転とみなす胴の傾き
+local DRIFT_LIMIT = 1
+local SINK_LIMIT = -0.3
+local FLOAT_LIMIT = 0.5
+local TURN_LIMIT = 135
+-- 待機（Ninja の待機。起き上がりの後に戻る）
+local IDLE_ID = "rbxassetid://10921155160"
+
+-- 腰の抜き方の説明（比べた結果の文に書く）
+local REMOVE_NAMES = {
+	xz = "腰の水平の移動を抜く",
+	all = "腰の移動を全軸で抜く",
+	pose = "腰の移動と回転を抜く（体の向きは Hanno の根元の部品に任せる）",
+} :: { [string]: string }
+
+-- KeyframeSequence の腰（Hips）の移動を抜いた写しを返す。mode は "xz"（水平だけ）、"all"（移動をすべて）、
+-- "pose"（移動と回転をすべて。手足の姿だけを残す）。
+-- 移動は腰の骨の休息の向きの中の値なので、model の腰の骨の向きで親の部品の向きへ直してから抜き、戻す
+function MeshyRig.stripRoot(sequence: KeyframeSequence, mode: string, model: Model?): KeyframeSequence
+	assert(REMOVE_NAMES[mode], `抜き方は xz・all・pose のどれか（{tostring(mode)}）`)
+	local hips = model and findBone(model, "Hips")
+	local rest = if hips then hips.CFrame.Rotation else CFrame.identity
+	local copy = sequence:Clone()
+	copy.Name = `{sequence.Name}_{mode}`
+	for _, pose in copy:GetDescendants() do
+		if pose:IsA("Pose") and pose.Name == "Hips" then
+			if mode == "pose" then
+				pose.CFrame = CFrame.identity
+			else
+				local moved = rest:VectorToWorldSpace(pose.CFrame.Position)
+				moved = if mode == "xz" then Vector3.new(0, moved.Y, 0) else Vector3.zero
+				pose.CFrame = CFrame.new(rest:VectorToObjectSpace(moved)) * pose.CFrame.Rotation
+			end
+		end
+	end
+	return copy
+end
+
+-- 取り込んだモデルのクリップ編集のクリップから、項目のクリップ（Jin.luau の名前を含むもの）を探す
+local function savedClipFor(model: Model, clipKey: string): KeyframeSequence?
+	local saves = game:GetService("ServerStorage"):FindFirstChild("RBX_ANIMSAVES")
+	local holder = saves and saves:FindFirstChild(model.Name)
+	local clip = Jin.clips[clipKey]
+	if not holder or not clip then
+		return nil
+	end
+	for _, child in holder:GetDescendants() do
+		if child:IsA("KeyframeSequence") and string.find(child.Name, clip.name, 1, true) then
+			return child
+		end
+	end
+	return nil
+end
+
+-- 段の流れ。item は流すクリップの項目（nil は待機）、seconds はゲームでその状態が続く秒数、
+-- root は根元の部品の扱い（Stand は立つ、Air は軌道、Lie は仰向けに寝かせる）
+type Phase = { name: string, item: string?, seconds: number, root: string }
+
+local function flowOf(item: string, entry: any, flight: number): { Phase }
+	local reaction = GameConfig.EnemyReaction
+	local after = {
+		{ name = "倒れる", item = "Down", seconds = reaction.Down, root = "Lie" },
+		{ name = "起き上がる", item = "GetUp", seconds = reaction.GetUp, root = "Stand" },
+		{ name = "待機", item = nil, seconds = 0.6, root = "Stand" },
+	}
+	if entry.flow == "Air" then
+		table.insert(after, 1, { name = "飛ぶ", item = item, seconds = flight, root = "Air" })
+		return after
+	elseif entry.flow == "Down" then
+		return after
+	elseif entry.flow == "Flinch" then
+		return {
+			{ name = "のけぞる", item = item, seconds = reaction.Flinch, root = "Stand" },
+			{ name = "待機", item = nil, seconds = 0.6, root = "Stand" },
+		}
+	end
+	local source = GameMotions.MeshySources.Genin[item]
+	return {
+		{ name = "攻撃", item = item, seconds = source.to - source.from, root = "Stand" },
+		{ name = "待機", item = nil, seconds = 0.6, root = "Stand" },
+	}
+end
+
+-- 比べる体1つ（原本か除去版）
+type Body = {
+	label: string,
+	model: Model,
+	root: BasePart,
+	standHeight: number,
+	-- 何も流していないときの、根元の部品から見た腰（LowerTorso）の位置
+	restOffset: Vector3,
+	base: Vector3,
+	tracks: { [string]: AnimationTrack },
+	idle: AnimationTrack,
+}
+
+-- 根元の部品の置き場所（Hanno と同じ。攻撃元は体の正面の +Z にいて、体は攻撃元の方を向く）
+local function rootAt(body: Body, phase: Phase, tau: number, trajectory: any, landing: Vector3): CFrame
+	local facing = CFrame.lookAt(Vector3.zero, Vector3.new(0, 0, 1))
+	if phase.root == "Air" then
+		local p = GameTrajectory.positionAt(trajectory, tau)
+		return CFrame.new(body.base.X + p.x, MeshyRig.ORIGIN.Y + p.y, body.base.Z + p.z) * facing
+	end
+	local spot = if phase.name == "攻撃" or phase.name == "のけぞる" then body.base else body.base + landing
+	if phase.root == "Lie" then
+		return CFrame.new(spot.X, MeshyRig.ORIGIN.Y + LIE_HEIGHT, spot.Z) * facing * CFrame.Angles(math.rad(90), 0, 0)
+	end
+	return CFrame.new(spot.X, MeshyRig.ORIGIN.Y + body.standHeight, spot.Z) * facing
+end
+
+-- 終わりの姿で残すときに止める位置を、トラックの終わりからこの秒だけ手前にする（MotionPlayer の HOLD_MARGIN と同じ）
+local HOLD_MARGIN = 1 / 30
+
+-- 段の中の時刻 tau に流しているクリップの位置（区間の頭から等速、区間の終わりで止めて残す）。
+-- track を渡すと、止める位置をトラックの終わりの手前に収める
+local function clipPosition(item: string, tau: number, track: AnimationTrack?): number
+	local source = GameMotions.MeshySources.Genin[item]
+	local stop = source.to
+	if track and track.Length > 0 then
+		stop = math.min(stop, track.Length - HOLD_MARGIN)
+	end
+	return math.min(source.from + tau, stop)
+end
+
+-- 体の様子。腰の根元の部品からの水平のずれと縦のずれ、体の最も低い点の床からの高さ、胴（腰から頭）の鉛直からの傾き（度）
+local function bodyStats(body: Body): (number, number, number, number)
+	local model = body.model
+	local lower = model:FindFirstChild("LowerTorso") :: BasePart
+	local head = model:FindFirstChild("Head") :: BasePart
+	local d = lower.Position - body.root.CFrame:PointToWorldSpace(body.restOffset)
+	local lowest = math.huge
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and part ~= body.root then
+			local half = part.Size / 2
+			for _, corner in
+				{
+					Vector3.new(-1, -1, -1),
+					Vector3.new(-1, -1, 1),
+					Vector3.new(-1, 1, -1),
+					Vector3.new(-1, 1, 1),
+					Vector3.new(1, -1, -1),
+					Vector3.new(1, -1, 1),
+					Vector3.new(1, 1, -1),
+					Vector3.new(1, 1, 1),
+				}
+			do
+				lowest = math.min(lowest, part.CFrame:PointToWorldSpace(corner * half).Y)
+			end
+		end
+	end
+	local up = (head.Position - lower.Position).Unit
+	local tilt = math.deg(math.acos(math.clamp(up:Dot(Vector3.yAxis), -1, 1)))
+	return Vector3.new(d.X, 0, d.Z).Magnitude, d.Y, lowest - MeshyRig.ORIGIN.Y, tilt
+end
+
+-- 体に、段の時刻 tau の姿勢を取らせる（測るとき。トラックは止めた位置で残す）
+local function poseAt(body: Body, phase: Phase, tau: number, trajectory: any, landing: Vector3)
+	body.root.CFrame = rootAt(body, phase, tau, trajectory, landing)
+	for item, track in body.tracks do
+		if item ~= phase.item then
+			track:Stop(0)
+		end
+	end
+	local track = if phase.item then body.tracks[phase.item] else body.idle
+	if phase.item == nil then
+		for _, other in body.tracks do
+			other:Stop(0)
+		end
+	else
+		body.idle:Stop(0)
+	end
+	if not track.IsPlaying then
+		track:Play(0, 1, 0)
+	end
+	track.TimePosition = if phase.item then clipPosition(phase.item, tau, track) else tau
+	track:AdjustSpeed(0)
+end
+
+type HikakuStat = {
+	hMax: number,
+	vMin: number,
+	vMax: number,
+	lowMin: number,
+	lowMax: number,
+	tiltMin: number,
+	tiltMax: number,
+}
+
+local function newStat(): HikakuStat
+	return {
+		hMax = 0,
+		vMin = math.huge,
+		vMax = -math.huge,
+		lowMin = math.huge,
+		lowMax = -math.huge,
+		tiltMin = math.huge,
+		tiltMax = -math.huge,
+	}
+end
+
+local function describeStat(stat: HikakuStat, phase: Phase): string
+	local flags = {}
+	if stat.hMax > DRIFT_LIMIT then
+		table.insert(flags, "二重移動")
+	end
+	if stat.lowMin < SINK_LIMIT then
+		table.insert(flags, "沈む")
+	end
+	if phase.root ~= "Air" and stat.lowMin > FLOAT_LIMIT then
+		table.insert(flags, "浮く")
+	end
+	if stat.tiltMax > TURN_LIMIT then
+		table.insert(flags, "二重回転")
+	end
+	return string.format(
+		"腰のずれ 水平 最大 %.2f・縦 %.2f〜%.2f、床から %.2f〜%.2f、胴の傾き %.0f〜%.0f 度%s",
+		stat.hMax,
+		stat.vMin,
+		stat.vMax,
+		stat.lowMin,
+		stat.lowMax,
+		stat.tiltMin,
+		stat.tiltMax,
+		if #flags > 0 then `（{table.concat(flags, "・")}）` else ""
+	)
+end
+
+-- R15 の体を1つ組み、項目のクリップのトラックを読み込む
+local function buildBody(label: string, x: number, sequences: { [string]: KeyframeSequence }, subject: Model): Body
+	local origin = MeshyRig.ORIGIN
+	local model = MeshyRig.buildR15(CFrame.new(origin + Vector3.new(x, 3, -12)))
+	model.Name = `R15_{label}`
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local lower = model:FindFirstChild("LowerTorso") :: BasePart
+	local standHeight = humanoid.HipHeight + root.Size.Y / 2
+	root.CFrame = CFrame.new(origin + Vector3.new(x, standHeight, -12))
+		* CFrame.lookAt(Vector3.zero, Vector3.new(0, 0, 1))
+	task.wait(0.3)
+	local restOffset = root.CFrame:PointToObjectSpace(lower.Position)
+	local animator = animatorOf(model)
+	local tracks: { [string]: AnimationTrack } = {}
+	for item, sequence in sequences do
+		local rigged = withoutRigData(sequence)
+		rigDataFor(subject).Parent = rigged
+		local animation = Instance.new("Animation")
+		animation.AnimationId = KeyframeSequenceProvider:RegisterKeyframeSequence(rigged)
+		local track = animator:LoadAnimation(animation)
+		-- 終わりに着いても止まって姿が戻らないよう、くり返しにして止める位置で速さを 0 にする（MotionPlayer と同じ）
+		track.Looped = true
+		track.Priority = Enum.AnimationPriority.Action
+		tracks[item] = track
+	end
+	local idleAnimation = Instance.new("Animation")
+	idleAnimation.AnimationId = IDLE_ID
+	local idle = animator:LoadAnimation(idleAnimation)
+	idle.Looped = true
+	idle.Priority = Enum.AnimationPriority.Idle
+	-- 名札
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(160, 36)
+	gui.StudsOffset = Vector3.new(0, 3.5, 0)
+	gui.AlwaysOnTop = true
+	local text = Instance.new("TextLabel")
+	text.Size = UDim2.fromScale(1, 1)
+	text.BackgroundTransparency = 0.3
+	text.TextScaled = true
+	text.Text = label
+	text.Parent = gui
+	gui.Parent = model:FindFirstChild("Head")
+	return {
+		label = label,
+		model = model,
+		root = root,
+		standHeight = standHeight,
+		restOffset = restOffset,
+		base = origin + Vector3.new(x, 0, -12),
+		tracks = tracks,
+		idle = idle,
+	}
+end
+
+-- 下忍の項目 item を、原本（左）と腰の移動を抜いた版（右）の R15 で、ゲームの体の扱いと時間どおりに比べる。
+-- target を省くと合成した刃の骨（Jin.luau の GLB の値）、渡すと取り込んだモデル（クリップ編集で読み込んだクリップを
+-- 名前で探し、無ければ Jin.luau の値）。modes で項目ごとの抜き方を差し替えられる（例: { Down = "pose" }）。
+-- 測った後は、2体が同じ流れを繰り返す（止めるのは MeshyRig.clear()）
+function MeshyRig.hikaku(item: string, target: Model?, modes: { [string]: string }?): string
+	local entry = MeshyRig.GENIN[item]
+	assert(entry, `項目は Attack・Flinch・Knockback・Launch・Down・GetUp のどれか（{tostring(item)}）`)
+	MeshyRig.clear()
+	state.demoToken += 1
+	local token = state.demoToken
+	local subject = target
+		or MeshyRig.buildJin(CFrame.new(MeshyRig.ORIGIN + Vector3.new(0, 0.1, -30)) * CFrame.Angles(0, math.pi, 0))
+	if not subject:FindFirstChildOfClass("HumanoidRigDescription") then
+		MeshyRig.map(subject)
+	end
+	-- 流れ。飛ぶ時間は、立っているときの高さから軌道で飛び、足が床に届くまで（Hanno と同じ）
+	local trajectory = nil
+	local flight = 0
+	local landing = Vector3.zero
+	if entry.flow == "Air" then
+		local hit = GameConfig.Bukishu.Shuriken.ChargeKogeki[entry.charge].Hits[1]
+		local velocity =
+			GameTrajectory.initialVelocity(entry.reaction, vector.create(0, 0, -1), hit.Knockback, false, 1)
+		local probe = MeshyRig.buildR15(CFrame.new(MeshyRig.ORIGIN + Vector3.new(0, 3, -40)))
+		local probeRoot = probe:FindFirstChild("HumanoidRootPart") :: BasePart
+		local standHeight = (probe:FindFirstChildOfClass("Humanoid") :: Humanoid).HipHeight + probeRoot.Size.Y / 2
+		probe:Destroy()
+		trajectory = GameTrajectory.new(vector.create(0, standHeight, 0), velocity)
+		flight = GameTrajectory.landingTime(trajectory, standHeight + BELOW_MARGIN) or 0
+		local landed = GameTrajectory.positionAt(trajectory, flight)
+		landing = Vector3.new(landed.x, 0, landed.z)
+	end
+	local phases = flowOf(item, entry, flight)
+	-- クリップ（原本と除去版）。段で使う項目ごと
+	local originals: { [string]: KeyframeSequence } = {}
+	local removed: { [string]: KeyframeSequence } = {}
+	local sourceNote = {}
+	for _, phase in phases do
+		local phaseItem = phase.item
+		if phaseItem and not originals[phaseItem] then
+			local phaseEntry = MeshyRig.GENIN[phaseItem]
+			local saved = if target then savedClipFor(target, phaseEntry.clip) else nil
+			local original = saved or clipToKeyframeSequence(phaseEntry.clip)
+			local mode = if modes and modes[phaseItem] then modes[phaseItem] else phaseEntry.remove
+			originals[phaseItem] = original
+			removed[phaseItem] = MeshyRig.stripRoot(original, mode, subject)
+			local source = GameMotions.MeshySources.Genin[phaseItem]
+			table.insert(
+				sourceNote,
+				string.format(
+					"%s は %s（%s、%.2f〜%.2f 秒、除去版は%s）",
+					phaseItem,
+					original.Name,
+					if saved then "クリップ編集で読み込んだもの" else "Jin.luau の GLB の値",
+					source.from,
+					source.to,
+					REMOVE_NAMES[mode]
+				)
+			)
+		end
+	end
+	local bodies = {
+		buildBody("原本", -4, originals, subject),
+		buildBody("除去版", 4, removed, subject),
+	}
+	local flowText = {}
+	for _, phase in phases do
+		local clipText = if phase.item
+			then string.format(
+				"、%s の %.2f〜%.2f 秒",
+				MeshyRig.GENIN[phase.item].clip,
+				GameMotions.MeshySources.Genin[phase.item].from,
+				clipPosition(phase.item, phase.seconds)
+			)
+			else ""
+		table.insert(flowText, string.format("%s %.2f 秒%s", phase.name, phase.seconds, clipText))
+	end
+	local lines = {
+		`比較 {item}（左が原本、右が除去版。ゲームの体の扱いと時間どおり。{subject.Name} の AnimationRigData で R15 へ移す）`,
+		`- クリップ: {table.concat(sourceNote, "。")}`,
+		`- 流れ: {table.concat(flowText, " → ")}`,
+	}
+	-- 段ごとに、段の中の 3 つの時刻で測る（待機は 1 つ）
+	for _, phase in phases do
+		local stats = { newStat(), newStat() }
+		local fractions = if phase.item == nil then { 0.5 } else { 0.15, 0.5, 0.95 }
+		for _, fraction in fractions do
+			local tau = phase.seconds * fraction
+			for _, body in bodies do
+				poseAt(body, phase, tau, trajectory, landing)
+			end
+			task.wait(SETTLE)
+			for index, body in bodies do
+				local h, v, low, tilt = bodyStats(body)
+				local stat = stats[index]
+				stat.hMax = math.max(stat.hMax, h)
+				stat.vMin = math.min(stat.vMin, v)
+				stat.vMax = math.max(stat.vMax, v)
+				stat.lowMin = math.min(stat.lowMin, low)
+				stat.lowMax = math.max(stat.lowMax, low)
+				stat.tiltMin = math.min(stat.tiltMin, tilt)
+				stat.tiltMax = math.max(stat.tiltMax, tilt)
+			end
+		end
+		table.insert(
+			lines,
+			`- {phase.name}: 原本 {describeStat(stats[1], phase)} / 除去版 {describeStat(stats[2], phase)}`
+		)
+	end
+	-- 見るための再生。同じ流れを、1 秒の間を空けて繰り返す
+	local total = 0
+	for _, phase in phases do
+		total += phase.seconds
+	end
+	local cycle = total + 1
+	local started = os.clock()
+	local current: { [Body]: number } = {}
+	local connection: RBXScriptConnection? = nil
+	connection = RunService.Heartbeat:Connect(function()
+		if state.demoToken ~= token then
+			if connection then
+				connection:Disconnect()
+			end
+			return
+		end
+		local t = (os.clock() - started) % cycle
+		local index, tau = #phases, phases[#phases].seconds
+		local sum = 0
+		for i, phase in phases do
+			if t < sum + phase.seconds then
+				index, tau = i, t - sum
+				break
+			end
+			sum += phase.seconds
+		end
+		local phase = phases[index]
+		for _, body in bodies do
+			if not body.model.Parent then
+				continue
+			end
+			body.root.CFrame = rootAt(body, phase, tau, trajectory, landing)
+			if current[body] ~= index then
+				current[body] = index
+				for _, track in body.tracks do
+					track:Stop(0.05)
+				end
+				if phase.item then
+					body.idle:Stop(0.05)
+					local track = body.tracks[phase.item]
+					track:Play(0.05, 1, 1)
+					track.TimePosition = clipPosition(phase.item, 0, track)
+				elseif not body.idle.IsPlaying then
+					body.idle:Play(0.1)
+				end
+			end
+			if phase.item then
+				local track = body.tracks[phase.item]
+				local stop = clipPosition(phase.item, math.huge, track)
+				if track.Speed > 0 and (track.TimePosition >= stop - 1 / 60 or tau >= phase.seconds - 1 / 60) then
+					track:AdjustSpeed(0)
+					track.TimePosition = math.min(track.TimePosition, stop)
+				end
+			end
+		end
+	end)
+	table.insert(
+		lines,
+		"左右の2体が同じ流れを繰り返す（止めるのは MeshyRig.clear()）。腰のずれは根元の部品（当たり判定の位置）からの離れ、床からは体の最も低い点"
+	)
+	return table.concat(lines, "\n")
 end
 
 function MeshyRig.clear(): string

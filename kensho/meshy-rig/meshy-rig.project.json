@@ -2,6 +2,11 @@
   "name": "musou-meshy-rig",
   "tree": {
     "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "../../src/shared"
+      }
+    },
     "ServerStorage": {
       "MeshyRig": {
         "$path": "server/MeshyRig"

@@ -12,8 +12,10 @@ Meshy の出力（`~/musou-work`）は Git に入れないので、`Jin.luau` �
 Git で持つかは #141 で決める。
 
 ```bash
-python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb ~/musou-work/characters/jin/motions/id182.glb@all ~/musou-work/characters/jin/motions/id007.glb@all ~/musou-work/characters/jin/motions/id189.glb@xz ~/musou-work/characters/jin/motions/id003.glb@xz > kensho/meshy-rig/server/MeshyRig/Jin.luau
+python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb ~/musou-work/characters/jin/motions/id219.glb@xz ~/musou-work/characters/jin/motions/id179.glb@xz ~/musou-work/characters/jin/motions/id182.glb@all ~/musou-work/characters/jin/motions/id007.glb@all ~/musou-work/characters/jin/motions/id189.glb@xz ~/musou-work/characters/jin/motions/id003.glb@xz > kensho/meshy-rig/server/MeshyRig/Jin.luau
 ```
+
+腰の移動を抜く指定は、#88 の PM判断（2026-10-17）の案（吹き飛び・打ち上げは全軸、ほかの4項目は水平だけ）に合わせてある。
 
 クリップのパスの後ろの `@xz` は腰の水平の移動を、`@all` は腰の移動をすべて抜く。
 抜いたクリップの名前は `id182_all` のように後ろに付く（抜く前と並べて比べられる）。
@@ -33,7 +35,8 @@ rojo build kensho/meshy-rig/meshy-rig.project.json -o ~/musou-work/meshy-rig/mes
 | 場所 | 中身 |
 |---|---|
 | `ServerStorage.MeshyRig` | 往路・復路・関節の対応づけ・見本の再生の道具 |
-| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と、クリップ 11 本（刃の攻撃 id004、下忍の6項目 id219・id179・id182・id007・id189・id003、腰の移動を抜いた id182_all・id007_all・id189_xz・id003_xz。10 コマ/秒） |
+| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と、クリップ 13 本（刃の攻撃 id004、下忍の6項目 id219・id179・id182・id007・id189・id003、腰の移動を抜いた id219_xz・id179_xz・id182_all・id007_all・id189_xz・id003_xz。10 コマ/秒） |
+| `ReplicatedStorage.Shared` | musou の `src/shared`。比較（`hikaku`）が、下忍の区間（`Motions.luau`）・反応の秒数と軌道（`Config.luau`・`Trajectory.luau`）をゲームと同じ定義から引く |
 | `ServerScriptService.MeshyRigDemo` | テストプレイを始めると見本を流す |
 | Workspace | 床と出現地点だけ |
 
@@ -55,6 +58,7 @@ Studio のメニューの「ファイル」→「ファイルから開く」で 
 | `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182"))` | 「復路（id182_Shot_and_Blown_Back を R15 で流す…）」。R15 が後ろへ吹き飛ばされて倒れ、体が 17 スタッドほどずれる。クリップ名は `Jin` の 11 本のどれか |
 | `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182_all"))` | 同じ吹き飛びを、腰の移動を抜いて流す。R15 はその場で吹き飛ばされる姿を取り、体はずれない |
 | `print(require(game.ServerStorage.MeshyRig).map(workspace.MeshyRigCheck.JinBones))` | 「JinBones の関節を 22/22 対応づけた（足りない骨: なし）」と「体の正面は、根元の部品 Root の -Z から 2 度」 |
+| `print(require(game.ServerStorage.MeshyRig).hikaku("Knockback"))` | 下の「下忍の6項目をゲームの体の扱いで比べる」 |
 | `print(require(game.ServerStorage.MeshyRig).clear())` | 「MeshyRigCheck を片づけた」。刃の骨と R15 が消える |
 
 差は、関節から関節への向き（胴・上腕・前腕・太もも・すね）の角度で、5 つの時刻の平均と最大。
@@ -73,6 +77,44 @@ Studio のメニューの「ファイル」→「ファイルから開く」で 
 
 `fukuro(workspace.Jin)` は、クリップ編集で読み込んだクリップ（`ServerStorage.RBX_ANIMSAVES.Jin` のいちばん長いもの）を使う。
 読み込んでいなければ `Jin.luau` の id004 を使うが、GLB の値なので、取り込んだ骨の向きが GLB と違うと刃の姿が崩れる。
+
+## 下忍の6項目をゲームの体の扱いで比べる（#88）
+
+`hikaku(項目)` は、下忍の項目のクリップを、左に原本、右に腰の移動を抜いた版の R15 で流し、ゲームの体の扱い（`Hanno`）と時間どおりに比べる。
+吹き飛びと打ち上げは、手裏剣セットの C1・C2 の強さで軌道を飛び、着地したら倒れて起き上がる。
+倒れている間は根元の部品を仰向けに 90 度回し、起き上がりでは立った高さへ戻す（`Hanno` と同じ）。
+クリップは区間の頭から等速で流し、区間の終わりの姿で残す（`EnemyService` の被弾の反応と同じ）。
+
+段ごとに3つの時刻で、次の値を測る。
+
+| 値 | 意味 | 印 |
+|---|---|---|
+| 腰のずれ | 腰（LowerTorso）の、根元の部品（当たり判定の位置）からの離れ。水平と縦 | 水平 1 スタッドを超えると「二重移動」 |
+| 床から | 体の最も低い点の、床の上の面からの高さ | -0.3 より下で「沈む」、飛んでいないのに 0.5 より上で「浮く」 |
+| 胴の傾き | 腰から頭への向きの、鉛直からの角度 | 135 度を超えると「二重回転」 |
+
+| 手順 | 期待動作 |
+|---|---|
+| `print(require(game.ServerStorage.MeshyRig).hikaku("Knockback"))` | 10 秒ほどで、流れ（飛ぶ 0.26 秒 → 倒れる 1.00 秒 → 起き上がる 0.50 秒 → 待機）と段ごとの値。2体が同じ流れを繰り返す |
+| `print(require(game.ServerStorage.MeshyRig).hikaku("Down", nil, { Down = "pose" }))` | 倒れる段の除去版を、腰の移動と回転を抜いた形で比べる。抜き方は `xz`・`all`・`pose` |
+| `print(require(game.ServerStorage.MeshyRig).hikaku("Knockback", workspace.Jin))` | 取り込んだ刃（クリップ編集で読み込んだクリップを名前で探し、無ければ Jin.luau の値）で比べる |
+
+### 結果（2026-10-17、合成した刃の骨、GLB の値を 5 コマ/秒にしたもの）
+
+musou のテストプレイの中に道具を読み込んで測った（プレースは変えていない）。
+
+| 段 | 原本 | 除去版（PM の案） |
+|---|---|---|
+| 吹き飛びで飛ぶ 0.26 秒（id182 の 0.60〜0.86 秒） | 腰が水平に最大 2.31 ずれる（二重移動）。胴の傾き 2〜11 度 | 全軸を抜くと 0.06。胴の傾き 2〜11 度 |
+| 打ち上げで飛ぶ 0.83 秒（id007 の 0.00〜0.83 秒） | 腰が縦に -3.19〜+3.33 ずれる（軌道と二重）。胴の傾き 56〜91 度 | 全軸を抜くと縦 -0.22〜-0.10 |
+| 倒れる 1.00 秒（id189 の 1.40〜2.23 秒） | 胴の傾き 174〜177 度（二重回転）、床から -5.7（沈む） | 水平だけ抜いても 174〜177 度（二重回転）、床から -2.3、水平のずれ 3.4 |
+| 起き上がる 0.50 秒（id003 の 0.00〜0.50 秒） | 0.5 秒で切れた時点で胴が 47〜74 度傾いたまま。床から -1.8（沈む） | 同じ |
+
+- 吹き飛びは、軌道が 0.26 秒で着地するので、クリップの 0.60〜0.86 秒しか流れない（後ろへ倒れる 1.0 秒より後は見えない）
+- 倒れる段は、クリップ自体が胴を後ろへ約 90 度倒す（GLB の順運動学で 91〜95 度）ので、`Hanno` の仰向けの 90 度と重なる。
+  縦の移動は、根元の部品が寝ているので水平の移動になる
+- 腰の移動と回転を両方抜く（`pose`）と、倒れる段は水平のずれ 0.00、床から 0.11〜0.21、胴の傾き 78〜85 度になった
+- 起き上がりは、ゲームの起き上がりの 0.5 秒に対してクリップが 1.87 秒あり、等速で流すと 27% で切れて待機へ戻る
 
 ## 分かったこと（2026-10-16）
 
