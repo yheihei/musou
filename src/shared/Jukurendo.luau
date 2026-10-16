@@ -13,6 +13,7 @@
 --   （熟練度は足し、覚えた秘計は和集合になる）
 -- - 定義に無い系統と秘計も記録から消さない（外した後に戻しても記録が残るように）。覚えた秘計には数えない
 -- - 決着したときに足す熟練度は、系統ごとに戦い方の数に Rate を掛けて切り捨て、Max までにした数（gainOf）
+-- - 1戦の記録として、系統ごとの戦い方の数・上限の前の熟練度・足した熟練度・上限で切り捨てた分を出す（gainDetailOf・recordLineOf）
 -- - M1 では全種類を最初から使えた。熟練度の記録がまだ無く、進行にクリア済みのステージがある人は、
 --   M1 から遊んでいる人として M1 の8種を覚えている扱いにする（m1ChangeOf）。確かめたことは記録に残す
 -- - Config の節は引数で差し替えられる（テスト用）。省くと Config.Jukurendo を使う
@@ -234,6 +235,63 @@ function Jukurendo.gainOf(counts: Counts, params: Config.JukurendoSection?): { [
 		result[keito] = gain
 	end
 	return result
+end
+
+-- 決着したときに系統へ足す熟練度の内訳（1戦の記録。窓口の DumpJukurendo と出力に出す）
+export type GainDetail = {
+	-- 熟練度を上げる戦い方の数（撃破数・制圧数・救援数）
+	count: number,
+	-- 戦い方の数に Rate を掛けて切り捨てた熟練度（Max で切る前）
+	raw: number,
+	-- 足した熟練度（gainOf と同じ）
+	gain: number,
+	-- Max で切り捨てた分（raw - gain）
+	capped: number,
+}
+
+-- 決着したときに系統へ足す熟練度の内訳（系統 ID から引く。すべての系統を入れる）。gain は gainOf と同じ。
+-- 数は、0 以下・数でない値・無限大を 0 として書く（JSON にできるように）。上限の前の熟練度が有限でなければ、切り捨てた分は 0 とする
+function Jukurendo.gainDetailOf(counts: Counts, params: Config.JukurendoSection?): { [string]: GainDetail }
+	local gains = Jukurendo.gainOf(counts, params)
+	local result: { [string]: GainDetail } = {}
+	for _, keito in Jukurendo.keitoList do
+		local def = Jukurendo.keitoDef(keito, params)
+		local count = Jukurendo.countOf(counts, keito)
+		local gain = gains[keito]
+		local raw = gain
+		if def and count > 0 then
+			local value = math.floor(count * def.Rate)
+			if value < math.huge then
+				raw = math.max(value, gain)
+			end
+		end
+		result[keito] = {
+			count = if count > 0 and count < math.huge then count else 0,
+			raw = raw,
+			gain = gain,
+			capped = raw - gain,
+		}
+	end
+	return result
+end
+
+-- 1戦の熟練度の記録の文（「武勇 +12（撃破数 123）、知略 +20（制圧数 2）、堅牢 +0（救援数 0）。上限で切り捨てた分 なし」）。
+-- 系統は keitoList の順に書き、上限で切り捨てた分があれば系統ごとに書く（「上限で切り捨てた分 武勇 15」）
+function Jukurendo.recordLineOf(details: { [string]: GainDetail }): string
+	local parts = {}
+	local capped = {}
+	for _, keito in Jukurendo.keitoList do
+		local detail = details[keito]
+		if detail then
+			local name = Jukurendo.names[keito] or keito
+			table.insert(parts, `{name} +{detail.gain}（{Jukurendo.countNames[keito] or keito} {detail.count}）`)
+			if detail.capped > 0 then
+				table.insert(capped, `{name} {detail.capped}`)
+			end
+		end
+	end
+	local cut = if #capped > 0 then table.concat(capped, "、") else "なし"
+	return `{table.concat(parts, "、")}。上限で切り捨てた分 {cut}`
 end
 
 -- 記録に変更を1つ当てた記録を返す。熟練度は足し（1 未満と端数は捨てる）、秘計は覚えた秘計に加え、

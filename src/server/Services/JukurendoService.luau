@@ -9,6 +9,9 @@
 -- - ステージが決着したら（StageService.finish が award を呼ぶ）、出撃して残っている人に、その人の撃破数・制圧数・救援数
 --   （Player の Attribute の Gekihasu・Seiatsusu・Kyuensu）から系統ごとの熟練度を足してすぐ保存する（Jukurendo.gainOf）。
 --   試験用ステージでも足す
+-- - 決着したときの1戦の記録（ステージ・勝敗・経過時間・系統ごとの数と足した熟練度と上限で切り捨てた分・新しく覚えた秘計）を、
+--   出力に1行出し、このサーバーにいる間だけ人ごとに残す（BATTLE_RECORDS 戦まで）。窓口の DumpJukurendo の battles で読む。
+--   通常の遊び方で系統ごとにどれだけ伸びるか（#151）を確かめる用で、保存はしない
 -- - M1 から遊ぶ人の扱い。熟練度の記録を読めて、まだ M1 から遊ぶ人かを確かめておらず、進行も読めたら、
 --   進行にクリア済みのステージがあれば M1 の8種を覚えた秘計に加える（Jukurendo.m1ChangeOf）。
 --   確かめたことは記録に残すので、二度は確かめない。どちらかを読めていなければ、読めたときか次に入ったときに確かめる
@@ -20,6 +23,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Hikei = require(ReplicatedStorage.Shared.Hikei)
 local Jukurendo = require(ReplicatedStorage.Shared.Jukurendo)
+local ResultMessage = require(ReplicatedStorage.Shared.ResultMessage)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local PlayerStore = require(script.Parent.Parent.PlayerStore)
 local ProgressService = require(script.Parent.ProgressService)
@@ -33,6 +37,28 @@ export type Award = {
 	-- 新しく覚えた秘計（設計の表の順）
 	newlyLearned: { string },
 }
+
+-- 決着したステージ（1戦の記録に書く）
+export type Battle = {
+	stageId: string,
+	victory: boolean,
+	-- 戦闘のフェーズの経過時間（秒）
+	elapsed: number,
+}
+
+-- 1戦の記録（窓口の DumpJukurendo の battles）
+type BattleRecord = {
+	stageId: string,
+	victory: boolean,
+	-- 戦闘のフェーズの経過時間（秒。小数第1位まで）
+	elapsed: number,
+	-- 系統 ID から引く、戦い方の数・上限の前の熟練度・足した熟練度・上限で切り捨てた分
+	keito: { [string]: Jukurendo.GainDetail },
+	newlyLearned: { string },
+}
+
+-- 人ごとに残す1戦の記録の数（古いものから捨てる）
+local BATTLE_RECORDS = 20
 
 local store: PlayerStore.Store<Jukurendo.Data, Jukurendo.Change> = PlayerStore.new({
 	name = "Jukurendo",
@@ -48,6 +74,8 @@ JukurendoService.changed = store.changed
 
 -- このサーバーで M1 から遊ぶ人かを確かめ終えた（確かめなくてよくなった）プレイヤー
 local m1Done: { [Player]: boolean } = {}
+-- このサーバーでの1戦の記録（人ごと。古い順）
+local battleRecords: { [Player]: { BattleRecord } } = {}
 local stateRemote: RemoteEvent
 
 -- 熟練度の記録を読み終えたか（読み込めなかったときも true）。読み終える前は秘計を選べない
@@ -93,12 +121,56 @@ local function addJukurendo(player: Player, gains: { [string]: number }): (boole
 	return true, newly
 end
 
+local function namesOf(ids: { string }): string
+	if #ids == 0 then
+		return "なし"
+	end
+	local names = {}
+	for _, id in ids do
+		local definition = Hikei.get(id)
+		table.insert(names, if definition then definition.displayName else id)
+	end
+	return table.concat(names, "、")
+end
+
+-- 1戦の記録を残し、出力に1行出す
+local function recordBattle(
+	player: Player,
+	battle: Battle,
+	details: { [string]: Jukurendo.GainDetail },
+	newly: { string }
+)
+	local records = battleRecords[player] or {}
+	battleRecords[player] = records
+	table.insert(records, {
+		stageId = battle.stageId,
+		victory = battle.victory,
+		elapsed = math.floor(battle.elapsed * 10 + 0.5) / 10,
+		keito = details,
+		newlyLearned = newly,
+	})
+	while #records > BATTLE_RECORDS do
+		table.remove(records, 1)
+	end
+	local learned = if #newly > 0 then `。新しく覚えた秘計 {namesOf(newly)}` else ""
+	print(
+		`[Jukurendo] {player.Name} の1戦（{battle.stageId}、{ResultMessage.headline(battle.victory)}、{ResultMessage.formatElapsed(
+			battle.elapsed
+		)}）: {Jukurendo.recordLineOf(details)}{learned}`
+	)
+end
+
 -- 決着したときに、players（出撃して残っている人）へ、その人の撃破数・制圧数・救援数から系統ごとの熟練度を足して
--- すぐ保存する（Jukurendo.gainOf）。プレイヤーごとに足した熟練度と新しく覚えた秘計を返す
-function JukurendoService.award(players: { Player }): { [Player]: Award }
+-- すぐ保存する（Jukurendo.gainOf）。プレイヤーごとに足した熟練度と新しく覚えた秘計を返す。
+-- battle（決着したステージ）を渡せば、1戦の記録を残して出力に出す
+function JukurendoService.award(players: { Player }, battle: Battle?): { [Player]: Award }
 	local result: { [Player]: Award } = {}
 	for _, player in players do
-		local gains = Jukurendo.gainOf(countsOf(player))
+		local details = Jukurendo.gainDetailOf(countsOf(player))
+		local gains: { [string]: number } = {}
+		for keito, detail in details do
+			gains[keito] = detail.gain
+		end
 		local gained = false
 		for _, gain in gains do
 			if gain > 0 then
@@ -111,6 +183,9 @@ function JukurendoService.award(players: { Player }): { [Player]: Award }
 			newly = learnedNow
 		end
 		result[player] = { jukurendo = gains, newlyLearned = newly }
+		if battle then
+			recordBattle(player, battle, details, newly)
+		end
 	end
 	return result
 end
@@ -161,18 +236,6 @@ local function keitoOf(value: unknown): string
 	return value :: string
 end
 
-local function namesOf(ids: { string }): string
-	if #ids == 0 then
-		return "なし"
-	end
-	local names = {}
-	for _, id in ids do
-		local definition = Hikei.get(id)
-		table.insert(names, if definition then definition.displayName else id)
-	end
-	return table.concat(names, "、")
-end
-
 -- 窓口の DumpJukurendo の中身
 local function describe(player: Player): { [string]: any }
 	local data = store.get(player)
@@ -191,6 +254,7 @@ local function describe(player: Player): { [string]: any }
 	info.hikei = data.hikei
 	info.learned = Jukurendo.learned(data)
 	info.counts = countsOf(player)
+	info.battles = battleRecords[player] or {}
 	info.progress = {
 		loaded = ProgressService.isLoaded(player),
 		cleared = ProgressService.getCleared(player),
@@ -222,7 +286,9 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"DumpJukurendo",
 		"<プレイヤー名>",
-		"プレイヤーの熟練度の記録（系統ごとの熟練度と次に覚える秘計・覚えた秘計・M1 から遊ぶ人かを確かめたか）と保存先、今のステージの撃破数・制圧数・救援数、進行のクリア済みのステージを JSON で返す",
+		"プレイヤーの熟練度の記録（系統ごとの熟練度と次に覚える秘計・覚えた秘計・M1 から遊ぶ人かを確かめたか）と保存先、今のステージの撃破数・制圧数・救援数、"
+			.. "このサーバーで決着した1戦ごとの記録（battles。古い順に最大 20 戦。ステージ・勝敗・経過時間の秒・系統ごとの数 count と"
+			.. "上限の前の熟練度 raw と足した熟練度 gain と上限で切り捨てた分 capped・新しく覚えた秘計）、進行のクリア済みのステージを JSON で返す",
 		function(name)
 			local player = DebugCommand.findPlayer(name)
 			return HttpService:JSONEncode(describe(player))
@@ -270,6 +336,7 @@ function JukurendoService.start()
 	ProgressService.changed:Connect(checkM1)
 	Players.PlayerRemoving:Connect(function(player)
 		m1Done[player] = nil
+		battleRecords[player] = nil
 	end)
 	registerDebugCommands()
 	store.start()

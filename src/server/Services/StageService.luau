@@ -26,8 +26,8 @@
 --   体力の最大は出現したときに当てるので、出撃地点へ出現し直させる前に固定する。ロビーのフェーズに戻ったら固定を外す
 -- - 決着したら、勝ち負けによらず出撃して残っている全員（Progress.remaining）に、そのとき使っているキャラクターの巻物を渡し
 --   （TokugiService.awardMakimono）、渡したキャラクターと数を StageResult のメンバーごとに書く
--- - 決着したら、同じ人に、撃破数・制圧数・救援数から系統ごとの熟練度を足し（JukurendoService.award）、
---   制圧数・救援数・足した熟練度・新しく覚えた秘計を StageResult のメンバーごとに書く
+-- - 決着したら、同じ人に、撃破数・制圧数・救援数から系統ごとの熟練度を足し（JukurendoService.award。ステージ・勝敗・経過時間を渡して
+--   1戦の記録も残す）、制圧数・救援数・足した熟練度・新しく覚えた秘計を StageResult のメンバーごとに書く
 -- - リザルトのフェーズでリーダーが Remotes.ReturnToLobby を送ると、ストーリー以外の選択を外して全員をロビーへ戻す
 -- - リザルトのフェーズでリーダーが Remotes.Retry を送ると、ステージと選択を残して全員をロビーへ戻す。
 --   残した選択は SelectionService.revalidate で確かめ直す（リーダーが代わっていたらストーリーとステージを判定し直す）
@@ -452,7 +452,8 @@ function StageService.finish(victory: boolean, reason: RemoteSchema.ResultReason
 	-- 巻物と熟練度は勝ち負けによらず、出撃して残っている全員に渡す
 	local remaining = playersOf(current, Progress.remaining(participants))
 	local awards = TokugiService.awardMakimono(remaining, victory)
-	local jukurendoAwards = JukurendoService.award(remaining)
+	local jukurendoAwards =
+		JukurendoService.award(remaining, { stageId = current.stageId, victory = victory, elapsed = elapsed })
 	local members = StageService.getMembers()
 	local result: RemoteSchema.StageResult = {
 		victory = victory,

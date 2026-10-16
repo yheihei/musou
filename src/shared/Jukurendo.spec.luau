@@ -158,6 +158,53 @@ test("戦い方の数が負か数でないか無限大のときは、0 か上限
 end)
 
 test(
+	"1戦の内訳は、系統ごとの数・上限の前の熟練度・足した熟練度・上限で切り捨てた分を持つ",
+	function()
+		expect(Jukurendo.gainDetailOf(counts(129, 1, 7), PARAMS)).toEqual({
+			Buyu = { count = 129, raw = 12, gain = 12, capped = 0 },
+			Chiryaku = { count = 1, raw = 10, gain = 10, capped = 0 },
+			Kenro = { count = 7, raw = 7, gain = 7, capped = 0 },
+		})
+		-- 上限（Max 30）を超えた分は capped に残る
+		expect(Jukurendo.gainDetailOf(counts(456, 4, 31), PARAMS)).toEqual({
+			Buyu = { count = 456, raw = 45, gain = 30, capped = 15 },
+			Chiryaku = { count = 4, raw = 40, gain = 30, capped = 10 },
+			Kenro = { count = 31, raw = 31, gain = 30, capped = 1 },
+		})
+		-- 足した熟練度は gainOf と同じ
+		for _, c in { counts(129, 1, 7), counts(456, 4, 31), counts(9, 0, 0) } do
+			local gains = Jukurendo.gainOf(c, PARAMS)
+			for keito, detail in Jukurendo.gainDetailOf(c, PARAMS) do
+				expect(detail.gain).toBe(gains[keito])
+			end
+		end
+	end
+)
+
+test(
+	"1戦の内訳では、負の数・数でない値・無限大の数を 0 と書き、切り捨てた分を出さない",
+	function()
+		expect(Jukurendo.gainDetailOf(counts(-100, 0 / 0, math.huge), PARAMS)).toEqual({
+			Buyu = { count = 0, raw = 0, gain = 0, capped = 0 },
+			Chiryaku = { count = 0, raw = 0, gain = 0, capped = 0 },
+			Kenro = { count = 0, raw = 30, gain = 30, capped = 0 },
+		})
+	end
+)
+
+test(
+	"1戦の記録の文は、系統の順に足した熟練度と数を書き、上限で切り捨てた分を添える",
+	function()
+		expect(Jukurendo.recordLineOf(Jukurendo.gainDetailOf(counts(129, 1, 0), PARAMS))).toBe(
+			"武勇 +12（撃破数 129）、知略 +10（制圧数 1）、堅牢 +0（救援数 0）。上限で切り捨てた分 なし"
+		)
+		expect(Jukurendo.recordLineOf(Jukurendo.gainDetailOf(counts(456, 1, 31), PARAMS))).toBe(
+			"武勇 +30（撃破数 456）、知略 +10（制圧数 1）、堅牢 +30（救援数 31）。上限で切り捨てた分 武勇 15、堅牢 1"
+		)
+	end
+)
+
+test(
 	"変更は熟練度を足し、覚えた秘計を加え、熟練度で覚えた秘計も記録に加える。引数は書き換えない",
 	function()
 		local data = dataOf({ Buyu = 40 }, { "Fukuhei", "Kishinka", "Rakuseki" })
