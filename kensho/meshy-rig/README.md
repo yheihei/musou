@@ -12,8 +12,11 @@ Meshy の出力（`~/musou-work`）は Git に入れないので、`Jin.luau` �
 Git で持つかは #141 で決める。
 
 ```bash
-python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb > kensho/meshy-rig/server/MeshyRig/Jin.luau
+python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb ~/musou-work/characters/jin/motions/id182.glb@all ~/musou-work/characters/jin/motions/id007.glb@all ~/musou-work/characters/jin/motions/id189.glb@xz ~/musou-work/characters/jin/motions/id003.glb@xz > kensho/meshy-rig/server/MeshyRig/Jin.luau
 ```
+
+クリップのパスの後ろの `@xz` は腰の水平の移動を、`@all` は腰の移動をすべて抜く。
+抜いたクリップの名前は `id182_all` のように後ろに付く（抜く前と並べて比べられる）。
 
 ```bash
 stylua kensho/meshy-rig/server
@@ -30,7 +33,7 @@ rojo build kensho/meshy-rig/meshy-rig.project.json -o ~/musou-work/meshy-rig/mes
 | 場所 | 中身 |
 |---|---|
 | `ServerStorage.MeshyRig` | 往路・復路・関節の対応づけ・見本の再生の道具 |
-| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と、クリップ7本（刃の攻撃 id004、下忍の6項目 id219・id179・id182・id007・id189・id003。10 コマ/秒） |
+| `ServerStorage.MeshyRig.Jin` | 刃の骨 24 本と、クリップ 11 本（刃の攻撃 id004、下忍の6項目 id219・id179・id182・id007・id189・id003、腰の移動を抜いた id182_all・id007_all・id189_xz・id003_xz。10 コマ/秒） |
 | `ServerScriptService.MeshyRigDemo` | テストプレイを始めると見本を流す |
 | Workspace | 床と出現地点だけ |
 
@@ -49,7 +52,8 @@ Studio のメニューの「ファイル」→「ファイルから開く」で 
 |---|---|
 | `print(require(game.ServerStorage.MeshyRig).orai())` | 6 秒ほどで「往路（R15 のモーションを JinBones で流す…）」。待機は差の最大 33 度、走りは 27 度（10/16 の値） |
 | `print(require(game.ServerStorage.MeshyRig).fukuro())` | 3 秒ほどで「復路（id004_Attack を R15 で流す…）」。差の最大 46 度、刃の骨の手足は最大 107 度動く |
-| `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182"))` | 「復路（id182_Shot_and_Blown_Back を R15 で流す…）」。R15 が後ろへ吹き飛ばされて倒れる。クリップ名は `Jin` の7本のどれか |
+| `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182"))` | 「復路（id182_Shot_and_Blown_Back を R15 で流す…）」。R15 が後ろへ吹き飛ばされて倒れ、体が 17 スタッドほどずれる。クリップ名は `Jin` の 11 本のどれか |
+| `print(require(game.ServerStorage.MeshyRig).fukuro(nil, "id182_all"))` | 同じ吹き飛びを、腰の移動を抜いて流す。R15 はその場で吹き飛ばされる姿を取り、体はずれない |
 | `print(require(game.ServerStorage.MeshyRig).map(workspace.MeshyRigCheck.JinBones))` | 「JinBones の関節を 22/22 対応づけた（足りない骨: なし）」と「体の正面は、根元の部品 Root の -Z から 2 度」 |
 | `print(require(game.ServerStorage.MeshyRig).clear())` | 「MeshyRigCheck を片づけた」。刃の骨と R15 が消える |
 
@@ -103,7 +107,8 @@ musou のテストプレイの中で、刃の GLB から骨 24 本を組んで�
 6本とも R15 に移った。
 腰の移動（クリップの中で体が動く分）も R15 に移り、脚の長さの比で約 1.5 倍になる。
 吹き飛びは R15 で 17 スタッド後ろへ動く。
-ゲームでは吹き飛びと打ち上げの軌道をサーバーが決める（#99）ので、公開するクリップは腰の水平の移動を抜く必要がある。
+ゲームでは吹き飛びと打ち上げの軌道をサーバーが決める（#99）ので、公開するクリップは腰の移動を抜く必要がある。
+腰の移動を抜いた吹き飛び（`id182_all`）は、R15 でも腰の関節が動かず（0.00 スタッド）、手足の差は抜く前と同じ（最大 36 度）だった。
 
 ゲームで流すには、`AnimationRigData` を付けたクリップを公開して ID を入れる。
 公開は開発者のアカウントで行う。

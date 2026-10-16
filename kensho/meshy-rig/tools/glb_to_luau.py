@@ -11,6 +11,8 @@
 - glTF の正面は +Z、Roblox の正面は -Z なので、腰の骨（Hips）に Y 軸まわりの 180 度を入れる。
   根元の部品の -Z が体の正面になる（Adaptive Animation は根元の部品の向きを正面として扱う）
 - クリップは 10 コマ/秒で取り出し、骨ごとに休息の姿勢からの差（Bone.Transform と同じ形）にする
+- クリップのパスの後ろに @xz を付けると腰（Hips）の水平の移動を、@all を付けると腰の移動をすべて抜く。
+  名前は id182_all のように後ろに付ける（同じクリップの抜いたものと抜かないものを並べて比べられる）
 """
 
 import json
@@ -171,7 +173,11 @@ def skeleton(js):
     return rows, top
 
 
-def clip_frames(rig_rows, js, binc, scale):
+ROOT_BONE = "Hips"
+ROOT_MODES = ("keep", "xz", "all")
+
+
+def clip_frames(rig_rows, js, binc, scale, root_mode="keep"):
     rest = {row["name"]: (row["t"], row["r"]) for row in rig_rows}
     anim = js["animations"][0]
     tracks = {}
@@ -196,7 +202,13 @@ def clip_frames(rig_rows, js, binc, scale):
             rr = qnorm(sample(*tr["rotation"], t, True)) if "rotation" in tr else r0
             r0i = qinv(r0)
             dq = qnorm(qmul(r0i, rr))
-            dt = qrot(r0i, tuple(tt[k] - t0[k] for k in range(3)))
+            # 移動は親（Armature）の向きで抜いてから、休息の姿勢の向きへ直す（親の Y が上）
+            moved = [tt[k] - t0[k] for k in range(3)]
+            if name == ROOT_BONE and root_mode == "xz":
+                moved = [0.0, moved[1], 0.0]
+            elif name == ROOT_BONE and root_mode == "all":
+                moved = [0.0, 0.0, 0.0]
+            dt = qrot(r0i, tuple(moved))
             values += [dt[0] * scale, dt[1] * scale, dt[2] * scale, dq[0], dq[1], dq[2], dq[3]]
         frames.append(values)
     return anim.get("name", ""), tmax, order, frames
@@ -239,10 +251,16 @@ def main():
     out.append("")
     out.append("-- クリップ。frames は1コマ1行の文字列で、時刻のあとに order の骨ごとの x, y, z, qx, qy, qz, qw（Bone.Transform）")
     out.append("Jin.clips = {")
-    for path in clip_paths:
+    for arg in clip_paths:
+        path, _, root_mode = arg.partition("@")
+        root_mode = root_mode or "keep"
+        if root_mode not in ROOT_MODES:
+            raise ValueError(f"{arg} の @ の後ろは xz か all")
         cjs, cbin = load_glb(path)
-        name, length, order, frames = clip_frames(rows, cjs, cbin, scale)
+        name, length, order, frames = clip_frames(rows, cjs, cbin, scale, root_mode)
         key = os.path.splitext(os.path.basename(path))[0]
+        if root_mode != "keep":
+            key = f"{key}_{root_mode}"
         for f in frames:
             if len(f) != 1 + 7 * len(order):
                 raise ValueError("コマの値の数が合わない")
