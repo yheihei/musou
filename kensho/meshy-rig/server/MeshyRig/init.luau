@@ -625,15 +625,17 @@ local GameConfig = require(Shared:WaitForChild("Config")) :: any
 local GameMotions = require(Shared:WaitForChild("Motions")) :: any
 local GameTrajectory = require(Shared:WaitForChild("Trajectory")) :: any
 
--- 下忍の6項目。clip は Jin.luau のクリップ、remove は腰の移動を抜く軸、flow はゲームでの体の扱い（Hanno）。
--- Air は手裏剣セットのチャージ攻撃（charge 段目）の吹き飛ばす強さで飛ばし、着地したら倒れて起き上がる
+-- 下忍の6項目。clip は Jin.luau のクリップ、remove は腰の抜き方、flow はゲームでの体の扱い（Hanno）。
+-- Air は手裏剣セットのチャージ攻撃（charge 段目）の吹き飛ばす強さで飛ばし、着地したら倒れて起き上がる。
+-- 抜き方は PM判断（2026-10-17）の案から、測った結果でダウンを pose、起き上がりを all に変えた
+-- （水平だけ抜くと、ダウンは二重回転して沈み、起き上がりは沈む。hikaku の modes で xz に戻して比べられる）
 MeshyRig.GENIN = {
 	Attack = { clip = "id219", remove = "xz", flow = "Stand" },
 	Flinch = { clip = "id179", remove = "xz", flow = "Flinch" },
 	Knockback = { clip = "id182", remove = "all", flow = "Air", reaction = "Knockback", charge = 1 },
 	Launch = { clip = "id007", remove = "all", flow = "Air", reaction = "Launch", charge = 2 },
-	Down = { clip = "id189", remove = "xz", flow = "Down" },
-	GetUp = { clip = "id003", remove = "xz", flow = "Down" },
+	Down = { clip = "id189", remove = "pose", flow = "Down" },
+	GetUp = { clip = "id003", remove = "all", flow = "Down" },
 } :: { [string]: any }
 
 -- 比べる場所の原点。床の上の面の高さがこの Y（Floor の上の面）。ほかのプレースで試すときは、床を置いてから差し替える

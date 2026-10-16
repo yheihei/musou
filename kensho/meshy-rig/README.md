@@ -15,7 +15,8 @@ Git で持つかは #141 で決める。
 python3 -I kensho/meshy-rig/tools/glb_to_luau.py ~/musou-work/characters/jin/rig.rigged_character_glb.glb ~/musou-work/characters/jin/motions/id004.glb ~/musou-work/characters/jin/motions/id219.glb ~/musou-work/characters/jin/motions/id179.glb ~/musou-work/characters/jin/motions/id182.glb ~/musou-work/characters/jin/motions/id007.glb ~/musou-work/characters/jin/motions/id189.glb ~/musou-work/characters/jin/motions/id003.glb ~/musou-work/characters/jin/motions/id219.glb@xz ~/musou-work/characters/jin/motions/id179.glb@xz ~/musou-work/characters/jin/motions/id182.glb@all ~/musou-work/characters/jin/motions/id007.glb@all ~/musou-work/characters/jin/motions/id189.glb@xz ~/musou-work/characters/jin/motions/id003.glb@xz > kensho/meshy-rig/server/MeshyRig/Jin.luau
 ```
 
-腰の移動を抜く指定は、#88 の PM判断（2026-10-17）の案（吹き飛び・打ち上げは全軸、ほかの4項目は水平だけ）に合わせてある。
+`@xz`・`@all` を付けたクリップは `fukuro` で並べて見るためのもの。
+`hikaku` は Luau の `MeshyRig.stripRoot` で腰を抜くので、`@` の指定によらず比べられる。
 
 クリップのパスの後ろの `@xz` は腰の水平の移動を、`@all` は腰の移動をすべて抜く。
 抜いたクリップの名前は `id182_all` のように後ろに付く（抜く前と並べて比べられる）。
@@ -96,12 +97,25 @@ Studio のメニューの「ファイル」→「ファイルから開く」で 
 | 手順 | 期待動作 |
 |---|---|
 | `print(require(game.ServerStorage.MeshyRig).hikaku("Knockback"))` | 10 秒ほどで、流れ（飛ぶ 0.26 秒 → 倒れる 1.00 秒 → 起き上がる 0.50 秒 → 待機）と段ごとの値。2体が同じ流れを繰り返す |
-| `print(require(game.ServerStorage.MeshyRig).hikaku("Down", nil, { Down = "pose" }))` | 倒れる段の除去版を、腰の移動と回転を抜いた形で比べる。抜き方は `xz`・`all`・`pose` |
+| `print(require(game.ServerStorage.MeshyRig).hikaku("Down", nil, { Down = "xz", GetUp = "xz" }))` | 抜き方を差し替えて比べる（`xz`・`all`・`pose`）。この行は PM判断の元の案（水平だけ）で、倒れる段が二重回転して沈む |
 | `print(require(game.ServerStorage.MeshyRig).hikaku("Knockback", workspace.Jin))` | 取り込んだ刃（クリップ編集で読み込んだクリップを名前で探し、無ければ Jin.luau の値）で比べる |
+
+### 抜き方の既定
+
+| 項目 | 抜き方 | 区間（`Motions.luau`） |
+|---|---|---|
+| Attack・Flinch | `xz`（腰の水平の移動） | 0〜1.533・0〜0.6 |
+| Knockback・Launch | `all`（腰の移動をすべて。軌道はサーバー） | 0.95〜1.25・0〜1 |
+| Down | `pose`（腰の移動と回転。仰向けの向きは `Hanno`） | 1.4〜2.233 |
+| GetUp | `all`（腰の移動をすべて） | 1.2〜1.7 |
+
+PM判断（2026-10-17）の案は、吹き飛び・打ち上げが全軸、ほかの4項目が水平だけ。
+下の結果で、ダウンと起き上がりを水平だけにすると二重回転と沈みが出たので、ダウンを `pose`、起き上がりを `all` にし、吹き飛びと起き上がりの区間を状態の長さに収まる所へ直した。
 
 ### 結果（2026-10-17、合成した刃の骨、GLB の値を 5 コマ/秒にしたもの）
 
 musou のテストプレイの中に道具を読み込んで測った（プレースは変えていない）。
+まず PM判断の案（区間は直す前の 0.6〜2・0〜1.867）で測った。
 
 | 段 | 原本 | 除去版（PM の案） |
 |---|---|---|
@@ -115,6 +129,18 @@ musou のテストプレイの中に道具を読み込んで測った（プレ�
   縦の移動は、根元の部品が寝ているので水平の移動になる
 - 腰の移動と回転を両方抜く（`pose`）と、倒れる段は水平のずれ 0.00、床から 0.11〜0.21、胴の傾き 78〜85 度になった
 - 起き上がりは、ゲームの起き上がりの 0.5 秒に対してクリップが 1.87 秒あり、等速で流すと 27% で切れて待機へ戻る
+
+直した後（吹き飛び 0.95〜1.25 秒、起き上がり 1.2〜1.7 秒、ダウン `pose`、起き上がり `all`）は次のとおり。
+
+| 段 | 原本 | 除去版 |
+|---|---|---|
+| 吹き飛びで飛ぶ 0.26 秒（id182 の 0.95〜1.21 秒） | 腰が水平に最大 12.76 ずれる（二重移動） | ずれ 0.20。胴が 39 度から 76 度へ後ろへ倒れていく |
+| 倒れる 1.00 秒 | 二重回転・沈む（上と同じ） | ずれ 0.00、床から 0.11〜0.21、胴の傾き 78〜85 度 |
+| 起き上がる 0.50 秒（id003 の 1.20〜1.70 秒） | 水平のずれ 1.12、床から -0.73（沈む） | ずれ 0.04、床から 0.07〜0.24、胴の傾き 29 度から 12 度（待機へつながる） |
+
+- 起き上がりを `xz`（縦を残す）にすると、床から -0.73〜-0.63 で沈んだ
+- 倒れる段から起き上がる段へは、`Hanno` が根元の部品を仰向けから立った高さへすぐ戻すので、胴の傾きが 80 度前後から 29 度へ跳ぶ。
+  なめらかにするには `Hanno` の起き上がりで根元の部品を寝た向きから起こす必要がある（ゲームの挙動の変更）
 
 ## 分かったこと（2026-10-16）
 
