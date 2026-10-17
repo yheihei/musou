@@ -6,7 +6,9 @@
 -- - 構成にあって目印が無い拠点は読み込まない。目印が無いつながりは、拠点の間をまっすぐ結ぶ
 -- - 試験用ステージの目印は構成に位置を持ち、テストプレイ中に作る（プレースには保存しない）。
 --   目印が無ければ読み込むときに作り、窓口の PlaceShikenMejirushi でも作り直せる。
---   イベントシーンのカメラと役者の目印（<区画>.Mejirushi.EventScene）も一緒に作る
+--   イベントシーンのカメラと役者の目印（<区画>.Mejirushi.EventScene）も一緒に作る。
+--   出撃地点も構成に持つステージは、プレースの区画の出撃地点を構成の位置で置き換える。出撃する前に出撃地点を引けるよう、
+--   サーバーが動き出したときに目印を作る（#117）
 -- - 首領は Stages.luau の両軍の首領を、その軍の本陣から出す
 -- - 落石地点と大火計地域は目印だけで完結させる（<区画>.Mejirushi.RakusekiChiten・DaikakeiChiiki）。
 --   出撃したときに出撃したステージの区画の目印だけを読み、参照する拠点とつながりを構成と突き合わせて警告を出す。
@@ -102,6 +104,9 @@ local CAMERA_SIZE = Vector3.new(1, 1, 2)
 local YAKUSHA_SIZE = Vector3.new(2, 5, 1)
 local CAMERA_COLOR = Color3.fromRGB(80, 200, 240)
 local YAKUSHA_COLOR = Color3.fromRGB(240, 240, 120)
+-- 試験用ステージの出撃地点の目印の大きさ（プレースの出撃地点と同じ。スタッド）
+local SHUTSUGEKI_SIZE = Vector3.new(4, 1, 4)
+local SHUTSUGEKI_COLOR = Color3.fromRGB(120, 230, 120)
 
 -- 出撃しているステージの落石地点と大火計地域。ロビーでは nil
 local currentHikei: LoadedHikeiMejirushi? = nil
@@ -168,6 +173,28 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 		end
 	end
 	local center = bounds.Position
+	-- 出撃地点を構成に持つなら、プレースの区画の出撃地点に代えて置く
+	local shutsugekiFolder: Folder? = nil
+	if mejirushi.shutsugekiChiten then
+		local old = folder:FindFirstChild(Mejirushi.SHUTSUGEKI_CHITEN)
+		if old then
+			old:Destroy()
+		end
+		local created = Instance.new("Folder")
+		created.Name = Mejirushi.SHUTSUGEKI_CHITEN
+		for number, ichi in mejirushi.shutsugekiChiten do
+			local standing = groundPoint(center, ichi.x, ichi.z) + Vector3.new(0, SHUTSUGEKI_SIZE.Y / 2, 0)
+			local facingX, facingZ = Haichi.facingOf(ichi.facing)
+			makeMarker(
+				tostring(number),
+				SHUTSUGEKI_SIZE,
+				CFrame.lookAt(standing, standing + Vector3.new(facingX, 0, facingZ)),
+				SHUTSUGEKI_COLOR,
+				created
+			)
+		end
+		shutsugekiFolder = created
+	end
 	local kyotenFolder = Instance.new("Folder")
 	kyotenFolder.Name = Mejirushi.KYOTEN
 	for _, kyoten in haichi.kyoten do
@@ -262,6 +289,9 @@ function HaichiService.placeShikenMejirushi(stageId: string): boolean
 	rakusekiFolder.Parent = folder
 	daikakeiFolder.Parent = folder
 	eventSceneFolder.Parent = folder
+	if shutsugekiFolder then
+		shutsugekiFolder.Parent = folder
+	end
 	return true
 end
 
@@ -666,7 +696,7 @@ local function registerDebugCommands()
 	DebugCommand.register(
 		"PlaceShikenMejirushi",
 		"[ステージ ID]",
-		"試験用ステージの拠点・つながり・落石地点・大火計地域の目印を、構成の位置からテストプレイ中だけ作り直す（既定は Test）",
+		"試験用ステージの拠点・つながり・落石地点・大火計地域・イベントシーン・出撃地点の目印を、構成の位置からテストプレイ中だけ作り直す（既定は Test）",
 		function(stageId)
 			local id = if type(stageId) == "string" then stageId else "Test"
 			if not HaichiService.placeShikenMejirushi(id) then
@@ -694,6 +724,12 @@ end
 
 function HaichiService.start()
 	registerDebugCommands()
+	-- 出撃地点を構成に持つ試験用ステージは、出撃する前に出撃地点を引けるよう、今のうちに目印を作る
+	for stageId, haichi in Haichi.definitions do
+		if haichi.shikenMejirushi and haichi.shikenMejirushi.shutsugekiChiten then
+			HaichiService.placeShikenMejirushi(stageId)
+		end
+	end
 	-- 出撃したステージの区画の落石地点と大火計地域を読み、ロビーへ戻ったら手放す
 	StageService.started:Connect(function(info: StageService.StartInfo)
 		currentHikei = HaichiService.loadHikeiMejirushi(info.stageId)

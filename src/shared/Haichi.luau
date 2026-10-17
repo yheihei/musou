@@ -1,6 +1,6 @@
 --!strict
 -- ステージの配置の構成（ADR 0006）。拠点の種類と開始時の軍、拠点どうしのつながり、部隊（率いる上忍・方針・開始時の拠点）を
--- ステージ ID で引く。位置と形はプレースの目印に置く。試験用ステージだけは、目印の位置もここに持つ。
+-- ステージ ID で引く。位置と形はプレースの目印に置く。試験用ステージだけは、目印の位置（出撃地点を含む）もここに持つ。
 -- 首領は Stages.luau の両軍の首領を引き、本陣から出す。部隊の兵数は Config.luau の Butai 節にある。
 -- 敵軍の上忍と首領が持ち込む秘計も、キャラクター ID ごとにここに持つ（味方軍の上忍と首領は秘計を持ち込まない）。
 -- 構成の整合の検証と、構成とプレースの目印の突き合わせもここに置く。
@@ -64,10 +64,15 @@ export type EventSceneIchi = {
 	-- 役者の名前（キャラクター ID か Player1〜Player4）から引く立ち位置
 	yakusha: { [string]: YakushaIchi },
 }
+-- 出撃地点の位置と向き。facing は北から時計回りの度（北は z の -）
+export type ShutsugekiIchi = { x: number, z: number, facing: number }
 export type ShikenMejirushi = {
 	-- 区画の大きさ（プレースの区画の範囲の目印と同じ値にする）
 	kukakuSizeX: number,
 	kukakuSizeZ: number,
+	-- 出撃地点。出撃した順番（1から）で引き、パーティーの上限人数（Party 節の MaxMembers）だけ置く。
+	-- 無ければプレースの区画の出撃地点を使う
+	shutsugekiChiten: { ShutsugekiIchi }?,
 	kyoten: { [string]: KyotenIchi },
 	tsunagari: { TsunagariIchi },
 	rakusekiChiten: { RakusekiIchi },
@@ -133,6 +138,17 @@ local definitions: { [string]: Haichi } = {
 		shikenMejirushi = {
 			kukakuSizeX = 800,
 			kukakuSizeZ = 800,
+			-- 出撃地点は中央の拠点（Teki1 が始まる拠点）の南 112 スタッドに、北を向けて並べる（#117）。
+			-- 中央の拠点の中心まで 112〜114 スタッドで実体化圏（Jittaikaken 節の AppearRadius 120）の内なので、出撃した直後に
+			-- Teki1 の下忍の個体と試験の上忍1 が出て、正面に中央の拠点と敵の群れが見える。部隊の広がり（GeninKotai 節の
+			-- Spread 10）を引いても PopDistance（100）より遠いので視界の中でも個体を出せ、敵軍の体が狙う距離
+			-- （EnemyAI 節の AggroRange 80）より遠いので、出てすぐには襲われない。Teki1 は西の拠点へ向かう
+			shutsugekiChiten = {
+				{ x = -18, z = 112, facing = 0 },
+				{ x = -6, z = 112, facing = 0 },
+				{ x = 6, z = 112, facing = 0 },
+				{ x = 18, z = 112, facing = 0 },
+			},
 			kyoten = {
 				MikataHonjin = { x = 0, z = 280, sizeX = 110, sizeZ = 110 },
 				Nishi = { x = -220, z = 60, sizeX = 80, sizeZ = 80 },
@@ -162,20 +178,20 @@ local definitions: { [string]: Haichi } = {
 				{ id = "D1", x = 0, z = -140, sizeX = 60, sizeZ = 80 },
 				{ id = "D2", x = 0, z = 180, sizeX = 100, sizeZ = 40 },
 			},
-			-- 試験用のシーン（EventScenes.luau の Shiken）。出撃地点（z = 200）の北で、ハヤテと1人目のプレイヤーが
+			-- 試験用のシーン（EventScenes.luau の Shiken）。出撃地点（z = 112）の北で、ハヤテと1人目のプレイヤーが
 			-- 北を向いて並び、北から試験の上忍1が歩いてくる
 			eventScene = {
 				Shiken = {
 					camera = {
-						Zenkei = { x = 24, y = 16, z = 198, lookX = 0, lookY = 3, lookZ = 168 },
-						Hayate = { x = -5, y = 6, z = 174, lookX = -5, lookY = 5, lookZ = 182 },
-						Teki = { x = 0, y = 6, z = 171, lookX = 0, lookY = 5, lookZ = 162 },
-						Player = { x = 5, y = 6, z = 174, lookX = 5, lookY = 5, lookZ = 182 },
+						Zenkei = { x = 24, y = 16, z = 110, lookX = 0, lookY = 3, lookZ = 80 },
+						Hayate = { x = -5, y = 6, z = 86, lookX = -5, lookY = 5, lookZ = 94 },
+						Teki = { x = 0, y = 6, z = 83, lookX = 0, lookY = 5, lookZ = 74 },
+						Player = { x = 5, y = 6, z = 86, lookX = 5, lookY = 5, lookZ = 94 },
 					},
 					yakusha = {
-						Hayate = { x = -5, z = 182, facing = 0 },
-						Player1 = { x = 5, z = 182, facing = 0 },
-						ShikenJonin1 = { x = 0, z = 150, facing = 180 },
+						Hayate = { x = -5, z = 94, facing = 0 },
+						Player1 = { x = 5, z = 94, facing = 0 },
+						ShikenJonin1 = { x = 0, z = 62, facing = 180 },
 					},
 				},
 			},
@@ -306,6 +322,20 @@ local function checkShikenMejirushi(haichi: Haichi, mejirushi: ShikenMejirushi, 
 					problems,
 					`イベントシーン {sceneId} の役者 {name} が区画の範囲からはみ出す`
 				)
+			end
+		end
+	end
+	local chiten = mejirushi.shutsugekiChiten
+	if chiten then
+		if #chiten ~= Config.Party.MaxMembers then
+			table.insert(
+				problems,
+				`出撃地点が {#chiten} 個で、パーティーの上限人数 {Config.Party.MaxMembers} と違う`
+			)
+		end
+		for number, ichi in chiten do
+			if not inside(ichi.x, ichi.z, 0, 0) then
+				table.insert(problems, `出撃地点 {number} が区画の範囲からはみ出す`)
 			end
 		end
 	end

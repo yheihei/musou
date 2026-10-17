@@ -66,7 +66,8 @@ local definitions: { [string]: Stage } = {
 		kukaku = "Iga1",
 		eventScenes = {},
 	},
-	-- 試験用ステージ。拠点5つの小さな戦場で、配置は Haichi.luau にある。窓口の Shutsugeki で出撃する
+	-- 試験用ステージ。拠点5つの小さな戦場で、配置と出撃地点は Haichi.luau にある。
+	-- 出撃前の画面の開発確認用の欄（SHIKEN_ENTRY）か、窓口の Shutsugeki で出撃する
 	Test = {
 		id = "Test",
 		displayName = "試験用ステージ",

@@ -1,4 +1,5 @@
 --!strict
+local Config = require("./Config")
 local Haichi = require("./Haichi")
 local Stages = require("./Stages")
 local testkit = require("@testkit")
@@ -99,6 +100,63 @@ test("区画からはみ出すイベントシーンの目印を見つける", fu
 		true
 	)
 end)
+
+test(
+	"区画からはみ出す出撃地点と、パーティーの上限人数と違う数の出撃地点を見つける",
+	function()
+		local haichi = testHaichi(function(copy)
+			local source = (Haichi.get("Test") :: Haichi.Haichi).shikenMejirushi :: Haichi.ShikenMejirushi
+			local shikenMejirushi = table.clone(source)
+			shikenMejirushi.shutsugekiChiten = {
+				{ x = 0, z = 112, facing = 0 },
+				{ x = 0, z = 450, facing = 0 },
+			}
+			copy.shikenMejirushi = shikenMejirushi
+		end)
+		local problems = Haichi.validate(haichi, TEST_STAGE)
+		expect(
+			contains(
+				problems,
+				`出撃地点が 2 個で、パーティーの上限人数 {Config.Party.MaxMembers} と違う`
+			)
+		).toBe(true)
+		expect(contains(problems, "出撃地点 2 が区画の範囲からはみ出す")).toBe(true)
+		expect(contains(problems, "出撃地点 1 が")).toBe(false)
+	end
+)
+
+-- #117。出撃した直後に、正面に敵軍の部隊の群れと拠点が見え、すぐには襲われない
+test(
+	"試験用ステージの出撃地点は、敵軍の部隊の開始の拠点を正面の実体化圏の内に見て、狙われない距離にある",
+	function()
+		local haichi = Haichi.get("Test") :: Haichi.Haichi
+		local mejirushi = haichi.shikenMejirushi :: Haichi.ShikenMejirushi
+		local chiten = mejirushi.shutsugekiChiten :: { Haichi.ShutsugekiIchi }
+		expect(#chiten).toBe(Config.Party.MaxMembers)
+		-- 個体は部隊の位置から Spread の円の中に出て、戦う相手がいなければ自分の位置から HomeRadius の内へ戻る
+		local reach = Config.GeninKotai.Spread + Config.GeninKotai.HomeRadius
+		for _, ichi in chiten do
+			local facingX, facingZ = Haichi.facingOf(ichi.facing)
+			local seen = {}
+			for _, butai in haichi.butai do
+				local kyoten = mejirushi.kyoten[butai.kyoten]
+				local dx, dz = kyoten.x - ichi.x, kyoten.z - ichi.z
+				local distance = math.sqrt(dx * dx + dz * dz)
+				if butai.gun == "Tekigun" then
+					expect(distance - reach > Config.EnemyAI.AggroRange).toBe(true)
+				end
+				if distance <= Config.Jittaikaken.AppearRadius then
+					table.insert(seen, butai.id)
+					-- 部隊の広がりの縁でも PopDistance より遠いので、視界の中に個体を出せる
+					expect(distance - Config.GeninKotai.Spread > Config.GeninKotai.PopDistance).toBe(true)
+					-- 体の向きから 30 度の内（出撃した直後のカメラは体の後ろから同じ向きを見る）
+					expect((dx * facingX + dz * facingZ) / distance > math.cos(math.rad(30))).toBe(true)
+				end
+			end
+			expect(seen).toEqual({ "Teki1" })
+		end
+	end
+)
 
 test("区画からはみ出す目印の位置を見つける", function()
 	local haichi = testHaichi(function(copy)
