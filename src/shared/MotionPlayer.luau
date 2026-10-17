@@ -7,7 +7,8 @@
 -- - 丸ごとの区間は頭から流す（今までと同じ）。hold なら終わりの姿で残し、くり返すトラックは Looped でくり返す
 -- - 丸ごとでない区間をくり返すときは、区間の終わりに着くたびに頭へ戻す
 -- - 行動を始めてからの経過（elapsed）があれば、その分だけ進めた位置から流す（くり返すトラックは進めない）
--- - 読み込みが済んでおらず長さが分からなければ、分かった時点で区間と速さを決め直す
+-- - 読み込みが済んでおらず長さが分からなければ、分かった時点で区間と速さを決め直す。長さはフレームごとに見る
+--   （AnimationTrack.Length は読み込みで変わっても GetPropertyChangedSignal の知らせが来ない。2026-10-17 に Studio で確かめた）
 -- - 同じトラックを流し直したら（同じクリップの別の区間など）、前の再生の終わりの予定は捨てる
 -- - 窓口の SetMotion で差し替えた行動のモーションは、Motions の ModuleScript の Attribute の Test に JSON で入る（tests で読む）。
 --   サーバーで書くとクライアントにも複製されるので、自分の行動（クライアント）と上忍と首領の型（サーバー）のどちらにも効く
@@ -40,6 +41,8 @@ MotionPlayer.TEST_ATTRIBUTE = "Test"
 local HOLD_MARGIN = 1 / 30
 -- 区間の終わりの予定を、この秒（実時間）だけ早める。予定が1フレーム遅れて呼ばれても、止める位置を通り過ぎないように
 local EARLY = 1 / 30
+-- 読み込みの前のトラックの長さが分かるまで待つ秒数。過ぎたら等速の丸ごとのまま
+local LENGTH_WAIT = 5
 
 -- トラックごとの再生の番号。流し直すたびに増やし、前の再生の予定を捨てる
 local plays: { [AnimationTrack]: number } = setmetatable({}, { __mode = "k" }) :: any
@@ -140,8 +143,14 @@ function MotionPlayer.play(track: AnimationTrack, options: Options)
 	local playedAt = os.clock()
 	apply(track, token, options, playedAt)
 	if track.Length <= 0 then
-		track:GetPropertyChangedSignal("Length"):Once(function()
-			apply(track, token, options, playedAt)
+		task.spawn(function()
+			local waited = 0
+			while track.Length <= 0 and waited < LENGTH_WAIT and plays[track] == token do
+				waited += task.wait()
+			end
+			if track.Length > 0 then
+				apply(track, token, options, playedAt)
+			end
 		end)
 	end
 end
