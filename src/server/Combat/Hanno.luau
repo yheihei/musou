@@ -21,6 +21,9 @@
 --   前の飛び方を引き継ぐ
 -- - 反応の状態を入れ替えたら（のけぞる・飛ぶ・倒れる・起き上がる・終わる）、個体の onStateChanged を呼ぶ
 --   （下忍の個体は、被弾の反応のモーションを流す。#88）
+-- - 倒れる・起き上がるの姿勢はスクリプトで決めるので、Humanoid の FallingDown と Ragdoll の状態は使わない（newBody で止める）。
+--   使うと、仰向けに寝かせた時点で FallingDown に入って固定の間も残り、起き上がって固定を外した後に物理でもう一度倒れ込む
+--   （約 1.3 秒、胴が 60〜75 度傾いて床へ沈む。#88 の 10/17 の計測）。固定を外すときにその状態が残っていれば立ち直らせる
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -124,6 +127,9 @@ end
 -- 個体の反応の入れ物を作る。立っているときの高さは今の Humanoid から求める
 function Hanno.newBody(model: Model, humanoid: Humanoid, root: BasePart, options: Options?): Body
 	local o = options or {}
+	-- 倒れる姿勢はスクリプトで決めるので、物理で倒れ込む状態に入らないようにする
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
 	return {
 		model = model,
 		humanoid = humanoid,
@@ -163,8 +169,20 @@ local function anchor(body: Body)
 	body.root.Anchored = true
 end
 
--- 固定を外し、物理をサーバーに持たせ直す
+-- 倒れ込んだまま物理に戻ると、もう一度倒れる Humanoid の状態
+local FALLEN_STATES = {
+	[Enum.HumanoidStateType.FallingDown] = true,
+	[Enum.HumanoidStateType.Ragdoll] = true,
+	[Enum.HumanoidStateType.Physics] = true,
+}
+
+-- 固定を外し、物理をサーバーに持たせ直す。倒れ込んだ状態が残っていれば、立ち直らせてから外す
 local function release(body: Body)
+	if body.humanoid.Health > 0 and FALLEN_STATES[body.humanoid:GetState()] then
+		body.humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+	end
+	body.root.AssemblyLinearVelocity = Vector3.zero
+	body.root.AssemblyAngularVelocity = Vector3.zero
 	body.root.Anchored = false
 	pcall(function()
 		body.root:SetNetworkOwner(nil)
