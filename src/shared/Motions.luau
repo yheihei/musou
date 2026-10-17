@@ -756,6 +756,17 @@ function Motions.geninReactionRestarts(previousKind: string?, kind: string?): bo
 	return kind ~= previousKind
 end
 
+-- 被弾の反応のモーションを、流している項目 previous（流していなければ nil）から item（止めるなら nil）へ移すときに
+-- 重ねる秒数。吹き飛び・打ち上げからダウンへ移るときだけ landFade、ほかは actionFade（#88）。
+-- Hanno は着地の瞬間に根元の部品を仰向けに回すので、重ねている間は飛ぶ反り（胴 39〜76 度）が仰向けの 90 度に足され、
+-- 胴が回りすぎて床へ沈む見込み（2026-10-17 の測定）。重ねずに切り替えて比べる（PM判断 2026-10-17）
+function Motions.geninReactionFadeOf(previous: string?, item: string?, actionFade: number, landFade: number): number
+	if item == "Down" and (previous == "Knockback" or previous == "Launch") then
+		return landFade
+	end
+	return actionFade
+end
+
 -- 反応の状態の種類 kind のときの、待機と移動のモーションの流し方。反応の最中でなければ体の速さで選ぶ（Speed）。
 -- のけぞりと起き上がりの間は、その場で止めているので待機にする（Idle）。飛んでいる間と倒れている間は流さない（None）
 function Motions.geninLocomotionMode(kind: string?): GeninLocomotionMode

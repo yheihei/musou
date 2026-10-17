@@ -47,6 +47,8 @@
 --   攻撃より上の優先度で1回流す。前の反応のモーションと攻撃のモーションは止め、反応が終わったら止める
 -- - 攻撃と被弾の反応は、項目の取得元の区間（Motions.geninSourceOf）を等速で流す（MotionPlayer）。攻撃は区間の終わりで止め、
 --   被弾の反応は区間の終わりの姿で、反応が終わるまで残す（倒れている間はダウンの終わりの姿のまま）
+-- - 被弾の反応のモーションは、前の反応のモーションから ActionFade 秒だけ重ねて移る。吹き飛び・打ち上げからダウンへ
+--   移るときだけ LandFade 秒（Motions.geninReactionFadeOf。窓口の SetGeninLandFade で差し替えて比べる）
 -- - 飛んでいる間と倒れている間と倒れた後は、待機と移動を止める。倒れたら攻撃も止める（被弾の反応は続ける）。
 --   体をプールへ返すときは、すべて止める（使い回した体は、何も流れていない状態から出る）
 -- - 読み込んだトラックは、体ごと・項目ごとに覚えて使い回す（プールをまたいでも残し、体を壊したら手放す）。
@@ -267,8 +269,9 @@ type MotionState = {
 	stillSince: number?,
 	-- 流している攻撃のトラック
 	attackTrack: AnimationTrack?,
-	-- 流している被弾の反応のトラック
+	-- 流している被弾の反応のトラックと項目（Flinch・Knockback・Launch・Down・GetUp）
 	reactionTrack: AnimationTrack?,
+	reactionItem: string?,
 }
 
 -- 毒の中身
@@ -334,6 +337,9 @@ local nextNumber = 1
 -- 体が動くか（敵軍の体はプレイヤーに近づいて攻撃し、部隊の下忍の個体は部隊について歩く）。
 -- 窓口の SetEnemyAI で切り替える（止めても攻撃の反応と毒は進む）
 local aiEnabled = true
+-- 窓口の SetGeninLandFade で差し替えた、吹き飛び・打ち上げからダウンへ移るときに重ねる秒数（nil は Config.luau の
+-- GeninMotion 節の LandFade。サーバーを止めるまで続く。確認用）
+local landFadeOverride: number? = nil
 -- 攻撃トークン。下忍はモデルの名前、プレイヤーは UserId の文字列で引く
 local tokens = KogekiToken.new()
 -- 最後に考えたときの、プレイヤーのキーごとの攻撃トークンの候補（窓口の DumpKogekiToken で出す）
@@ -718,12 +724,19 @@ local function playAttack(enemy: Enemy): boolean
 end
 
 -- 被弾の反応のモーション item を、攻撃より上の優先度で1回流す（nil なら止める）。前の反応のモーションは止め、
--- 反応を始めたら攻撃のモーションも止める。区間の終わりの姿で、次の反応か反応の終わりまで残す。ID が 0 の項目は流さない
+-- 反応を始めたら攻撃のモーションも止める。区間の終わりの姿で、次の反応か反応の終わりまで残す。ID が 0 の項目は流さない。
+-- 前の反応のモーションから重ねて移る秒数は Motions.geninReactionFadeOf（吹き飛び・打ち上げからダウンへは LandFade）
 local function playReaction(rig: Rig, item: string?)
 	local motion = rig.motion
-	local fade = Config.GeninMotion.ActionFade
+	local fade = Motions.geninReactionFadeOf(
+		motion.reactionItem,
+		item,
+		Config.GeninMotion.ActionFade,
+		landFadeOverride or Config.GeninMotion.LandFade
+	)
 	local previous = motion.reactionTrack
 	motion.reactionTrack = nil
+	motion.reactionItem = nil
 	if previous then
 		previous:Stop(fade)
 	end
@@ -747,6 +760,7 @@ local function playReaction(rig: Rig, item: string?)
 		hold = true,
 	})
 	motion.reactionTrack = track
+	motion.reactionItem = item
 end
 
 -- 反応（Hanno）の状態が変わったら、被弾の反応のモーションを流し（反応が終わったら止め）、待機と移動を決め直す。
@@ -784,6 +798,7 @@ local function stopMotions(rig: Rig)
 	motion.stillSince = nil
 	motion.attackTrack = nil
 	motion.reactionTrack = nil
+	motion.reactionItem = nil
 	for _, loaded in motion.tracks do
 		loaded.track:Stop(0)
 	end
@@ -1207,6 +1222,7 @@ local function createBody(template: Template): Model
 		stillSince = nil,
 		attackTrack = nil,
 		reactionTrack = nil,
+		reactionItem = nil,
 	}
 	rigs[model] = { template = template, humanoid = humanoid, root = root, uses = 0, motion = motion }
 	-- 体を壊したら、読み込んだトラックを手放す
@@ -1905,7 +1921,31 @@ function EnemyService.start()
 				pooledPlaying = pooledPlaying,
 				runPlayback = Motions.geninRunPlaybackOf(Config.Genin.WalkSpeed, Config.GeninMotion.RunSpeed),
 				temp = Motions.GeninTestContents,
+				fade = {
+					action = Config.GeninMotion.ActionFade,
+					land = landFadeOverride or Config.GeninMotion.LandFade,
+					landOverridden = landFadeOverride ~= nil,
+				},
 			})
+		end
+	)
+	DebugCommand.register(
+		"SetGeninLandFade",
+		"<秒|default>",
+		"下忍の被弾の反応のモーションを、吹き飛び・打ち上げからダウンへ移すときに重ねる秒数を差し替える（ほかの移り方は"
+			.. " GeninMotion 節の ActionFade のまま）。default で Config.luau の LandFade に戻す。差し替えはサーバーを止めるまで続く"
+			.. "（#88 の 0.1 秒と 0 秒を同じクリップで比べる用。確認用）",
+		function(value)
+			if type(value) == "string" and string.lower(value) == "default" then
+				landFadeOverride = nil
+				return `吹き飛び・打ち上げからダウンへ重ねる秒数を Config.luau の {Config.GeninMotion.LandFade} 秒に戻した`
+			end
+			local seconds = DebugCommand.toNumber(value, "秒数")
+			if not (seconds >= 0 and seconds <= 1) then
+				error(`秒数は 0〜1 で指定する（{tostring(value)}）`, 0)
+			end
+			landFadeOverride = seconds
+			return `吹き飛び・打ち上げからダウンへ重ねる秒数を {seconds} 秒にした（ほかは {Config.GeninMotion.ActionFade} 秒のまま）`
 		end
 	)
 	DebugCommand.register(

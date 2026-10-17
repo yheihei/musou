@@ -338,6 +338,7 @@ export type GeninMotionSection = {
 	RunSpeed: number,
 	LocomotionFade: number,
 	ActionFade: number,
+	LandFade: number,
 }
 
 export type ButaiSection = {
@@ -1950,6 +1951,9 @@ local Config: Config = {
 		RunSpeed = 16,
 		LocomotionFade = 0.2, -- 待機と移動のモーションを切り替えるときに、重ねて移る秒数（Roblox 標準の Animate と同じ）
 		ActionFade = 0.1, -- 攻撃と被弾の反応のモーションを始めるときと止めるときに、重ねて移る秒数
+		-- 吹き飛び・打ち上げのモーションからダウンのモーションへ移るときに、重ねて移る秒数（ほかの移り方は ActionFade）。
+		-- 重ねると、着地で仰向けに回した体に飛ぶ反りが足される見込み（Motions.geninReactionFadeOf）。0.1 と比べる仮の値
+		LandFade = 0,
 	},
 
 	-- 部隊。配置の構成（拠点・つながり・部隊）は Haichi.luau にあり、移動の計算は Butai.luau にある

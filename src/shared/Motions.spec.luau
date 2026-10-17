@@ -324,6 +324,24 @@ test(
 )
 
 test(
+	"被弾の反応を重ねる秒数は、吹き飛び・打ち上げからダウンへ移るときだけ着地の秒数",
+	function()
+		expect(Motions.geninReactionFadeOf("Knockback", "Down", 0.1, 0)).toBe(0)
+		expect(Motions.geninReactionFadeOf("Launch", "Down", 0.1, 0)).toBe(0)
+		-- ほかの移り方は今までどおり
+		expect(Motions.geninReactionFadeOf(nil, "Down", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Flinch", "Down", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Down", "GetUp", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Down", "Knockback", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Knockback", "Knockback", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Knockback", "Launch", 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("GetUp", nil, 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf("Knockback", nil, 0.1, 0)).toBe(0.1)
+		expect(Motions.geninReactionFadeOf(nil, nil, 0.1, 0)).toBe(0.1)
+	end
+)
+
+test(
 	"待機と移動は、反応の最中でなければ速さで選び、のけぞりと起き上がりの間は待機、飛んでいる間と倒れている間は流さない",
 	function()
 		expect(Motions.geninLocomotionMode(nil)).toBe("Speed")

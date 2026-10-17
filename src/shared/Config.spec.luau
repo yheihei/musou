@@ -1181,6 +1181,7 @@ local SNAPSHOT = {
 		RunSpeed = 16,
 		LocomotionFade = 0.2,
 		ActionFade = 0.1,
+		LandFade = 0,
 	},
 	Butai = {
 		Speed = 12,
