@@ -7,6 +7,7 @@ local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
 
 local Controllers = script:WaitForChild("Controllers")
 
+local InputLog = require(script:WaitForChild("InputLog"))
 local PartyClient = require(script:WaitForChild("PartyClient"))
 local TokugiClient = require(script:WaitForChild("TokugiClient"))
 local JukurendoClient = require(script:WaitForChild("JukurendoClient"))
@@ -36,6 +37,10 @@ JukurendoClient.start()
 -- 入室したらタイトル画面を出す。出撃前の画面と非公式の表記は、タイトル画面を閉じるまで出さないので、それらより先に始める
 TitleController.start()
 InputController.start()
+-- ゲームパッドの入力と、画面の操作が受けた入力を記録する（#148 の確認用。LocalPlayer の Attribute の GamepadLog）
+InputLog.start(function()
+	return TitleController.isOpen(), InputController.isActive()
+end)
 HUDController.start()
 BattleStatusController.start()
 MinimapController.start()

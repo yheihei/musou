@@ -134,3 +134,17 @@ test("ステージには選択画面に出す名前がある", function()
 		expect(#stage.displayName > 0).toBe(true)
 	end
 end)
+
+test("クランの試験用ステージを引け、ストーリーのステージは入らない", function()
+	for _, clan in Characters.clanIds do
+		for _, stage in Stages.shikenOf(clan) do
+			expect(stage.clan).toBe(clan)
+			expect(stage.shiken).toBe(true)
+		end
+	end
+	local iga = {}
+	for _, stage in Stages.shikenOf("Iga") do
+		table.insert(iga, stage.id)
+	end
+	expect(table.find(iga, "Test") ~= nil).toBe(true)
+end)

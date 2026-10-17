@@ -33,7 +33,8 @@
 --   倒したプレイヤーの救援数を足す（PlayerService.addKyuensu）
 -- - 耐久が変わると taikyuChanged、制圧すると seiatsu で知らせる
 -- - 耐久を書き換える前（制圧の前）に、addTaikyuListener で登録した関数を呼ぶ（秘計の爆破罠）
--- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）
+-- - 窓口の ShowKyoten で、拠点の範囲に軍の色の板と、拠点 ID と耐久を出す（確認用）。
+--   建物の無い区画のステージ（Stages.luau の kyotenBan）では、出撃したときから出す（拠点を見て分かるように。#117）
 -- - 窓口の WarpToKyoten で、プレイヤーを拠点の中心へ移す（秘計の確認用）
 
 local HttpService = game:GetService("HttpService")
@@ -50,6 +51,7 @@ local Kyoten = require(ReplicatedStorage.Shared.Kyoten)
 local Mejirushi = require(ReplicatedStorage.Shared.Mejirushi)
 local Minimap = require(ReplicatedStorage.Shared.Minimap)
 local StagePhase = require(ReplicatedStorage.Shared.StagePhase)
+local Stages = require(ReplicatedStorage.Shared.Stages)
 local DebugCommand = require(script.Parent.Parent.DebugCommand)
 local ButaiService = require(script.Parent.ButaiService)
 local EnemyService = require(script.Parent.EnemyService)
@@ -90,6 +92,8 @@ local hojuButai: { [string]: string } = {}
 local hojuElapsed: { [string]: number } = {}
 local folder: Folder
 local markerFolder: Folder? = nil
+-- 出撃したステージが拠点の板を出すステージか（Stages.luau の kyotenBan）
+local stageBan = false
 local showMarkers = false
 
 local taikyuChangedEvent = Instance.new("BindableEvent")
@@ -209,7 +213,7 @@ local function publish(entry: Entry)
 	local koritsu, neverIsolated = koritsuOf(state.id)
 	config:SetAttribute("Koritsu", koritsu)
 	config:SetAttribute("NeverIsolated", neverIsolated)
-	if showMarkers then
+	if markerFolder then
 		updateMarker(entry)
 	end
 end
@@ -555,16 +559,42 @@ local function tick(dt: number)
 	end
 end
 
--- 拠点をすべて片付ける
+-- 拠点の板を出す入れ物を用意し、今の拠点の板を出す
+local function showMarkerFolder()
+	if not markerFolder then
+		local created = Instance.new("Folder")
+		created.Name = "KyotenMarkers"
+		created.Parent = workspace
+		markerFolder = created
+	end
+	for _, entry in entries do
+		updateMarker(entry)
+	end
+end
+
+-- 拠点の板を消す
+local function hideMarkerFolder()
+	local container = markerFolder
+	if container then
+		container:Destroy()
+		markerFolder = nil
+	end
+end
+
+-- 拠点をすべて片付ける。窓口で出していなければ、ステージで出した拠点の板も消す
 local function clear()
 	table.clear(entries)
 	table.clear(hojuButai)
 	table.clear(hojuElapsed)
 	haichi = nil
+	stageBan = false
 	folder:ClearAllChildren()
 	local container = markerFolder
 	if container then
 		container:ClearAllChildren()
+	end
+	if not showMarkers then
+		hideMarkerFolder()
 	end
 end
 
@@ -594,6 +624,12 @@ local function onStarted(info: StageService.StartInfo)
 		if butai.hoshin == "Boei" and find(butai.kyoten) and not hojuButai[butai.kyoten] then
 			hojuButai[butai.kyoten] = butai.id
 		end
+	end
+	-- 建物の無い区画のステージでは、拠点の範囲を板で見せる
+	local stage = Stages.get(info.stageId)
+	stageBan = stage ~= nil and stage.kyotenBan == true
+	if stageBan or showMarkers then
+		showMarkerFolder()
 	end
 	loadedEvent:Fire(info.stageId)
 end
@@ -695,22 +731,13 @@ local function registerDebugCommands()
 		function(value)
 			showMarkers = value == true or value == "true"
 			if showMarkers then
-				if not markerFolder then
-					local created = Instance.new("Folder")
-					created.Name = "KyotenMarkers"
-					created.Parent = workspace
-					markerFolder = created
-				end
-				for _, entry in entries do
-					updateMarker(entry)
-				end
+				showMarkerFolder()
 				return `拠点 {#entries} 個の範囲を出した`
 			end
-			local container = markerFolder
-			if container then
-				container:Destroy()
-				markerFolder = nil
+			if stageBan then
+				return "このステージは拠点の板を出すステージなので、拠点の範囲を残した（出撃している間は消さない）"
 			end
+			hideMarkerFolder()
 			return "拠点の範囲を消した"
 		end
 	)

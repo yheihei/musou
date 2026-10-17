@@ -1,5 +1,6 @@
 --!strict
 local Characters = require("./Characters")
+local Haichi = require("./Haichi")
 local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
 local SelectionRules = require("./SelectionRules")
@@ -31,9 +32,43 @@ test(
 	end
 )
 
-test("リーダーはロビーで開放済みのステージを選べる", function()
-	expect(SelectionRules.checkStage(LEADER, "Iga1", { "Iga1" })).toBe(nil)
+-- 配置の準備ができたストーリーのステージと、できていないストーリーのステージ（Haichi.isReady）
+local function storyStages(ready: boolean): { string }
+	local result = {}
+	for id, stage in Stages.definitions do
+		if not stage.shiken and Haichi.isReady(id) == ready then
+			table.insert(result, id)
+		end
+	end
+	return result
+end
+
+test("リーダーはロビーで、開放済みで配置の準備ができたステージを選べる", function()
+	for _, id in storyStages(true) do
+		expect(SelectionRules.checkStage(LEADER, id, { id })).toBe(nil)
+	end
 end)
+
+test(
+	"配置の準備ができていないステージは、開放済みでも準備中として選べない",
+	function()
+		for _, id in storyStages(false) do
+			expect(SelectionRules.checkStage(LEADER, id, { id })).toBe("StageNotReady")
+			expect(SelectionRules.checkStageId(id, { id })).toBe("StageNotReady")
+		end
+	end
+)
+
+test(
+	"試験用ステージは、開発確認用の欄を出している間、開放を問わずリーダーが選べる",
+	function()
+		expect(Stages.SHIKEN_ENTRY).toBe(true)
+		expect(Haichi.isReady("Test")).toBe(true)
+		expect(SelectionRules.checkStage(LEADER, "Test", {})).toBe(nil)
+		expect(SelectionRules.checkStage(MEMBER, "Test", {})).toBe("NotLeader")
+		expect(SelectionRules.keepsStage("Test", {})).toBe(true)
+	end
+)
 
 test("リーダー以外はステージを選べない", function()
 	expect(SelectionRules.checkStage(MEMBER, "Iga1", { "Iga1" })).toBe("NotLeader")
@@ -58,14 +93,20 @@ test("ロビー以外の拒否はリーダーかどうかより先に返す", fu
 	expect(SelectionRules.checkStage(at(MEMBER, { phase = "Battle" }), "Nowhere", {})).toBe("NotLobby")
 end)
 
-test("新しいリーダーが開放していないステージの選択は外す", function()
-	expect(SelectionRules.keepsStage("Iga1", { "Iga1" })).toBe(true)
-	expect(SelectionRules.keepsStage("Iga1", {})).toBe(false)
-	expect(SelectionRules.keepsStage(nil, {})).toBe(true)
-end)
+test(
+	"新しいリーダーが開放していないステージと、配置の準備ができていないステージの選択は外す",
+	function()
+		for _, id in storyStages(true) do
+			expect(SelectionRules.keepsStage(id, { id })).toBe(true)
+		end
+		expect(SelectionRules.keepsStage("Iga1", { "Iga1" })).toBe(Haichi.isReady("Iga1"))
+		expect(SelectionRules.keepsStage("Iga1", {})).toBe(false)
+		expect(SelectionRules.keepsStage(nil, {})).toBe(true)
+	end
+)
 
 test("ステージの選択の拒否の理由は Remote の拒否の理由に含まれる", function()
-	for _, reason in { "NotLobby", "Waiting", "NotLeader", "UnknownStage", "StageLocked" } do
+	for _, reason in { "NotLobby", "Waiting", "NotLeader", "UnknownStage", "StageLocked", "StageNotReady" } do
 		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
 	end
 end)
@@ -368,18 +409,27 @@ test("覚えていない秘計の拒否の理由は Remote の拒否の理由に
 end)
 
 test(
-	"リーダーは、開放済みのステージを選び、全員がキャラクターを選んだ後に出撃できる",
+	"リーダーは、開放済みで配置の準備ができたステージを選び、全員がキャラクターを選んだ後に出撃できる",
 	function()
-		expect(SelectionRules.checkShutsugeki(LEADER, "Iga1", { "Iga1" }, true)).toBe(nil)
+		for _, id in storyStages(true) do
+			expect(SelectionRules.checkShutsugeki(LEADER, id, { id }, true)).toBe(nil)
+		end
+		expect(SelectionRules.checkShutsugeki(LEADER, "Test", {}, true)).toBe(nil)
 	end
 )
+
+test("配置の準備ができていないステージには出撃できない", function()
+	for _, id in storyStages(false) do
+		expect(SelectionRules.checkShutsugeki(LEADER, id, { id }, true)).toBe("StageNotReady")
+	end
+end)
 
 test("リーダー以外は出撃できない", function()
 	expect(SelectionRules.checkShutsugeki(MEMBER, "Iga1", { "Iga1" }, true)).toBe("NotLeader")
 end)
 
 test("キャラクターを選んでいないメンバーがいると出撃できない", function()
-	expect(SelectionRules.checkShutsugeki(LEADER, "Iga1", { "Iga1" }, false)).toBe("MembersNotReady")
+	expect(SelectionRules.checkShutsugeki(LEADER, "Test", {}, false)).toBe("MembersNotReady")
 end)
 
 test("ステージを選ぶ前と、開放していないステージには出撃できない", function()
@@ -394,7 +444,9 @@ test("ロビー以外のフェーズと待機中の人は出撃できない", fu
 end)
 
 test("出撃の拒否の理由は Remote の拒否の理由に含まれる", function()
-	for _, reason in { "NotLeader", "StageNotSelected", "StageLocked", "UnknownStage", "MembersNotReady" } do
+	for _, reason in
+		{ "NotLeader", "StageNotSelected", "StageLocked", "StageNotReady", "UnknownStage", "MembersNotReady" }
+	do
 		expect(table.find(RemoteSchema.rejectReasons, reason :: any) ~= nil).toBe(true)
 	end
 end)

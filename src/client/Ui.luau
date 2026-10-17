@@ -1,14 +1,20 @@
 --!strict
 -- 画面の共通部品。Instance の生成、書体と文字の大きさ、画面の配色、ボタン、
--- 入力の種類とボタン表記の切り替え、ゲームパッドでボタンを選んでよくなるまでの待ち、ゲームパッドやキーの操作で選んでいる部品の移動、
+-- 入力の種類とボタン表記の切り替え、ゲームパッドのボタンの絵、ゲームパッドでボタンを選んでよくなるまでの待ち、
+-- ゲームパッドやキーの操作で選んでいる部品の移動、
 -- ScreenGui の重なり順、タッチの配置、タッチで遊んでいるか、安全な範囲の大きさと小さい画面（スマホ横画面）の部品をまとめる。
 -- 軍・クラン・キャラクターの色は ReplicatedStorage.Shared.Colors に置く。
+--
+-- - ゲームパッドで選んでいるボタン（フォーカス）は、ボタンの外側に水色の枠を出す。確定した選択（金色の枠と「選択中」）と
+--   見分けられるように、色と位置を分ける（#131）
+-- - 窓口の SetInputKind が Player の Attribute（InputMap.KIND_ATTRIBUTE）に入力の種類を書いたら、その種類に決めて扱う（確認用）
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
+local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local TouchLayout = require(ReplicatedStorage.Shared.TouchLayout)
 
@@ -65,6 +71,10 @@ Ui.Color = {
 	Panel = Color3.fromRGB(30, 30, 30),
 	Accent = Color3.fromRGB(255, 220, 150),
 	Selected = Color3.fromRGB(255, 200, 60),
+	-- 確定した選択の背景。金色の枠（Selected）と合わせて、フォーカスの枠（Focus）と見分ける
+	SelectedFill = Color3.fromRGB(70, 55, 20),
+	-- ゲームパッドやキーの操作で選んでいるボタンの枠（フォーカス）
+	Focus = Color3.fromRGB(90, 210, 255),
 	Disabled = Color3.fromRGB(90, 90, 90),
 	Gauge = Color3.fromRGB(255, 140, 40),
 	GaugeFull = Color3.fromRGB(255, 60, 30),
@@ -97,18 +107,23 @@ function Ui.screenGui(name: string, layer: number, children: { Instance }?): Scr
 	}, children)
 end
 
--- ゲームパッドで選んでいるボタンを囲む枠。ボタンの SelectionImageObject に使う
+-- ゲームパッドで選んでいるボタン（フォーカス）を囲む枠のボタンからの離れ（ピクセル）。ボタンの金色の枠（確定した選択）の外に出す
+local FOCUS_OUTSET = 5
+
+-- ゲームパッドで選んでいるボタンを囲む枠。ボタンの SelectionImageObject に使う。
+-- 確定した選択の金色の枠と重ならないよう、ボタンの外側に水色で出す
 local selectionFrame: Frame? = nil
 local function getSelectionFrame(): Frame
 	if not selectionFrame then
 		selectionFrame = Ui.create("Frame", {
 			Name = "SelectionFrame",
 			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
+			Position = UDim2.fromOffset(-FOCUS_OUTSET, -FOCUS_OUTSET),
+			Size = UDim2.new(1, FOCUS_OUTSET * 2, 1, FOCUS_OUTSET * 2),
 		}, {
-			Ui.create("UICorner", { CornerRadius = UDim.new(0, 8) }),
+			Ui.create("UICorner", { CornerRadius = UDim.new(0, 10) }),
 			Ui.create("UIStroke", {
-				Color = Ui.Color.Selected,
+				Color = Ui.Color.Focus,
 				Thickness = 3,
 				ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 			}),
@@ -191,14 +206,31 @@ local function initialKind(): InputKind
 	return "Keyboard"
 end
 
-local currentKind: InputKind = initialKind()
+-- 窓口の SetInputKind で決めた入力の種類（Player の Attribute）。無ければ nil
+local function overrideKind(): InputKind?
+	local value = Players.LocalPlayer:GetAttribute(InputMap.KIND_ATTRIBUTE)
+	if value == "Keyboard" or value == "Gamepad" or value == "Touch" then
+		return value
+	end
+	return nil
+end
+
+-- 実際の入力から決めた種類と、窓口で決めた種類を当てた今の種類
+local detectedKind: InputKind = initialKind()
+local currentKind: InputKind = overrideKind() or detectedKind
 local kindChanged = Instance.new("BindableEvent")
 
-local function setKind(kind: InputKind)
+local function applyKind()
+	local kind = overrideKind() or detectedKind
 	if kind ~= currentKind then
 		currentKind = kind
 		kindChanged:Fire(kind)
 	end
+end
+
+local function setKind(kind: InputKind)
+	detectedKind = kind
+	applyKind()
 end
 
 -- ゲームパッドをつないだらゲームパッド、最後に使った入力が変わったらその種類にする
@@ -216,6 +248,7 @@ UserInputService.LastInputTypeChanged:Connect(function(inputType)
 		setKind(kind)
 	end
 end)
+Players.LocalPlayer:GetAttributeChangedSignal(InputMap.KIND_ATTRIBUTE):Connect(applyKind)
 
 -- 今の入力の種類
 function Ui.inputKind(): InputKind
@@ -230,11 +263,28 @@ end
 -- ゲームパッドで画面のボタンを選べるようになる、入室からの秒数（time()）と、キャラクターの Humanoid を待つ秒数の上限
 local SELECT_AFTER_START = 3
 local HUMANOID_TIMEOUT = 10
+-- 決定のボタン（A）を離すのを待つ秒数の上限
+local RELEASE_TIMEOUT = 3
+
+-- 画面を切り替えた（タイトル画面を閉じた）後、次の画面でボタンを選ぶまであける秒数。
+-- 連打した A が次の画面の最初のボタンを押してしまわないように（#148）
+Ui.MENU_SWITCH_GUARD = 0.4
+
+-- どれかのゲームパッドで決定のボタン（A）を押しているか
+local function isKetteiHeld(): boolean
+	for _, gamepad in UserInputService:GetConnectedGamepads() do
+		if UserInputService:IsGamepadButtonDown(gamepad, Enum.KeyCode.ButtonA) then
+			return true
+		end
+	end
+	return false
+end
 
 -- ゲームパッドで画面のボタンを選んでよくなる（GuiService.SelectedObject を設定してよくなる）まで待つ。
 -- 入室直後に選ぶと、ゲームパッドをつないだままテストプレイを始めたときに Studio が落ちる。
 -- そのため、入室から SELECT_AFTER_START 秒たち、キャラクターが出るまで待つ。
 -- notBefore（time() の時刻）を渡すと、その時刻になるまでも待つ。
+-- 決定のボタン（A）を押したままなら、離すまで待つ（長押しした A が、選んだボタンを押さないように）。
 -- 待った後に、画面を閉じていないかなどを呼び出し元で確かめてから選ぶ
 function Ui.waitForSelectable(notBefore: number?)
 	if not game:IsLoaded() then
@@ -247,6 +297,29 @@ function Ui.waitForSelectable(notBefore: number?)
 	if rest > 0 then
 		task.wait(rest)
 	end
+	local deadline = os.clock() + RELEASE_TIMEOUT
+	while isKetteiHeld() and os.clock() < deadline do
+		task.wait()
+	end
+end
+
+-- 今すぐ GuiService.SelectedObject を設定してよいか（入室から SELECT_AFTER_START 秒たち、キャラクターがいる）。
+-- 押した操作に合わせてすぐ選ぶとき（戻るなど）に使う。待てるときは Ui.waitForSelectable で待つ
+function Ui.canSelectNow(): boolean
+	local character = Players.LocalPlayer.Character
+	return time() >= SELECT_AFTER_START and character ~= nil and character:FindFirstChildOfClass("Humanoid") ~= nil
+end
+
+-- ゲームパッドのボタンの絵（Roblox が今つないでいるゲームパッドに合わせて返す。Xbox と PlayStation の絵がある）。
+-- 取れなければ nil（呼び出し元は InputMap の表記の文字を出す）
+function Ui.glyph(keyCode: Enum.KeyCode): string?
+	local ok, image = pcall(function()
+		return UserInputService:GetImageForKeyCode(keyCode)
+	end)
+	if ok and type(image) == "string" and image ~= "" then
+		return image
+	end
+	return nil
 end
 
 -- screen の中で、ゲームパッドやキーの操作で選んでいる部品（GuiService.SelectedObject）が別の部品へ移ったときに呼ぶ。

@@ -8,6 +8,8 @@
 -- - 他のメンバーが選んだキャラクターには選んだ人の名前を、本人が選んだキャラクターには「選択中」を添える
 -- - ステージを選ぶ前は、ストーリーのクランのキャラクターを暗くして並べる
 -- - 顔は顔グラフィックの登録表（KaoGraphic）の通常の表情。登録の無いキャラクターは顔の枠を出さない
+-- - 本人が選んだキャラクターは金色の枠と背景にする（SectionKit.paintChoice。ゲームパッドで選んでいる水色の枠と見分ける）
+-- - ゲームパッドでこの欄へ移ったら、選んだキャラクター、無ければ最初に選べるキャラクターを選ぶ。決めたら秘計の欄へ進める
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -136,11 +138,17 @@ function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 	local function onPress(characterId: string)
 		SoundPlayer.playUi("Confirm")
 		context.send("SelectCharacter", characterId)
+		context.pressed("Character", function(state)
+			local me = SectionKit.me(state)
+			return me ~= nil and me.character == characterId
+		end)
 	end
 
-	-- 並べているクランと、その札
+	-- 並べているクランと、その札。本人が選んだキャラクターと、選べるキャラクター（届いた PartyState で決める）
 	local shownClan: Characters.ClanId? = nil
 	local cards: { Card } = {}
+	local mineId: string? = nil
+	local selectable: { [string]: boolean } = {}
 	local function showClan(clan: Characters.ClanId)
 		if shownClan == clan then
 			return
@@ -180,19 +188,19 @@ function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 			then `{Characters.clanNames[clan]}のキャラクターから選ぶ`
 			else "先にリーダーがステージを選ぶ"
 
+		mineId = if me then me.character else nil
+		table.clear(selectable)
 		for _, card in cards do
 			local mine = me ~= nil and me.character == card.id
 			local reject = SelectionRules.checkCharacter(requester, card.id, stage, takenByOthers)
 			local dimmed = reject ~= nil and not mine
-			card.button.BackgroundColor3 = if dimmed then Ui.Color.Disabled else Ui.Color.Panel
-			card.button.BackgroundTransparency = if dimmed then 0.35 else 0.1
+			selectable[card.id] = reject == nil
+			SectionKit.paintChoice(card.button, card.stroke, mine, dimmed)
 			card.name.TextColor3 = if dimmed then Ui.Color.Disabled:Lerp(Ui.Color.Text, 0.5) else Ui.Color.Text
 			card.detail.TextColor3 = card.name.TextColor3
 			if card.face then
 				card.face.ImageTransparency = if dimmed then 0.5 else 0
 			end
-			card.stroke.Color = if mine then Ui.Color.Selected else Ui.Color.Accent
-			card.stroke.Thickness = if mine then 3 else 1
 			if mine then
 				card.status.Text = "選択中"
 				card.status.TextColor3 = Ui.Color.Selected
@@ -206,12 +214,35 @@ function CharacterSection.build(context: SectionKit.Context): SectionKit.Section
 		end
 	end
 
+	-- この欄へ移ったときに選ぶ札。選んだキャラクター、無ければ最初に選べるキャラクター
+	local function focus(): GuiObject?
+		local first: GuiObject? = nil
+		for _, card in cards do
+			if card.id == mineId then
+				return card.button
+			end
+			if not first and selectable[card.id] then
+				first = card.button
+			end
+		end
+		return first
+	end
+
 	return {
 		frame = frame,
 		update = update,
 		firstButton = function(): GuiObject?
-			return if cards[1] then cards[1].button else nil
+			return focus() or (if cards[1] then cards[1].button else nil)
 		end,
+		steps = {
+			{
+				name = "Character",
+				focus = focus,
+				owns = function(object: GuiObject): boolean
+					return object:IsDescendantOf(content)
+				end,
+			},
+		},
 	}
 end
 

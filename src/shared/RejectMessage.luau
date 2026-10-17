@@ -3,6 +3,7 @@
 
 local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
+local Stages = require("./Stages")
 
 local RejectMessage = {}
 
@@ -15,6 +16,10 @@ local messages: { [RemoteSchema.RejectReason]: string } = {
 	StoryLocked = "リーダーがまだ開放していないストーリーです",
 	UnknownStage = "そのステージはありません",
 	StageLocked = "リーダーがまだ開放していないステージです",
+	-- 次にできること（開発確認用の試験用ステージ）も添える。開発確認用の欄を出していなければ添えない
+	StageNotReady = if Stages.SHIKEN_ENTRY
+		then "このステージは拠点と部隊の配置が準備中です。下の「開発確認用」の試験用ステージなら出撃できます"
+		else "このステージは拠点と部隊の配置が準備中です",
 	StageNotSelected = "先にリーダーがステージを選びます",
 	UnknownCharacter = "そのキャラクターはいません",
 	NotPlayable = "このキャラクターは選べません",

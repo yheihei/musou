@@ -15,12 +15,16 @@
 --   （計算は ReplicatedStorage.Shared.KinkyuKaihi）。出したときにプレイヤーの位置で効果音（KinkyuKaihi）を鳴らす
 -- - イベントシーンのフェーズの間は行動を受け付けない。ガードを離す入力だけは受け、押したままにならないようにする。
 --   受けておいた先行入力も捨て、ガードを押したままでもガードに戻さない（始まっていた行動は最後まで進める）
+-- - ロビーとリザルトのフェーズの間と、待機中の人（出撃中に入ってロビーで待つ人）からも、ガードを離す入力のほかは受け付けない。
+--   タイトル画面や出撃前の画面の操作のボタンで、後ろの奥義や攻撃が出て奥義ゲージが減らないように（#148。窓口の Action も同じ）
 -- - 秘計の枚の番号は、onHikei で登録した関数（HikeiService）に渡す。行動の状態遷移には入れない
 -- - 受け取った行動は、プレイヤーごとに新しいものから RECEIVED_MAX 件を覚え、窓口の DumpAction で返す
 --   （スマホの操作ボタンなど、入力から Remotes.Action が届いたことを確かめるため）
 -- - 窓口の SetTouchControls で、スマホの戦闘の操作ボタンを出すかを Player の Attribute の TouchControls に書く
 -- - 窓口の SetScreenSize で、本人の画面の配置に使う画面の大きさを Player の Attribute（SmallScreen.SIZE_ATTRIBUTE）に書く
 --   （Studio でスマホの小さい画面の配置を確かめる用。デバイスエミュレーターを使わずに、安全な範囲の左上にその大きさで並ぶ）
+-- - 窓口の SetInputKind で、本人の画面のボタン表記とゲームパッドで選ぶボタンの扱いを決める入力の種類を、Player の Attribute
+--   （InputMap.KIND_ATTRIBUTE）に書く（Studio の模擬入力はキーボード扱いで届くので、ゲームパッドの画面を確かめる用）
 -- - 窓口の DumpMotions で、モーションの取得元（Motions.luau の MeshySources。Meshy のクリップと区間）と、
 --   項目ごとに入っている ID を確かめる（#67・#68・#120・#121・#88。Roblox へ公開するクリップの一覧にもなる）
 -- - 窓口の SetMotion で、武器種の行動と奥義のモーションの項目の ID と区間を差し替える（MotionPlayer.setTests。
@@ -35,6 +39,7 @@ local RunService = game:GetService("RunService")
 local ActionState = require(ReplicatedStorage.Shared.ActionState)
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local Config = require(ReplicatedStorage.Shared.Config)
+local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local KinkyuKaihi = require(ReplicatedStorage.Shared.KinkyuKaihi)
 local MotionPlayer = require(ReplicatedStorage.Shared.MotionPlayer)
 local Motions = require(ReplicatedStorage.Shared.Motions)
@@ -344,32 +349,38 @@ local function remember(player: Player, action: unknown, argument: unknown, vali
 	end
 end
 
-local function onAction(player: Player, action: unknown, argument: unknown)
+-- 戦闘の行動を受け付けるか。戦闘のフェーズの、待機中でない人だけ（ロビー・リザルト・イベントシーンと待機中の人は受け付けない）
+local function acceptsBattleInput(player: Player): boolean
+	return PartyService.getPhase() == "Battle" and not PartyService.isWaiting(player)
+end
+
+-- 行動を受ける。受け付けたら true（行動を始められるかは状態遷移が決める）、検証で捨てたか戦闘の外で捨てたら false
+local function onAction(player: Player, action: unknown, argument: unknown): boolean
 	local valid = Actions.validate(action, argument)
 	remember(player, action, argument, valid)
 	if logActions then
 		print(`[Action] {player.Name} {tostring(action)} {tostring(argument)}{if valid then "" else " 拒否"}`)
 	end
 	if not valid then
-		return
+		return false
 	end
 	local releasing = action == Actions.Guard and argument == false
-	if PartyService.getPhase() == "EventScene" and not releasing then
-		return
+	if not releasing and not acceptsBattleInput(player) then
+		return false
 	end
 	if action == Actions.Hikei then
 		local handler = hikeiHandler
 		if handler then
 			handler(player, argument :: number)
 		end
-		return
+		return true
 	end
 	if releasing then
 		releaseGuard(player)
-		return
+		return true
 	end
 	if not getHumanoid(player) then
-		return
+		return true
 	end
 	if action == Actions.Guard then
 		guardHeld[player] = true
@@ -379,12 +390,13 @@ local function onAction(player: Player, action: unknown, argument: unknown)
 	local input = action :: string
 	if ActionService.isAirborne(player) then
 		if input == Actions.ChargeKogeki then
-			return
+			return true
 		elseif input == Actions.Attack then
 			input = ActionService.JumpAttack
 		end
 	end
 	advance(player, input)
+	return true
 end
 
 local function track(player: Player)
@@ -412,9 +424,13 @@ local function registerDebugCommands()
 			elseif action == Actions.Hikei and type(first) == "string" then
 				argument = tonumber(first)
 			end
-			onAction(player, action, argument)
-			local valid = Actions.validate(action, argument)
-			return `{player.Name} の {tostring(action)} を{if valid then "受け付けた" else "拒否した"}`
+			local accepted = onAction(player, action, argument)
+			if accepted then
+				return `{player.Name} の {tostring(action)} を受け付けた`
+			elseif Actions.validate(action, argument) then
+				return `{player.Name} の {tostring(action)} を拒否した（戦闘のフェーズの出撃メンバーでない。今のフェーズ {PartyService.getPhase()}）`
+			end
+			return `{player.Name} の {tostring(action)} を拒否した`
 		end
 	)
 	DebugCommand.register(
@@ -463,6 +479,23 @@ local function registerDebugCommands()
 			end
 			player:SetAttribute(TouchControls.ATTRIBUTE, mode)
 			return `{player.Name} のスマホの操作ボタンを {mode} にした`
+		end
+	)
+	DebugCommand.register(
+		"SetInputKind",
+		"<プレイヤー名> <Keyboard|Gamepad|Touch|auto>",
+		"本人の画面のボタン表記とゲームパッドで選ぶボタンの扱いを、その入力の種類に決める（auto で実際の入力に戻す。Studio の模擬入力はキーボード扱いで届くので、ゲームパッドの画面を確かめる用）",
+		function(name, value)
+			local player = DebugCommand.findPlayer(name)
+			if value == "auto" then
+				player:SetAttribute(InputMap.KIND_ATTRIBUTE, nil)
+				return `{player.Name} の入力の種類を実際の入力に戻した`
+			end
+			if value ~= "Keyboard" and value ~= "Gamepad" and value ~= "Touch" then
+				error(`Keyboard・Gamepad・Touch・auto のどれかで指定する（{tostring(value)}）`, 0)
+			end
+			player:SetAttribute(InputMap.KIND_ATTRIBUTE, value)
+			return `{player.Name} の入力の種類を {value} にした`
 		end
 	)
 	DebugCommand.register(

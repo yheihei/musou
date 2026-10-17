@@ -346,3 +346,15 @@ test("上限を超える持ち込み、重なり、定義に無い秘計を見�
 		"ShikenShuryo の秘計の持ち込みを受け付けない（UnknownHikei）",
 	})
 end)
+
+test(
+	"配置の構成があり、拠点と部隊のあるステージだけを出撃できる準備ができたとみなす",
+	function()
+		expect(Haichi.isReady("Test")).toBe(true)
+		expect(Haichi.isReady("Nowhere")).toBe(false)
+		for id in Stages.definitions do
+			local haichi = Haichi.get(id)
+			expect(Haichi.isReady(id)).toBe(haichi ~= nil and #haichi.kyoten > 0 and #haichi.butai > 0)
+		end
+	end
+)

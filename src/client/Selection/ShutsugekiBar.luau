@@ -135,6 +135,17 @@ function ShutsugekiBar.build(context: SectionKit.Context): SectionKit.Section
 		firstButton = function(): GuiObject?
 			return button
 		end,
+		steps = {
+			{
+				name = "Shutsugeki",
+				focus = function(): GuiObject?
+					return button
+				end,
+				owns = function(object: GuiObject): boolean
+					return object == button or object:IsDescendantOf(button)
+				end,
+			},
+		},
 	}
 end
 

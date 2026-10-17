@@ -55,6 +55,7 @@ export type RejectReason =
 	| "StoryLocked" -- リーダーが開放したステージの無いストーリー
 	| "UnknownStage" -- 存在しないステージ
 	| "StageLocked" -- リーダーが開放していないステージ
+	| "StageNotReady" -- 拠点と部隊の配置がまだ無いステージ（出撃しても空の戦場になる）
 	| "StageNotSelected" -- ステージを選ぶ前の選択
 	| "UnknownCharacter" -- 存在しないキャラクター
 	| "NotPlayable" -- 操作キャラクターではない
@@ -84,6 +85,7 @@ RemoteSchema.rejectReasons = {
 	"StoryLocked",
 	"UnknownStage",
 	"StageLocked",
+	"StageNotReady",
 	"StageNotSelected",
 	"UnknownCharacter",
 	"NotPlayable",

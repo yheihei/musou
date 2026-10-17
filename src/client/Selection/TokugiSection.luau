@@ -71,6 +71,19 @@ function TokugiSection.build(context: SectionKit.Context): SectionKit.Section
 		firstButton = function(): GuiObject?
 			return button
 		end,
+		-- 特技は選ばなくても出撃できるので、決定の後に進めるときと戻るときは飛ばす（スティックでは選べる）
+		steps = {
+			{
+				name = "Tokugi",
+				focus = function(): GuiObject?
+					return button
+				end,
+				owns = function(object: GuiObject): boolean
+					return object == button or object:IsDescendantOf(button)
+				end,
+				optional = true,
+			},
+		},
 	}
 end
 

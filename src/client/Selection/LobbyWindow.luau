@@ -7,16 +7,21 @@
 --   ほかの画面が後ろの画面のボタンを選んだら、窓の中の最初のボタンに戻す
 -- - 開いたとき、ゲームパッドなら firstButton（無ければ閉じるボタン）を選ぶ。
 --   閉じたとき、開く前に選んでいたボタンがまだ見えていればそれに戻す
--- - 閉じるボタンは、マウス・タッチ・ゲームパッド（A）で押せる。閉じる音は Cancel
+-- - 閉じるボタンは、マウス・タッチ・ゲームパッド（A）で押せる。ゲームパッドの B（InputMap の Modoru）でも閉じる
+--   （開いている間だけ、出撃前の画面の戻るより高い優先度で割り当てる。#131）。閉じるボタンには B の絵を添える。閉じる音は Cancel
 -- - 小さい画面（スマホ横画面。Ui.isSmallScreen）では、文字とボタンを縮めずに、窓を安全な範囲（トップバーとノッチの内側）
 --   いっぱいに置き（ReplicatedStorage.Shared.SmallScreen の windowOf）、閉じるボタンを指で押せる高さにする。
 --   下の文は案内の文に重ねて出し、その分だけ中身のスクロールを広くする
 
+local ContextActionService = game:GetService("ContextActionService")
 local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local InputMap = require(ReplicatedStorage.Shared.InputMap)
 local SmallScreen = require(ReplicatedStorage.Shared.SmallScreen)
 local SoundPlayer = require(ReplicatedStorage.Shared.SoundPlayer)
+local InputLog = require(script.Parent.Parent.InputLog)
+local MenuHint = require(script.Parent.Parent.MenuHint)
 local Ui = require(script.Parent.Parent.Ui)
 
 local LobbyWindow = {}
@@ -36,6 +41,8 @@ local SMALL_CLOSE_HEIGHT = 44
 local BACKDROP_TRANSPARENCY = 0.45
 -- 下の文を出しておく秒数
 local MESSAGE_TIME = 4
+-- B で閉じる操作の優先度。出撃前の画面の戻る（High）より先に受ける
+local CLOSE_PRIORITY = Enum.ContextActionPriority.High.Value + 5
 
 export type Options = {
 	-- ScreenGui の名前
@@ -97,6 +104,7 @@ function LobbyWindow.build(options: Options): Window
 		AnchorPoint = Vector2.new(1, 0),
 		Text = "閉じる",
 	})
+	MenuHint.decorate(closeButton, "閉じる", { binding = InputMap.Modoru, text = "閉じる" })
 	local hint = Ui.text({
 		Name = "Hint",
 		Position = UDim2.fromOffset(PADDING, HEADER_HEIGHT),
@@ -220,6 +228,10 @@ function LobbyWindow.build(options: Options): Window
 	-- 開く前に選んでいたボタン
 	local previous: GuiObject? = nil
 	local messageToken = 0
+	-- B で閉じる操作の名前（窓ごと）
+	local closeAction = `{options.name}Modoru`
+	-- 閉じる（後で定義する。B の割り当てから呼ぶ）
+	local closeWindow: () -> () = function() end
 
 	local function showMessage(text: string)
 		messageToken += 1
@@ -246,6 +258,14 @@ function LobbyWindow.build(options: Options): Window
 		messageToken += 1
 		message.Text = ""
 		screen.Enabled = true
+		ContextActionService:BindActionAtPriority(closeAction, function(_, state, input)
+			if state == Enum.UserInputState.Begin then
+				InputLog.note(`窓を閉じる（{if input then input.KeyCode.Name else "?"}）`)
+				SoundPlayer.playUi("Cancel")
+				closeWindow()
+			end
+			return Enum.ContextActionResult.Sink
+		end, false, CLOSE_PRIORITY, Enum.KeyCode.ButtonB)
 		-- 後ろの画面のボタンを選んだままにしない
 		if Ui.inputKind() == "Gamepad" or previous then
 			selectFirst()
@@ -257,6 +277,7 @@ function LobbyWindow.build(options: Options): Window
 			return
 		end
 		opened = false
+		ContextActionService:UnbindAction(closeAction)
 		messageToken += 1
 		message.Text = ""
 		screen.Enabled = false
@@ -268,6 +289,7 @@ function LobbyWindow.build(options: Options): Window
 		previous = nil
 	end
 
+	closeWindow = close
 	closeButton.Activated:Connect(function()
 		SoundPlayer.playUi("Cancel")
 		close()

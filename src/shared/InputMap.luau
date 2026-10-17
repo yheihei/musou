@@ -1,6 +1,8 @@
 --!strict
 -- 操作と入力の対応表。PC（キーボードとマウス）とゲームパッドの割り当てと、画面に出すボタン表記を持つ。
 -- 割り当てを変えるときは、この表だけを直す。InputController と HUD の操作の案内はここから引く。
+-- 戦闘の操作（all）と画面の操作（menuAll。タイトル画面・出撃前の画面・窓）に分ける。戦闘の操作は戦闘のフェーズの出撃メンバー
+-- だけが送り、それ以外の間（ロビー・タイトル画面など）は割り当てを外して画面の操作に回す（InputController。#148）。
 --
 -- - 入力は "KeyCode.<名前>" か "UserInputType.<名前>" の文字列で書く（Lune のテストで読むため）
 -- - 右クリック（UserInputType.MouseButton2）は右ドラッグのカメラの回転と両立させるため、
@@ -87,14 +89,45 @@ InputMap.Skip = {
 	labels = { Keyboard = "F", Gamepad = "R1" },
 } :: Operation
 
--- タイトル画面の「はじめる」。タイトル画面を出している間だけ受け付ける。画面のボタンのクリックとタッチのほか、Enter でも押せる。
--- ゲームパッドは、選んだ「はじめる」を A で押す（Roblox 標準の画面の操作）ので、割り当ては持たずに表記だけを持つ
+-- 画面の操作。戦闘の操作の割り当てを外している間（戦闘のフェーズの外）だけ受け付けるので、戦闘の操作と同じボタンを使ってよい。
+-- ゲームパッドの決定（選んだボタンを A で押す）と選ぶボタンの移動（スティックと十字キー）は Roblox 標準の画面の操作なので、
+-- 決定は表記だけを持つ。START と SELECT は Roblox のメニューと画面の操作の切り替えに使われるので割り当てない
+
+-- タイトル画面の「はじめる」。タイトル画面を出している間だけ受け付ける。画面のボタンのクリックとタッチのほか、Enter と、
+-- ゲームパッドの A・B・X・Y のどれでも押せる（決定と思って押したボタンがどれでも進めるように。#148）。表記は A
 InputMap.Hajimeru = {
 	trigger = "Press",
 	keyboard = { "KeyCode.Return", "KeyCode.KeypadEnter" },
-	gamepad = {},
+	gamepad = { "KeyCode.ButtonA", "KeyCode.ButtonB", "KeyCode.ButtonX", "KeyCode.ButtonY" },
 	labels = { Keyboard = "Enter", Gamepad = "A" },
 } :: Operation
+
+-- 決定。表記だけを持つ（押すのは Roblox 標準の画面の操作。マウスはクリック、ゲームパッドは選んだボタンを A）
+InputMap.Kettei = {
+	keyboard = {},
+	gamepad = {},
+	labels = { Keyboard = "クリック", Gamepad = "A" },
+} :: Binding
+
+-- 戻る。出撃前の画面では選ぶボタンを前の欄へ戻し、窓（特技ツリー）では閉じる。マウスでは画面のボタンで戻るので、ゲームパッドだけ
+InputMap.Modoru = {
+	trigger = "Press",
+	keyboard = {},
+	gamepad = { "KeyCode.ButtonB" },
+	labels = { Keyboard = "", Gamepad = "B" },
+} :: Operation
+
+-- 出撃前の画面で、選ぶボタンを出撃ボタンへ移す（出撃は移した後に A で押す）。ゲームパッドだけ
+InputMap.ShutsugekiHe = {
+	trigger = "Press",
+	keyboard = {},
+	gamepad = { "KeyCode.ButtonY" },
+	labels = { Keyboard = "", Gamepad = "Y" },
+} :: Operation
+
+-- 窓口の SetInputKind が書く Player の Attribute（"Keyboard"・"Gamepad"・"Touch"）。書いてある間、画面のボタン表記と
+-- ゲームパッドで選ぶボタンの扱いを、その入力の種類に決めて出す（Studio の模擬入力はキーボード扱いで届き、表記が切り替わらないため）
+InputMap.KIND_ATTRIBUTE = "InputKind"
 
 -- ジャンプと秘計の表記。ジャンプは Roblox 標準の割り当てなので表記だけを持つ。秘計は枚をまとめて出す
 InputMap.JumpLabels = { Keyboard = "Space", Gamepad = "A" } :: Labels
@@ -126,26 +159,38 @@ function InputMap.parse(input: string): (("KeyCode" | "UserInputType")?, string?
 	return nil, nil
 end
 
--- 割り当てのすべての入力を、操作の名前と一緒に列挙する（テストと重なりの確認に使う）
-function InputMap.all(): { { name: string, device: "keyboard" | "gamepad", input: string } }
+export type Entry = { name: string, device: "keyboard" | "gamepad", input: string }
+
+local function addEntries(result: { Entry }, name: string, binding: Binding)
+	for _, input in binding.keyboard do
+		table.insert(result, { name = name, device = "keyboard" :: "keyboard", input = input })
+	end
+	for _, input in binding.gamepad do
+		table.insert(result, { name = name, device = "gamepad" :: "gamepad", input = input })
+	end
+end
+
+-- 戦闘の操作（とイベントシーンのスキップ）のすべての入力を、操作の名前と一緒に列挙する（テストと重なりの確認に使う）
+function InputMap.all(): { Entry }
 	local result = {}
-	local function add(name: string, binding: Binding)
-		for _, input in binding.keyboard do
-			table.insert(result, { name = name, device = "keyboard" :: "keyboard", input = input })
-		end
-		for _, input in binding.gamepad do
-			table.insert(result, { name = name, device = "gamepad" :: "gamepad", input = input })
-		end
-	end
-	add("Attack", InputMap.Attack)
-	add("ChargeKogeki", InputMap.ChargeKogeki)
-	add("Guard", InputMap.Guard)
-	add("Ougi", InputMap.Ougi)
+	addEntries(result, "Attack", InputMap.Attack)
+	addEntries(result, "ChargeKogeki", InputMap.ChargeKogeki)
+	addEntries(result, "Guard", InputMap.Guard)
+	addEntries(result, "Ougi", InputMap.Ougi)
 	for slot, binding in InputMap.Hikei do
-		add(`Hikei{slot}`, binding)
+		addEntries(result, `Hikei{slot}`, binding)
 	end
-	add("Skip", InputMap.Skip)
-	add("Hajimeru", InputMap.Hajimeru)
+	addEntries(result, "Skip", InputMap.Skip)
+	return result
+end
+
+-- 画面の操作のすべての入力を、操作の名前と一緒に列挙する（テストと重なりの確認に使う）
+function InputMap.menuAll(): { Entry }
+	local result = {}
+	addEntries(result, "Hajimeru", InputMap.Hajimeru)
+	addEntries(result, "Kettei", InputMap.Kettei)
+	addEntries(result, "Modoru", InputMap.Modoru)
+	addEntries(result, "ShutsugekiHe", InputMap.ShutsugekiHe)
 	return result
 end
 

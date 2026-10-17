@@ -12,6 +12,9 @@
 -- - タッチの操作ボタンは TouchControlsController が出す。ジャンプは Roblox 標準の入力（Space・A・標準のジャンプボタン）のまま
 -- - 秘計の 1〜3 キーと重なる道具の持ち物欄は消す
 -- - setEnabled(false) の間（イベントシーンの再生中）は何も送らない。止めるときに押していた通常攻撃とガードは離したことにする
+-- - 戦闘の操作は、戦闘のフェーズの出撃メンバー（待機中でない人）の間だけ割り当てて送る（PartyClient で決める）。
+--   ロビー・タイトル画面・リザルト・イベントシーンの間は割り当てを外し、B（奥義）・十字キー（秘計）・X・Y・L1 を画面の操作
+--   （Roblox 標準の選ぶボタンの移動と、InputMap の画面の操作）に回す。タイトル画面や出撃前の画面の後ろで奥義などが出ないように（#148）
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
@@ -22,6 +25,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Actions = require(ReplicatedStorage.Shared.Actions)
 local InputMap = require(ReplicatedStorage.Shared.InputMap)
+local PartyClient = require(script.Parent.Parent.PartyClient)
 
 local InputController = {}
 
@@ -46,11 +50,17 @@ local guardHolders: { [Source]: boolean } = {}
 local attackLoop = 0
 -- 入力を送るか。イベントシーンの再生中は false
 local enabled = true
+-- 戦闘の操作を割り当てて受け付けているか（戦闘のフェーズの出撃メンバーの間だけ true）
+local active = false
+local activeChanged = Instance.new("BindableEvent")
+
+-- 戦闘の操作を受け付けているかが変わったときに、受け付けているかで発火する
+InputController.activeChanged = activeChanged.Event
 
 type InputEnum = Enum.KeyCode | Enum.UserInputType
 
 local function send(action: Actions.Action, argument: any?)
-	if enabled then
+	if enabled and active then
 		remote:FireServer(action, argument)
 	end
 end
@@ -114,16 +124,26 @@ function InputController.hikei(slot: number)
 	send(Actions.Hikei, slot)
 end
 
+-- 押しっぱなしの通常攻撃をやめ、押していたガードは離したことにする
+local function releaseAll()
+	table.clear(attackHolders)
+	if isHeld(guardHolders) then
+		table.clear(guardHolders)
+		remote:FireServer(Actions.Guard, false)
+	end
+end
+
 -- 入力を送るかを切り替える。止めるときは、押しっぱなしの通常攻撃をやめ、押していたガードは離したことにする
 function InputController.setEnabled(value: boolean)
 	if not value and enabled then
-		table.clear(attackHolders)
-		if isHeld(guardHolders) then
-			table.clear(guardHolders)
-			remote:FireServer(Actions.Guard, false)
-		end
+		releaseAll()
 	end
 	enabled = value
+end
+
+-- 戦闘の操作を受け付けているか（戦闘のフェーズの出撃メンバーの間）
+function InputController.isActive(): boolean
+	return active
 end
 
 -- 対応表の入力を Enum に直す。右クリックは別に扱うので、含まれていたかを2つ目に返す
@@ -252,9 +272,17 @@ local function disableBackpack()
 	warn("InputController: 持ち物欄を消せなかった")
 end
 
-function InputController.start()
-	remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Action") :: RemoteEvent
+-- 戦闘の操作の割り当ての名前（外すときに使う）
+local function combatActionNames(): { string }
+	local names = { "Attack", "Guard", "ChargeKogeki", "Ougi" }
+	for slot in InputMap.Hikei do
+		table.insert(names, `Hikei{slot}`)
+	end
+	return names
+end
 
+local function bindCombat()
+	table.clear(rightClickHandlers)
 	bindAttack()
 	bindGuard()
 	bindPress("ChargeKogeki", InputMap.ChargeKogeki, InputController.chargeKogeki)
@@ -264,8 +292,45 @@ function InputController.start()
 			InputController.hikei(slot)
 		end)
 	end
+end
+
+local function unbindCombat()
+	for _, name in combatActionNames() do
+		ContextActionService:UnbindAction(name)
+	end
+	table.clear(rightClickHandlers)
+end
+
+-- 本人が戦闘のフェーズの出撃メンバー（待機中でない人）か
+local function inBattle(): boolean
+	local state = PartyClient.get()
+	local me = PartyClient.me()
+	return state ~= nil and state.phase == "Battle" and me ~= nil and not me.waiting
+end
+
+-- 戦闘の操作を受け付けるかを PartyState に合わせる。外すときは押していた通常攻撃とガードを離したことにする
+local function refreshActive()
+	local next = inBattle()
+	if next == active then
+		return
+	end
+	if next then
+		bindCombat()
+	else
+		unbindCombat()
+		releaseAll()
+	end
+	active = next
+	activeChanged:Fire(next)
+end
+
+function InputController.start()
+	remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Action") :: RemoteEvent
+
 	watchRightClick()
 	watchKinkyuKaihi()
+	PartyClient.changed:Connect(refreshActive)
+	refreshActive()
 	task.spawn(disableBackpack)
 end
 

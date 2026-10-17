@@ -5,7 +5,9 @@
 -- - 選択はロビーのフェーズでだけ受け付け、待機中の人からは受け付けない
 -- - ストーリーはリーダーだけが、4つのクランのストーリーのうち、リーダーが開放したステージのあるものから選べる。
 --   ステージがまだ無いストーリーは準備中として選べない
--- - ステージはリーダーだけが、リーダーの開放済みのステージから選べる
+-- - ステージはリーダーだけが、リーダーの開放済みのステージから選べる。拠点と部隊の配置がまだ無いステージ
+--   （Haichi.isReady。出撃しても空の戦場になる）は準備中として選べず、出撃もできない（#117）
+-- - 試験用ステージは、出撃前の画面に開発確認用の欄を出している間（Stages.SHIKEN_ENTRY）、開放を問わずリーダーが選べる
 -- - キャラクターはステージを選んだ後に、そのストーリーのクランの操作キャラクターから選べる。
 --   そのステージの首領と NPC、パーティーの他のメンバーが選んだキャラクターは選べない
 -- - 秘計は1枚ずつ選ぶか外す。本人が覚えた秘計から、持ち込みの上限まで、パーティーの他のメンバーと重ならずに選べる。
@@ -15,6 +17,7 @@
 --   秘計の枚数は出撃の条件にしない
 
 local Characters = require("./Characters")
+local Haichi = require("./Haichi")
 local Hikei = require("./Hikei")
 local RemoteSchema = require("./RemoteSchema")
 local Stages = require("./Stages")
@@ -109,16 +112,27 @@ function SelectionRules.shownStory(
 	return Characters.clanIds[1]
 end
 
--- 定義表にあり、リーダーが開放済みのステージか
-local function checkStageId(stageId: string, unlocked: { string }): Reject?
-	if not Stages.get(stageId) then
+-- ステージそのものを選べるか。定義表にあり、リーダーが開放済み（試験用ステージは開発確認用の欄を出している間）で、
+-- 配置の準備ができているか。リーダーかどうかとフェーズは見ない。unlocked はリーダーの開放済みのステージ。
+-- 画面でステージを暗くするか（未開放か準備中か）を決めるのにも使う
+function SelectionRules.checkStageId(stageId: string, unlocked: { string }): Reject?
+	local stage = Stages.get(stageId)
+	if not stage then
 		return "UnknownStage"
 	end
-	if not table.find(unlocked, stageId) then
+	if stage.shiken then
+		if not Stages.SHIKEN_ENTRY then
+			return "UnknownStage"
+		end
+	elseif not table.find(unlocked, stageId) then
 		return "StageLocked"
+	end
+	if not Haichi.isReady(stageId) then
+		return "StageNotReady"
 	end
 	return nil
 end
+local checkStageId = SelectionRules.checkStageId
 
 -- ステージの選択。unlocked はリーダーの開放済みのステージ
 function SelectionRules.checkStage(requester: Requester, stageId: string, unlocked: { string }): Reject?
@@ -132,9 +146,10 @@ function SelectionRules.checkStage(requester: Requester, stageId: string, unlock
 	return checkStageId(stageId, unlocked)
 end
 
--- リーダーが代わったときなどに、選んでいるステージを残すか。リーダーが開放していなければ外す
+-- リーダーが代わったときなどに、選んでいるステージを残すか。リーダーが開放していない（試験用ステージは開発確認用の欄を
+-- 出していない）か、配置の準備ができていなければ外す
 function SelectionRules.keepsStage(stageId: string?, unlocked: { string }): boolean
-	return stageId == nil or table.find(unlocked, stageId) ~= nil
+	return stageId == nil or checkStageId(stageId, unlocked) == nil
 end
 
 -- ストーリーのクランで選べるキャラクターか。選べなければ理由を返す（ステージの首領と NPC、他のメンバーとの重なりは見ない）

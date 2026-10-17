@@ -9,6 +9,8 @@
 -- - 他のメンバーが選んだ秘計は暗くし、選んだ人の名前を添える
 -- - 熟練度の記録が届くまでは、読み込んでいる旨だけを出す。保存済みの記録を読めなかったときは、その旨を添える
 -- - ボタン表記は入力の種類（キーボードかゲームパッド）で切り替える
+-- - 本人が選んだ秘計は金色の枠と背景にする（SectionKit.paintChoice。ゲームパッドで選んでいる水色の枠と見分ける）
+-- - ゲームパッドでこの欄へ移ったら、最初に選んだ秘計、無ければ最初の秘計を選ぶ。持ち込みの上限まで選んだら出撃ボタンへ進める
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -211,6 +213,13 @@ function HikeiSection.build(context: SectionKit.Context): SectionKit.Section
 		local selected = table.find(mine, id) == nil
 		SoundPlayer.playUi(if selected then "Confirm" else "Cancel")
 		context.send("SelectHikei", id, selected)
+		-- 上限の枚数を選び終えたら、出撃ボタンへ進める
+		if selected and #mine + 1 >= Hikei.MOCHIKOMI_MAX then
+			context.pressed("Hikei", function(state)
+				local me = SectionKit.me(state)
+				return me ~= nil and #me.hikei >= Hikei.MOCHIKOMI_MAX
+			end)
+		end
 	end
 	for order, keito in Jukurendo.keitoList do
 		local block = buildKeito(keito, order, onPress)
@@ -251,12 +260,9 @@ function HikeiSection.build(context: SectionKit.Context): SectionKit.Section
 				local slot = table.find(mine, card.id)
 				local owner = ownerOf[card.id]
 				local dimmed = owner ~= nil
-				card.button.BackgroundColor3 = if dimmed then Ui.Color.Disabled else Ui.Color.Panel
-				card.button.BackgroundTransparency = if dimmed then 0.35 else 0.1
+				SectionKit.paintChoice(card.button, card.stroke, slot ~= nil, dimmed)
 				card.name.TextColor3 = if dimmed then Ui.Color.Disabled:Lerp(Ui.Color.Text, 0.5) else Ui.Color.Text
 				card.description.TextColor3 = card.name.TextColor3
-				card.stroke.Color = if slot then Ui.Color.Selected else Ui.Color.Accent
-				card.stroke.Thickness = if slot then 3 else 1
 				if slot then
 					card.badge.Text = `{slot}枚目  {slotLabel(slot)}`
 					card.badge.TextColor3 = Ui.Color.Selected
@@ -277,22 +283,46 @@ function HikeiSection.build(context: SectionKit.Context): SectionKit.Section
 	end)
 	render()
 
+	-- 見えている最初の秘計の枚
+	local function firstCard(): GuiObject?
+		for _, block in blocks do
+			for _, card in block.cards do
+				if block.frame.Visible and card.button.Visible then
+					return card.button
+				end
+			end
+		end
+		return nil
+	end
+
+	-- この欄へ移ったときに選ぶ枚。最初に選んだ秘計、無ければ見えている最初の秘計
+	local function focus(): GuiObject?
+		for _, block in blocks do
+			for _, card in block.cards do
+				if card.id == mine[1] and block.frame.Visible and card.button.Visible then
+					return card.button
+				end
+			end
+		end
+		return firstCard()
+	end
+
 	return {
 		frame = frame,
 		update = function(state: RemoteSchema.PartyState)
 			lastState = state
 			render()
 		end,
-		firstButton = function(): GuiObject?
-			for _, block in blocks do
-				for _, card in block.cards do
-					if block.frame.Visible and card.button.Visible then
-						return card.button
-					end
-				end
-			end
-			return nil
-		end,
+		firstButton = firstCard,
+		steps = {
+			{
+				name = "Hikei",
+				focus = focus,
+				owns = function(object: GuiObject): boolean
+					return object:IsDescendantOf(content)
+				end,
+			},
+		},
 	}
 end
 

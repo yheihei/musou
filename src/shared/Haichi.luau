@@ -190,6 +190,13 @@ function Haichi.get(stageId: string): Haichi?
 	return definitions[stageId]
 end
 
+-- 出撃できるだけの配置があるか（#117）。配置の構成（拠点・つながり・部隊）が無いステージは、出撃しても敵も拠点も無い
+-- 空の戦場になるので、選択と出撃の前に準備中として断る（SelectionRules）。目印の欠けは読み込むときの警告で知らせる
+function Haichi.isReady(stageId: string): boolean
+	local haichi = definitions[stageId]
+	return haichi ~= nil and #haichi.kyoten > 0 and #haichi.butai > 0
+end
+
 -- つながりを向きに関係なく見分けるためのキー
 function Haichi.pairKey(kyotenA: string, kyotenB: string): string
 	if kyotenA < kyotenB then

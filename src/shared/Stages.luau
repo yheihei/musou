@@ -2,7 +2,8 @@
 -- ストーリーとステージの定義表。ステージ選択・キャラクター選択・進行の保存が共通で引く。
 -- ストーリーはクランごとに1本なので、クラン ID で表す。首領はこの表にだけ持つ。
 -- イベントシーンの ID は、各シーンを作る issue で登録する。
--- 試験用ステージ（shiken）はストーリーに属さず、順番を 0 にする。選択画面と進行（開放とクリア）には出さない。
+-- 試験用ステージ（shiken）はストーリーに属さず、順番を 0 にする。進行（開放とクリア）には出さない。
+-- 出撃前の画面には、SHIKEN_ENTRY の間だけ「開発確認用」として出す（#117。ストーリーのステージとは分けて並べる）。
 
 local Characters = require("./Characters")
 local Gun = require("./Gun")
@@ -40,8 +41,10 @@ export type Stage = {
 	-- 区画名（Workspace.Stages の下のフォルダ名）
 	kukaku: string,
 	eventScenes: EventScenes,
-	-- 試験用ステージか。ストーリーに属さず、選択画面と進行に出さない
+	-- 試験用ステージか。ストーリーに属さず、進行に出さない。出撃前の画面には開発確認用として出す（SHIKEN_ENTRY）
 	shiken: boolean?,
+	-- 拠点の範囲に軍の色の板と、拠点の名前と耐久を出すか（建物の無い区画で、拠点を見て分かるように）
+	kyotenBan: boolean?,
 }
 
 local Stages = {}
@@ -79,10 +82,17 @@ local definitions: { [string]: Stage } = {
 		kukaku = "Test",
 		eventScenes = {},
 		shiken = true,
+		-- 区画は平らな床だけなので、拠点の範囲を板で見せる
+		kyotenBan = true,
 	},
 }
 
 Stages.definitions = definitions
+
+-- 出撃前の画面に、試験用ステージを「開発確認用」として出すか（#117）。
+-- 配置の準備ができたストーリーのステージが無い間、敵と拠点のある戦場へ通常の入口から出られるようにする。
+-- 選べるのはリーダーで、開放の有無を問わない。一般公開（#163）の前に false にする
+Stages.SHIKEN_ENTRY = true
 
 function Stages.get(id: string): Stage?
 	return definitions[id]
@@ -113,6 +123,20 @@ function Stages.storyOf(clan: ClanId): { Stage }
 	end
 	table.sort(result, function(a, b)
 		return a.order < b.order
+	end)
+	return result
+end
+
+-- クランの試験用ステージ（出撃前の画面の開発確認用の欄に、そのクランのストーリーと一緒に出す）。ID の順
+function Stages.shikenOf(clan: ClanId): { Stage }
+	local result = {}
+	for _, stage in definitions do
+		if stage.clan == clan and stage.shiken then
+			table.insert(result, stage)
+		end
+	end
+	table.sort(result, function(a, b)
+		return a.id < b.id
 	end)
 	return result
 end

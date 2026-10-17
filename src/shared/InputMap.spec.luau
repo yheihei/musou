@@ -116,22 +116,66 @@ test("スキップは押したときに1回送り、取り消しの入力は無�
 	expect(names).toEqual({ "KeyCode.F", "KeyCode.ButtonR1" })
 end)
 
+test("はじめるは Enter と、ゲームパッドの A・B・X・Y のどれでも押せ、表記は A", function()
+	expect(InputMap.Hajimeru.trigger).toBe("Press")
+	expect(InputMap.Hajimeru.keyboard).toEqual({ "KeyCode.Return", "KeyCode.KeypadEnter" })
+	expect(InputMap.Hajimeru.gamepad).toEqual({
+		"KeyCode.ButtonA",
+		"KeyCode.ButtonB",
+		"KeyCode.ButtonX",
+		"KeyCode.ButtonY",
+	})
+	expect(InputMap.Hajimeru.labels).toEqual({ Keyboard = "Enter", Gamepad = "A" })
+end)
+
+test("画面の操作は戦闘の操作の一覧に入れない", function()
+	for _, entry in InputMap.all() do
+		expect(table.find({ "Hajimeru", "Kettei", "Modoru", "ShutsugekiHe" }, entry.name)).toBe(nil)
+	end
+end)
+
 test(
-	"はじめるは Enter で押す。ゲームパッドは選んだボタンを A で押すので、割り当てを持たずに表記だけを持つ",
+	"画面の操作の中では、1つの入力を2つの操作に割り当てない（はじめるはタイトル画面だけで使う）",
 	function()
-		expect(InputMap.Hajimeru.trigger).toBe("Press")
-		expect(InputMap.Hajimeru.keyboard).toEqual({ "KeyCode.Return", "KeyCode.KeypadEnter" })
-		expect(InputMap.Hajimeru.gamepad).toEqual({})
-		expect(InputMap.Hajimeru.labels).toEqual({ Keyboard = "Enter", Gamepad = "A" })
-		local names = {}
-		for _, entry in InputMap.all() do
-			if entry.name == "Hajimeru" then
-				table.insert(names, entry.input)
+		local owner: { [string]: string } = {}
+		local duplicates = {}
+		for _, entry in InputMap.menuAll() do
+			if entry.name ~= "Hajimeru" then
+				if owner[entry.input] and owner[entry.input] ~= entry.name then
+					table.insert(duplicates, entry.input)
+				end
+				owner[entry.input] = entry.name
 			end
 		end
-		expect(names).toEqual({ "KeyCode.Return", "KeyCode.KeypadEnter" })
+		expect(duplicates).toEqual({})
 	end
 )
+
+test(
+	"画面の操作は Roblox のメニュー（START）と画面の操作の切り替え（SELECT）とスティックを使わない",
+	function()
+		for _, entry in InputMap.menuAll() do
+			local kind = InputMap.parse(entry.input)
+			expect(kind ~= nil).toBe(true)
+			expect(table.find({
+				"KeyCode.ButtonStart",
+				"KeyCode.ButtonSelect",
+				"KeyCode.Thumbstick1",
+				"KeyCode.Thumbstick2",
+			}, entry.input)).toBe(nil)
+		end
+	end
+)
+
+test("決定は表記だけ、戻るは B、出撃へは Y", function()
+	expect(InputMap.Kettei.keyboard).toEqual({})
+	expect(InputMap.Kettei.gamepad).toEqual({})
+	expect(InputMap.Kettei.labels).toEqual({ Keyboard = "クリック", Gamepad = "A" })
+	expect(InputMap.Modoru.gamepad).toEqual({ "KeyCode.ButtonB" })
+	expect(InputMap.Modoru.labels.Gamepad).toBe("B")
+	expect(InputMap.ShutsugekiHe.gamepad).toEqual({ "KeyCode.ButtonY" })
+	expect(InputMap.ShutsugekiHe.labels.Gamepad).toBe("Y")
+end)
 
 test(
 	"画面の操作の案内は設計のボタン表と同じ順で、どれにも PC とゲームパッドの表記がある",
