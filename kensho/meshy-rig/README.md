@@ -198,3 +198,17 @@ python3 -I kensho/meshy-rig/tools/hikaku_player.py ~/musou-work/characters/jin ~
 - `hikaku_player.py` は、全項目の一覧（指定の抜き方の値）と、代表技（PM判断の手裏剣 6段目・刀 C4・緊急回避・ジャンプ攻撃・ダウンと起き上がり）の3通りの表を出す。技の名前を引数の後ろに並べると、その技の3通りを出す
 - 値は R15 の脚の長さとの比（約 1.6）を掛けたスタッド。足は休息の姿勢の足の骨の高さからの差で、構えの姿では水平・原本でも -0.1〜-0.3 ほどになる
 
+
+### ジャンプ攻撃を落下と合わせて比べる・区間を延ばす候補を比べる（PM判断 2026-10-17 の次作業）
+
+```bash
+python3 -I kensho/meshy-rig/tools/hikaku_fall.py ~/musou-work/characters/jin ~/musou-work/techniques.json
+```
+
+```bash
+python3 -I kensho/meshy-rig/tools/hikaku_kukan.py ~/musou-work/characters/jin ~/musou-work/techniques.json
+```
+
+- `hikaku_fall.py` は、ジャンプ攻撃（手裏剣・刀）を、ゲームの落下（行動の始めから Startup の間、Jump 節の DiveSpeed で真下へ落とし、着いたら地面に立つ）と合わせて流し、足の地面からの高さと腰の上下を、落ち始めの高さ（頂点・半分・低い）と抜き方（水平・全軸）ごとに出す。2026-10-17 の Studio の測定（頂点 7.3 で入れると 0.09 秒で着地）に合わせた形で、着地の沈みは入れていない
+- `hikaku_kukan.py` は、終わりに腰が下がったままの5つの技（手裏剣 C4・刀 C4・毒手裏剣・刀 6段目・刀 C3）を、今の区間と、腰が立ち上がるところ（休息の姿勢から -0.5 より上）まで終わりを延ばした候補で比べる。行動の長さと判定の出る間は変えず、候補は速く流す。手と足の骨のうちいちばん速く動く時刻を命中の姿とみなし、判定の出る間に入るかとずれを出す（目安。見た目の確認の代わりにはしない）
+- どちらも刃の GLB の順運動学の値で、実FBX と R15 の見た目は検証用のプレースで確かめる（#16）
