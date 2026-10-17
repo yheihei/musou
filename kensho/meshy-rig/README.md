@@ -180,3 +180,21 @@ musou のテストプレイの中で、刃の GLB から骨 24 本を組んで�
 
 ゲームで流すには、`AnimationRigData` を付けたクリップを公開して ID を入れる。
 公開は開発者のアカウントで行う。
+
+## 操作キャラクターの技を比べる（#67・#68・#120・#121）
+
+操作キャラクターの技のクリップを、ゲームの行動の長さで流したときの腰と足と胴を、腰の移動の抜き方（原本・水平・全軸）ごとに比べる。
+Studio は使わず、刃の GLB の順運動学で計算する。
+
+```bash
+lune run kensho/meshy-rig/tools/techniques > ~/musou-work/techniques.json
+```
+
+```bash
+python3 -I kensho/meshy-rig/tools/hikaku_player.py ~/musou-work/characters/jin ~/musou-work/techniques.json
+```
+
+- `techniques.luau` は、musou の `src/shared` から技の区間・行動の長さ・判定の出る間・前進・抜き方（`Motions.luau` の `strip`）を書き出す
+- `hikaku_player.py` は、全項目の一覧（指定の抜き方の値）と、代表技（PM判断の手裏剣 6段目・刀 C4・緊急回避・ジャンプ攻撃・ダウンと起き上がり）の3通りの表を出す。技の名前を引数の後ろに並べると、その技の3通りを出す
+- 値は R15 の脚の長さとの比（約 1.6）を掛けたスタッド。足は休息の姿勢の足の骨の高さからの差で、構えの姿では水平・原本でも -0.1〜-0.3 ほどになる
+

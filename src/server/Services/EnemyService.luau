@@ -1811,7 +1811,8 @@ function EnemyService.start()
 				if head < 0 or tail <= head then
 					error(`区間は 0 以上で、終わりを頭より後ろにする（{head}〜{tail}）`, 0)
 				end
-				source = { clip = 0, from = head, to = tail }
+				local original = Motions.geninSourceOf(item)
+				source = { clip = 0, from = head, to = tail, strip = if original then original.strip else "xz" }
 			end
 			local previous = Motions.GeninTestContents[item] or tostring(Motions.geninIdOf(item))
 			if temp then

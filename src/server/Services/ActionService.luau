@@ -526,7 +526,8 @@ local function registerDebugCommands()
 		"[Shuriken|Katana|Ougi|Genin]",
 		"モーションの取得元（Motions.luau の MeshySources）を JSON で返す。引数なしなら、Roblox へ公開する Meshy のクリップごとに"
 			.. "番号・名前・長さ（秒）・使う項目（slots）・項目に入っている ID（ids。0 は除く）を並べ、ID の入ったクリップの数（published）を添える。"
-			.. "武器種・Ougi・Genin を渡すと、その項目ごとに入っている ID（0 はまだ公開していない）・クリップ・区間（from〜to 秒）を並べ、"
+			.. "武器種・Ougi・Genin を渡すと、その項目ごとに入っている ID（0 はまだ公開していない）・クリップ・区間（from〜to 秒）・"
+			.. "公開するときの腰の移動の抜き方（strip。xz・all・pose）を並べ、"
 			.. "ID の入っていない項目の数（pending）を添える",
 		function(group)
 			if group == nil or group == "" then
@@ -582,6 +583,7 @@ local function registerDebugCommands()
 					name = if clip then clip.name else nil,
 					from = slot.source.from,
 					to = slot.source.to,
+					strip = slot.source.strip,
 				})
 			end
 			return HttpService:JSONEncode({ group = group, total = #list, pending = pending, slots = list })

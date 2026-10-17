@@ -77,11 +77,17 @@ export type MeshyClip = {
 	length: number,
 }
 
--- 項目に使う Meshy のクリップの番号と、行動に合う区間（クリップの頭からの秒）
+-- 腰（Hips）の移動の抜き方。公開するクリップを作るときに当てる（検証用のプレースの MeshyRig.stripRoot と同じ）。
+-- xz は水平の移動、all は移動をすべて、pose は移動と回転を抜く。ゲームが動かす向き（前進・回避・吹き飛び・落下）の
+-- 腰の移動を抜き、見た目と判定をそろえる（#67・#68・#120・#121・#88）
+export type Strip = "xz" | "all" | "pose"
+
+-- 項目に使う Meshy のクリップの番号と、行動に合う区間（クリップの頭からの秒）と、腰の移動の抜き方
 export type MeshySource = {
 	clip: number,
 	from: number,
 	to: number,
+	strip: Strip,
 }
 
 -- 武器種1つぶんの取得元（BukishuMotions と同じ項目）
@@ -274,8 +280,12 @@ Motions.MeshyClips = {
 	[508] = { name = "Dive_Down_and_Land_2", length = 3.1 },
 } :: { [number]: MeshyClip }
 
-local function meshy(clip: number, from: number, to: number): MeshySource
-	return { clip = clip, from = from, to = to }
+-- 抜き方の並び（窓口と検証で抜き方を確かめるときに使う）
+Motions.STRIPS = { "xz", "all", "pose" } :: { Strip }
+
+-- strip を省くと xz（水平の移動だけを抜く）
+local function meshy(clip: number, from: number, to: number, strip: Strip?): MeshySource
+	return { clip = clip, from = from, to = to, strip = strip or "xz" }
 end
 
 -- 項目ごとの取得元（Meshy のクリップと区間）。区間は Meshy のプレビューを見て決めた目安で、公開したモーションを Studio で見て詰める。
@@ -285,6 +295,11 @@ end
 -- - 項目に入れる ID は、ここのクリップを丸ごと公開したものにする。切って公開したものや別のモーションを入れるときは、
 --   区間もその長さに合わせて直す（丸ごと流すなら from 0、to にそのモーションの長さ）
 -- - 下忍の待機と移動は Ninja パックなので、ここには無い
+-- - 腰の移動の抜き方（strip）は PM判断（2026-10-17。#67・#88）。操作キャラクターは、ゲームの前進・回避と重なる水平の移動を
+--   抜き（xz）、縦の移動と回転は残す（屈む・跳ぶ・倒れる演技と、足が床に着いたままになる）。ジャンプ攻撃だけは
+--   落下をゲーム（Push.fall）が決めるので、縦も抜く（all）。地上で跳ぶ技（手裏剣 C3・刀 C3 など）は、ゲームが上下に
+--   動かさないので縦を残す。下忍は Hanno が根元の部品を動かして回すので、吹き飛び・打ち上げ・起き上がりは all、ダウンは pose。
+--   比べた値は kensho/meshy-rig/tools/hikaku_player.py（操作キャラクター）と MeshyRig.hikaku（下忍）で出す
 Motions.MeshySources = {
 	Bukishu = {
 		-- 手裏剣セット（刃・酉花）。#67（攻撃）・#120（防御・被弾）
@@ -305,7 +320,7 @@ Motions.MeshySources = {
 				meshy(238, 0.2, 1.6), -- C5 回って八方へ撒く
 				meshy(200, 0.2, 1.9), -- C6 手裏剣の雨。両手を交互に前へ突き出す
 			},
-			JumpAttack = meshy(508, 0.3, 1.5), -- 急降下して着地する。着地の構えまで
+			JumpAttack = meshy(508, 0.3, 1.5, "all"), -- 急降下して着地する。着地の構えまで
 			Guard = meshy(138, 0, 3.5), -- 両腕を上げた構え（くり返す）
 			GuardHit = meshy(140, 0.4, 1.1), -- 構えたまま受けてのけぞる
 			KinkyuKaihi = meshy(384, 0, 1.2), -- 素早く踏み出して回る（向きを変えずに方向へ動くので転がらない）
@@ -331,7 +346,7 @@ Motions.MeshySources = {
 				meshy(241, 0.4, 4), -- C5 乱れ斬りの後に斬り払う
 				meshy(128, 0, 1.867), -- C6 大上段から地面まで振り下ろす
 			},
-			JumpAttack = meshy(102, 0.9, 1.9), -- 落ちながら斬り下ろして着地する（C3 と同じクリップの後半）
+			JumpAttack = meshy(102, 0.9, 1.9, "all"), -- 落ちながら斬り下ろして着地する（C3 と同じクリップの後半）
 			Guard = meshy(149, 0, 1.367), -- 両手で刀を横に構える（くり返す）
 			GuardHit = meshy(148, 0, 1.367),
 			KinkyuKaihi = meshy(157, 0, 1.3), -- 横へ踏み出してかわす
@@ -352,10 +367,10 @@ Motions.MeshySources = {
 	Genin = {
 		Attack = meshy(219, 0, 1.533), -- 右手で踏み込んで斬る（攻撃の間隔 1.5 秒に収まる長さ）
 		Flinch = meshy(179, 0, 0.6),
-		Knockback = meshy(182, 0.95, 1.25), -- 後ろへ倒れていく所（C1 の軌道は 0.26 秒で着地する）
-		Launch = meshy(7, 0, 1), -- 打ち上げられて回る
-		Down = meshy(189, 1.4, 2.233), -- 仰向けに倒れている終わりの部分
-		GetUp = meshy(3, 1.2, 1.7), -- しゃがんだ所から立つ所（仰向けから座る前半は起き上がりの 0.5 秒に入らない）
+		Knockback = meshy(182, 0.95, 1.25, "all"), -- 後ろへ倒れていく所（C1 の軌道は 0.26 秒で着地する）
+		Launch = meshy(7, 0, 1, "all"), -- 打ち上げられて回る
+		Down = meshy(189, 1.4, 2.233, "pose"), -- 仰向けに倒れている終わりの部分（仰向けの向きは Hanno）
+		GetUp = meshy(3, 1.2, 1.7, "all"), -- しゃがんだ所から立つ所（仰向けから座る前半は起き上がりの 0.5 秒に入らない）
 	},
 } :: MeshySourceSection
 
@@ -511,7 +526,7 @@ function Motions.withTest(
 	end
 	local from, to = test.from, test.to
 	if from and to then
-		return test.id, { clip = 0, from = from, to = to }
+		return test.id, { clip = 0, from = from, to = to, strip = if source then source.strip else "xz" }
 	end
 	return test.id, nil
 end

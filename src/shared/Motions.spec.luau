@@ -589,7 +589,7 @@ test(
 		}
 		local id, replaced = Motions.withTest(tests, "Shuriken Attack 1", 0, source)
 		expect(id).toBe(507770239)
-		expect(replaced).toEqual({ clip = 0, from = 0.5, to = 1.2 })
+		expect(replaced).toEqual({ clip = 0, from = 0.5, to = 1.2, strip = source.strip })
 		local ougiId, ougiSource = Motions.withTest(tests, "Ougi Katon", 0, Motions.MeshySources.Ougi.Katon)
 		expect(ougiId).toBe(507770453)
 		expect(ougiSource).toBe(nil)
@@ -623,5 +623,44 @@ test(
 		Motions.GeninTests.Flinch = nil
 		Motions.GeninTests.Down = nil
 		expect(Motions.geninSourceOf("Flinch")).toBe(Motions.MeshySources.Genin.Flinch)
+	end
+)
+
+test("取得元の項目はどれも、公開するときの腰の移動の抜き方を持つ", function()
+	for _, slot in Motions.meshySlots() do
+		expect(table.find(Motions.STRIPS, slot.source.strip) ~= nil).toBe(true)
+	end
+end)
+
+test(
+	"操作キャラクターはジャンプ攻撃だけ縦も抜き、ほかの項目は水平だけを抜く（PM判断 2026-10-17。#67）",
+	function()
+		for bukishu, sources in Motions.MeshySources.Bukishu do
+			for item, value in sources :: any do
+				local list = if value.clip then { value } else value
+				for _, source in list do
+					local expected = if item == "JumpAttack" then "all" else "xz"
+					if source.strip ~= expected then
+						error(`{bukishu} {item} の抜き方が {source.strip}（{expected} のはず）`)
+					end
+				end
+			end
+		end
+		for _, source in Motions.MeshySources.Ougi do
+			expect(source.strip).toBe("xz")
+		end
+	end
+)
+
+test(
+	"下忍は吹き飛び・打ち上げ・起き上がりを全軸、ダウンを移動と回転で抜く（PM判断 2026-10-17。#88）",
+	function()
+		local genin = Motions.MeshySources.Genin
+		expect(genin.Attack.strip).toBe("xz")
+		expect(genin.Flinch.strip).toBe("xz")
+		expect(genin.Knockback.strip).toBe("all")
+		expect(genin.Launch.strip).toBe("all")
+		expect(genin.Down.strip).toBe("pose")
+		expect(genin.GetUp.strip).toBe("all")
 	end
 )

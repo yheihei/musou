@@ -284,4 +284,5 @@ def main():
     sys.stdout.write("\n".join(out) + "\n")
 
 
-main()
+if __name__ == "__main__":
+    main()
