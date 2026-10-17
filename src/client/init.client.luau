@@ -29,6 +29,7 @@ local HikeiNoticeController = require(Controllers:WaitForChild("HikeiNoticeContr
 local TouchControlsController = require(Controllers:WaitForChild("TouchControlsController"))
 local BgmController = require(Controllers:WaitForChild("BgmController"))
 local CameraViewController = require(Controllers:WaitForChild("CameraViewController"))
+local SpawnCameraController = require(Controllers:WaitForChild("SpawnCameraController"))
 
 -- 入室直後の PartyState と特技と秘計の熟練度の記録を受け取るため、画面より先に始める
 PartyClient.start()
@@ -60,5 +61,7 @@ TouchControlsController.start()
 BgmController.start()
 -- 戦闘の間、カメラをサーバーへ送る。サーバーは下忍を視界の外に出す
 CameraViewController.start()
+-- 出撃地点と再出撃の拠点に出たら、カメラを体の後ろへ戻す（敵の側を向いて戦場に出る）
+SpawnCameraController.start()
 -- 効果音を先に読み込み、最初に鳴らすときの遅れを無くす
 task.spawn(SoundPlayer.preload)

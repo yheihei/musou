@@ -15,6 +15,7 @@ local PARAMS: CameraView.Params = {
 	FallbackHeight = 2,
 	FallbackFov = 70,
 	FallbackAspect = 16 / 9,
+	SpawnPitch = 15,
 }
 
 -- 原点から北（z の -）を見るカメラ。縦の画角 70 度、横と縦の比 16:9（横の半分の角は約 51 度）
@@ -139,6 +140,25 @@ test("どれかの視界に入れば見えている", function()
 	expect(CameraView.seenByAny({ NORTH, south }, vector.create(0, 0, 300), 0, 250)).toBe(false)
 end)
 
+test("出現し直したときは、体の向きの水平を後ろから見下ろす", function()
+	-- 北を向いた体。北を向き、15 度だけ下を見る
+	local look = CameraView.behindLookOf(vector.create(0, 0, -1), PARAMS.SpawnPitch)
+	expect(vector.magnitude(look)).toBeNear(1)
+	expect(look.x).toBeNear(0)
+	expect(look.y).toBeNear(-math.sin(math.rad(15)))
+	expect(look.z).toBeNear(-math.cos(math.rad(15)))
+	-- 体の向きの縦の成分は使わない（東へ斜め上を向いていても、東を見下ろす）
+	local east = CameraView.behindLookOf(vector.create(2, 1, 0), 15)
+	expect(east.x).toBeNear(math.cos(math.rad(15)))
+	expect(east.y).toBeNear(-math.sin(math.rad(15)))
+	expect(east.z).toBeNear(0)
+	-- 水平の成分が無ければ北を向く
+	local up = CameraView.behindLookOf(vector.create(0, 1, 0), 0)
+	expect(up.x).toBeNear(0)
+	expect(up.y).toBeNear(0)
+	expect(up.z).toBeNear(-1)
+end)
+
 test("Config の値は受け付ける範囲に収まる", function()
 	local p = Config.CameraView
 	expect(p.FallbackFov >= CameraView.MIN_FOV and p.FallbackFov <= CameraView.MAX_FOV).toBe(true)
@@ -146,6 +166,8 @@ test("Config の値は受け付ける範囲に収まる", function()
 	-- 報告が古くなる前に、次の報告が届く
 	expect(p.Interval < p.Stale).toBe(true)
 	expect(p.Margin >= 0).toBe(true)
+	-- 出現し直したときのカメラは、真下より手前を見下ろす
+	expect(p.SpawnPitch >= 0 and p.SpawnPitch < 90).toBe(true)
 	-- 下忍の個体を視界の中でも出し入れしてよい距離は、見えないとみなす距離より近い（視界の判定が効く距離が残る）
 	expect(Config.GeninKotai.PopDistance < p.FarDistance).toBe(true)
 end)

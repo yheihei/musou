@@ -47,9 +47,10 @@ local SelectionController = {}
 local MARGIN = 16
 local PANEL_WIDTH = 460
 local BOTTOM_CLEARANCE = 112
--- 見出しと、下の拒否の理由の欄の高さ
+-- 見出しと、下の拒否の理由の欄の高さ。拒否の理由は2行まで折り返して出す（文字の大きさ 18 の2行と上下の余白。
+-- 1行の高さでは、2行になる文の2行目が切れていた。StageNotReady の文、2026-10-17 の Studio）
 local HEADER_HEIGHT = 40
-local MESSAGE_HEIGHT = 40
+local MESSAGE_HEIGHT = 48
 -- 小さい画面の見出しの高さ（ReplicatedStorage.Shared.SmallScreen の LOBBY_HEADER_HEIGHT と同じ値）。
 -- 拒否の理由は見出しに重ねるので、下の欄は設けない
 local SMALL_HEADER_HEIGHT = 36

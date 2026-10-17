@@ -258,6 +258,7 @@ export type CameraViewSection = {
 	FallbackHeight: number,
 	FallbackFov: number,
 	FallbackAspect: number,
+	SpawnPitch: number,
 }
 
 -- 下忍の個体の枠の配分。近いプレイヤーのまとまりにする距離
@@ -1718,6 +1719,9 @@ local Config: Config = {
 		FallbackHeight = 2, -- カメラが届いていないときに見る位置の、キャラクターの中心からの高さ（スタッド）
 		FallbackFov = 70, -- カメラが届いていないときの縦の画角（度）
 		FallbackAspect = 1.78, -- カメラが届いていないときの画面の横と縦の比（16:9）
+		-- 出撃地点や再出撃の拠点に出現し直したときに、カメラを体の後ろへ戻して見下ろす角度（度）。
+		-- Roblox 標準のカメラが出現したときに付く角度と同じ（SpawnCameraController）
+		SpawnPitch = 15,
 	},
 
 	-- 下忍の個体の枠の配分。個体として出せる下忍の上限（GeninKotai 節の MaxKotai）を、

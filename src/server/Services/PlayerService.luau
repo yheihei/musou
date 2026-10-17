@@ -3,6 +3,7 @@
 -- Player の Attribute に持たせてクライアントへ自動で複製させる。出現時にキャラクターの能力値と仮の見た目を当て、
 -- 使うキャラクター（CharacterId）が変わったら出現し直す。
 -- 出撃では spawnAt が CharacterId を書いてから出撃地点に出現し直す（出現し直しは1回）。
+-- spawnAt で立たせた体には、立たせた向きを Attribute の SpawnFacing に書く（クライアントがカメラを体の後ろへ戻す）。
 -- ロビーへ戻っても CharacterId は書き換えないので、見た目は最後に出撃したキャラクターのまま残る。
 -- 被弾による奥義ゲージの増加は DamageService の被ダメージの窓口が足す。
 -- 能力値の補正（秘計の鬼神化など）は、addModifierProvider で登録した関数から集めて getStats で足す。
@@ -33,6 +34,9 @@ local STREAM_TIMEOUT = 5
 
 -- 倒れた人を見回る間隔（秒）
 local DOWN_CHECK_INTERVAL = 0.5
+
+-- spawnAt で出現し直した体に、立たせた向き（水平、長さ 1 の Vector3）を書く Attribute
+local SPAWN_FACING_ATTRIBUTE = "SpawnFacing"
 
 -- 今の姿（spawnAt で出現し直している間は、これから出現する姿）のキャラクター ID。
 -- CharacterId の変化の通知は遅れて届くことがあるので、これと同じなら出現し直さない
@@ -188,6 +192,8 @@ local function spawnAtNow(player: Player, cframe: CFrame, characterId: string?, 
 	local facing = if flat.Magnitude > 1e-3 then flat.Unit else Vector3.new(0, 0, -1)
 	character:PivotTo(CFrame.lookAt(position, position + facing))
 	Ground.placeCharacter(character, position.X, position.Z)
+	-- クライアントは、この向きでカメラを体の後ろへ戻す（SpawnCameraController）
+	character:SetAttribute(SPAWN_FACING_ATTRIBUTE, facing)
 end
 
 -- 出現し直して、cframe の位置に cframe の向き（水平の成分）で立たせる。高さは地面に合わせる。

@@ -1004,6 +1004,7 @@ local SNAPSHOT = {
 		FallbackHeight = 2,
 		FallbackFov = 70,
 		FallbackAspect = 1.78,
+		SpawnPitch = 15,
 	},
 	KotaiHaibun = {
 		GroupDistance = 80,

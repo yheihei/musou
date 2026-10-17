@@ -81,6 +81,15 @@ function CameraView.fromFacing(position: vector, facing: vector, params: Params?
 	}
 end
 
+-- 出撃地点や再出撃の拠点に出現し直したときに、体の後ろへ戻すカメラの向き（長さ 1）。体の向き facing の水平の成分を、
+-- pitch 度だけ見下ろす（クライアントの SpawnCameraController）。水平の成分が無ければ北（z の -）を向く
+function CameraView.behindLookOf(facing: vector, pitch: number): vector
+	local flat = vector.create(facing.x, 0, facing.z)
+	local forward = if vector.magnitude(flat) > 1e-6 then vector.normalize(flat) else vector.create(0, 0, -1)
+	local angle = math.rad(pitch)
+	return vector.create(forward.x * math.cos(angle), -math.sin(angle), forward.z * math.cos(angle))
+end
+
 -- point の周りの半径 margin の球が、視界に少しでもかかるか。far を渡すと、カメラから far より遠い球は見えない
 function CameraView.sees(view: View, point: vector, margin: number, far: number?): boolean
 	local offset = point - view.position
