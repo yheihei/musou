@@ -682,6 +682,16 @@ function MeshyRig.stripRoot(sequence: KeyframeSequence, mode: string, model: Mod
 	return copy
 end
 
+-- Jin.luau のクリップの KeyframeSequence（骨の名前）。ほかのプレースで試すとき（musou の SetGeninMotion の一時 ID）に使う
+function MeshyRig.clip(name: string): KeyframeSequence
+	return clipToKeyframeSequence(name)
+end
+
+-- 骨のモデルの AnimationRigData。KeyframeSequence の子にすると、骨の名前のクリップが R15 に移る
+function MeshyRig.rigData(model: Model): Instance
+	return rigDataFor(model)
+end
+
 -- 取り込んだモデルのクリップ編集のクリップから、項目のクリップ（Jin.luau の名前を含むもの）を探す
 local function savedClipFor(model: Model, clipKey: string): KeyframeSequence?
 	local saves = game:GetService("ServerStorage"):FindFirstChild("RBX_ANIMSAVES")

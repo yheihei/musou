@@ -621,15 +621,50 @@ end
 -- 差し替えていない項目は取得元（MeshySources.Genin）の区間で流す
 Motions.GeninTests = {} :: { [string]: MeshySource | false }
 
+-- 窓口の SetGeninMotion で一時 ID に差し替えた下忍の項目（項目ごと）。公開していないクリップを
+-- KeyframeSequenceProvider:RegisterKeyframeSequence で登録した一時 ID で試す用。あれば項目の ID より先に使う
+Motions.GeninTestContents = {} :: { [string]: string }
+
 -- 下忍のモーションの項目の ID を差し替える（窓口の SetGeninMotion。サーバーを止めるまで続く）。
--- 差し替えた項目は区間 source（省くと丸ごと）で流す。項目でなければ false
+-- 差し替えた項目は区間 source（省くと丸ごと）で流し、一時 ID の差し替えは外す。項目でなければ false
 function Motions.setGeninId(item: string, id: number, source: MeshySource?): boolean
 	if not Motions.isGeninItem(item) then
 		return false
 	end
 	(Motions.Genin :: any)[item] = id
+	Motions.GeninTestContents[item] = nil
 	Motions.GeninTests[item] = if source then source else false
 	return true
+end
+
+-- 一時 ID か。RegisterKeyframeSequence が返す 32 桁の16進の文字列（2026-10-17 の Studio）と、rbxtemp:// と数字の形を受け付ける
+function Motions.isTempContent(value: unknown): boolean
+	if type(value) ~= "string" then
+		return false
+	end
+	return (#value == 32 and string.match(value, "^%x+$") ~= nil) or string.match(value, "^rbxtemp://%d+$") ~= nil
+end
+
+-- 下忍のモーションの項目を一時 ID content に差し替える（窓口の SetGeninMotion。サーバーを止めるまで続く）。
+-- 区間 source（省くと丸ごと）で流す。項目でないか一時 ID でなければ false
+function Motions.setGeninContent(item: string, content: string, source: MeshySource?): boolean
+	if not Motions.isGeninItem(item) or not Motions.isTempContent(content) then
+		return false
+	end
+	Motions.GeninTestContents[item] = content
+	Motions.GeninTests[item] = if source then source else false
+	return true
+end
+
+-- 下忍のモーションの項目の Animation.AnimationId に入れる文字列。一時 ID に差し替えた項目はその一時 ID、
+-- ほかは項目の ID（rbxassetid://）。ID が 0 か項目でなければ nil
+function Motions.geninContentOf(item: string): string?
+	local temp = Motions.GeninTestContents[item]
+	if temp then
+		return temp
+	end
+	local id = Motions.geninIdOf(item)
+	return if id > 0 then `rbxassetid://{id}` else nil
 end
 
 -- 下忍のモーションの項目の取得元（区間）。窓口で差し替えた項目は差し替えの区間（丸ごとなら nil）。

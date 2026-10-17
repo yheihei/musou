@@ -227,6 +227,34 @@ test(
 )
 
 test(
+	"下忍のモーションは一時 ID にも差し替えられ、ID の差し替えで一時 ID は外れる",
+	function()
+		local temp = "f25413323a93d8928c155abc5c7b6abd"
+		expect(Motions.isTempContent(temp)).toBe(true)
+		expect(Motions.isTempContent("rbxtemp://12")).toBe(true)
+		expect(Motions.isTempContent("f25413323a93d8928c155abc5c7b6ab")).toBe(false)
+		expect(Motions.isTempContent("rbxassetid://12")).toBe(false)
+		expect(Motions.isTempContent("rbxtemp://")).toBe(false)
+		expect(Motions.isTempContent(12)).toBe(false)
+		withMotion(Motions.Genin :: any, "Knockback", Motions.Genin.Knockback, function()
+			expect(Motions.geninContentOf("Knockback")).toBe(nil)
+			expect(Motions.setGeninContent("Knockback", temp, { clip = 0, from = 0.95, to = 1.25 })).toBe(true)
+			expect(Motions.geninContentOf("Knockback")).toBe(temp)
+			expect(Motions.geninSourceOf("Knockback")).toEqual({ clip = 0, from = 0.95, to = 1.25 })
+			expect(Motions.geninIdOf("Knockback")).toBe(0)
+			expect(Motions.setGeninId("Knockback", 507770677)).toBe(true)
+			expect(Motions.geninContentOf("Knockback")).toBe("rbxassetid://507770677")
+			expect(Motions.GeninTestContents.Knockback).toBe(nil)
+		end)
+		Motions.GeninTests.Knockback = nil
+		expect(Motions.setGeninContent("Knockback", "rbxassetid://1")).toBe(false)
+		expect(Motions.setGeninContent("Jump", temp)).toBe(false)
+		expect(Motions.geninContentOf("Idle")).toBe(`rbxassetid://{Motions.Genin.Idle}`)
+		expect(Motions.geninContentOf("Jump")).toBe(nil)
+	end
+)
+
+test(
 	"下忍のモーションは、待機・移動・攻撃・被弾の反応の順に上の優先度で重ね、待機と移動だけをくり返す",
 	function()
 		expect(Motions.geninPriorityOf("Idle")).toBe("Idle")

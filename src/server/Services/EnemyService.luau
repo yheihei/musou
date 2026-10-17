@@ -52,7 +52,8 @@
 -- - 読み込んだトラックは、体ごと・項目ごとに覚えて使い回す（プールをまたいでも残し、体を壊したら手放す）。
 --   ID が変わっていたら読み込み直す
 -- - 窓口の SetGeninMotion で ID を差し替え（サーバーを止めるまで続く。区間を渡さなければ丸ごと流す）、DumpGeninMotion で
---   ID と区間と、項目ごとに流している体の数と流している位置を確かめる
+--   ID と区間と、項目ごとに流している体の数と流している位置を確かめる。公開していないクリップは、
+--   KeyframeSequenceProvider:RegisterKeyframeSequence の一時 ID でも差し替えられる
 --
 -- 倒れたとき
 -- - プレイヤーが倒した体は、撃破数を足し、gekiha で種類・軍（倒れた体の軍）・倒れた位置・倒したプレイヤー・部隊 ID を知らせる
@@ -249,8 +250,8 @@ type Rig = {
 
 -- 体に読み込んだ、下忍のモーションの項目1つのトラック
 type LoadedTrack = {
-	-- 読み込んだときの ID（窓口で差し替えたら読み込み直す）
-	id: number,
+	-- 読み込んだときの AnimationId（窓口で差し替えたら読み込み直す）
+	content: string,
 	track: AnimationTrack,
 }
 
@@ -568,21 +569,22 @@ local function faceToward(enemy: Enemy, look: Vector3)
 	enemy.root.CFrame = CFrame.lookAt(here, here + look)
 end
 
--- 体の Animator に、下忍のモーションの項目 item の今の ID のトラックを読み込む。読み込んだものは体ごと・項目ごとに
--- 使い回し（プールをまたいでも残す）、ID が変わっていたら前のトラックを捨てて読み込み直す。ID が 0 か、読み込めなければ nil
+-- 体の Animator に、下忍のモーションの項目 item の今の ID（窓口で一時 ID に差し替えていればその一時 ID）のトラックを
+-- 読み込む。読み込んだものは体ごと・項目ごとに使い回し（プールをまたいでも残す）、ID が変わっていたら前のトラックを捨てて
+-- 読み込み直す。ID が 0 か、読み込めなければ nil
 local function trackFor(rig: Rig, item: string): AnimationTrack?
-	local id = Motions.geninIdOf(item)
+	local content = Motions.geninContentOf(item)
 	local tracks = rig.motion.tracks
 	local loaded = tracks[item]
 	if loaded then
-		if loaded.id == id then
+		if loaded.content == content then
 			return loaded.track
 		end
 		tracks[item] = nil
 		loaded.track:Stop(0)
 		loaded.track:Destroy()
 	end
-	if id <= 0 then
+	if not content then
 		return nil
 	end
 	local animator = rig.humanoid:FindFirstChildOfClass("Animator")
@@ -592,16 +594,16 @@ local function trackFor(rig: Rig, item: string): AnimationTrack?
 		animator = created
 	end
 	local animation = Instance.new("Animation")
-	animation.AnimationId = `rbxassetid://{id}`
+	animation.AnimationId = content
 	local ok, result = pcall(function(): AnimationTrack
 		return (animator :: Animator):LoadAnimation(animation)
 	end)
 	if not ok then
-		warn(`EnemyService: 下忍のモーション {item}（{id}）を読み込めなかった: {result}`)
+		warn(`EnemyService: 下忍のモーション {item}（{content}）を読み込めなかった: {result}`)
 		return nil
 	end
 	local track = result :: AnimationTrack
-	tracks[item] = { id = id, track = track }
+	tracks[item] = { content = content, track = track }
 	return track
 end
 
@@ -1784,8 +1786,9 @@ function EnemyService.start()
 	local geninItems = table.concat(Motions.GENIN_ITEMS, "・")
 	DebugCommand.register(
 		"SetGeninMotion",
-		"<項目> <アニメーション ID|0> [区間の頭（秒） 区間の終わり（秒）]",
+		"<項目> <アニメーション ID|0|一時 ID> [区間の頭（秒） 区間の終わり（秒）]",
 		`下忍のモーションの項目（{geninItems}）のアニメーション ID を差し替える。0 にするとその項目は流さない。`
+			.. "公開していないクリップは、KeyframeSequenceProvider:RegisterKeyframeSequence が返す一時 ID（32 桁の16進）も渡せる。"
 			.. "攻撃と被弾の反応は、区間を渡せばその区間を流し、渡さなければ丸ごと流す（待機と移動は区間を使わない）。"
 			.. "差し替えはサーバーを止めるまで続き、Motions.luau は変わらない。待機と移動は流している体もすぐ流し直し、"
 			.. "攻撃と被弾の反応は次に流すときから使う（Studio で候補のモーションを試す用。確認用）",
@@ -1793,9 +1796,13 @@ function EnemyService.start()
 			if type(item) ~= "string" or not Motions.isGeninItem(item) then
 				error(`項目は {geninItems} のどれかで指定する（{tostring(item)}）`, 0)
 			end
-			local id = DebugCommand.toNumber(value, "アニメーション ID")
+			local temp = Motions.isTempContent(value)
+			local id = if temp then 0 else DebugCommand.toNumber(value, "アニメーション ID")
 			if id < 0 or id ~= math.floor(id) then
-				error(`アニメーション ID は 0 以上の整数で指定する（{tostring(value)}）`, 0)
+				error(
+					`アニメーション ID は 0 以上の整数か一時 ID で指定する（{tostring(value)}）`,
+					0
+				)
 			end
 			local source: Motions.MeshySource? = nil
 			if from ~= nil or to ~= nil then
@@ -1806,8 +1813,12 @@ function EnemyService.start()
 				end
 				source = { clip = 0, from = head, to = tail }
 			end
-			local previous = Motions.geninIdOf(item)
-			Motions.setGeninId(item, id, source)
+			local previous = Motions.GeninTestContents[item] or tostring(Motions.geninIdOf(item))
+			if temp then
+				Motions.setGeninContent(item, value :: string, source)
+			else
+				Motions.setGeninId(item, id, source)
+			end
 			if Motions.isGeninLocomotion(item) then
 				-- その項目を流している体は、新しい ID で流し直す（0 なら止める）
 				for model in enemies do
@@ -1818,7 +1829,7 @@ function EnemyService.start()
 				end
 			end
 			local range = if source then `区間 {source.from}〜{source.to} 秒` else "丸ごと"
-			return `下忍のモーション {item} を {id} にした（前は {previous}、{range}）`
+			return `下忍のモーション {item} を {if temp then value else id} にした（前は {previous}、{range}）`
 		end
 	)
 	DebugCommand.register(
@@ -1830,7 +1841,7 @@ function EnemyService.start()
 			.. "出ている下忍の体の数（bodies。倒れた姿を見せている体も入る）・そのうち生きている数（alive）・"
 			.. "待機と移動を止めている数（locomotionStopped。倒れた後・飛んでいる間・倒れている間）・"
 			.. "プールにある下忍の体の数（pooled）とそのうち何かを流している数（pooledPlaying。0 になる）・"
-			.. "下忍の移動のモーションを流す速さ（runPlayback）を添える",
+			.. "下忍の移動のモーションを流す速さ（runPlayback）・一時 ID に差し替えた項目（temp）を添える",
 		function()
 			local ids: { [string]: number } = {}
 			local playing: { [string]: number } = {}
@@ -1892,6 +1903,7 @@ function EnemyService.start()
 				pooled = pooled,
 				pooledPlaying = pooledPlaying,
 				runPlayback = Motions.geninRunPlaybackOf(Config.Genin.WalkSpeed, Config.GeninMotion.RunSpeed),
+				temp = Motions.GeninTestContents,
 			})
 		end
 	)
